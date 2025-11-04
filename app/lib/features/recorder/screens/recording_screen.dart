@@ -202,6 +202,12 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
       final fileName = recordingPath.split('/').last;
       final recordingId = fileName.replaceAll('.m4a', '').split('-').last;
 
+      // Get services before navigation to avoid ref disposal issues
+      final storageService = ref.read(storageServiceProvider);
+      final whisperLocalService = ref.read(whisperLocalServiceProvider);
+      final whisperService = ref.read(whisperServiceProvider);
+      final titleService = ref.read(titleGenerationServiceProvider);
+
       final recording = Recording(
         id: recordingId,
         title: title,
@@ -220,7 +226,15 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
       );
 
       // Start background processing (fire and forget)
-      _startBackgroundProcessing(recordingId, recordingPath).catchError((e) {
+
+      _startBackgroundProcessing(
+        recordingId,
+        recordingPath,
+        storageService,
+        whisperLocalService,
+        whisperService,
+        titleService,
+      ).catchError((e) {
         debugPrint('[RecordingScreen] ❌ Background processing failed: $e');
       });
 
@@ -254,12 +268,15 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
   Future<void> _startBackgroundProcessing(
     String recordingId,
     String recordingPath,
+    dynamic storageService,
+    dynamic whisperLocalService,
+    dynamic whisperService,
+    dynamic titleService,
   ) async {
     debugPrint(
       '[RecordingScreen] 🎬 Background processing started for: $recordingId',
     );
 
-    final storageService = ref.read(storageServiceProvider);
     final autoTranscribe = await storageService.getAutoTranscribe();
 
     debugPrint('[RecordingScreen] Auto-transcribe enabled: $autoTranscribe');
@@ -290,15 +307,13 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
 
       String transcript;
       if (mode == TranscriptionMode.local) {
-        final localService = ref.read(whisperLocalServiceProvider);
-        final isReady = await localService.isReady();
+        final isReady = await whisperLocalService.isReady();
         if (!isReady) {
           debugPrint('[RecordingScreen] Whisper model not ready, skipping');
           return;
         }
-        transcript = await localService.transcribeAudio(recordingPath);
+        transcript = await whisperLocalService.transcribeAudio(recordingPath);
       } else {
-        final whisperService = ref.read(whisperServiceProvider);
         final isConfigured = await whisperService.isConfigured();
         if (!isConfigured) {
           debugPrint('[RecordingScreen] API key not configured, skipping');
@@ -326,7 +341,6 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
       String? generatedTitle;
       ProcessingStatus titleStatus = ProcessingStatus.completed;
       try {
-        final titleService = ref.read(titleGenerationServiceProvider);
         generatedTitle = await titleService.generateTitle(transcript);
         debugPrint('[RecordingScreen] ✅ Title generated: "$generatedTitle"');
       } catch (e) {
