@@ -5,6 +5,7 @@ import 'package:app/features/recorder/services/storage_service.dart';
 import 'package:app/features/recorder/services/whisper_service.dart';
 import 'package:app/features/recorder/services/whisper_local_service.dart';
 import 'package:app/features/recorder/services/whisper_model_manager.dart';
+import 'package:app/features/recorder/services/live_transcription_service_v2.dart';
 import 'package:app/features/recorder/models/whisper_models.dart';
 import 'package:app/core/providers/file_sync_provider.dart';
 
@@ -111,3 +112,19 @@ final autoTranscribeProvider = FutureProvider<bool>((ref) async {
 /// Increment this counter to trigger a refresh of the recordings list.
 /// Used by Omi capture service to notify UI when new recordings are saved.
 final recordingsRefreshTriggerProvider = StateProvider<int>((ref) => 0);
+
+/// Provider for SimpleTranscriptionService
+///
+/// This manages manual pause-based transcription with one continuous audio file.
+/// Creates a new instance each time it's requested (not kept alive).
+final simpleTranscriptionServiceProvider =
+    Provider.autoDispose<SimpleTranscriptionService>((ref) {
+      final whisperService = ref.watch(whisperLocalServiceProvider);
+      final service = SimpleTranscriptionService(whisperService);
+
+      ref.onDispose(() {
+        service.dispose();
+      });
+
+      return service;
+    });

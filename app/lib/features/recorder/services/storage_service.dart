@@ -4,7 +4,6 @@ import 'package:app/features/recorder/models/recording.dart';
 import 'package:app/core/services/file_system_service.dart';
 import 'package:app/core/services/file_sync_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 
 /// File-based storage service for client-server sync architecture
@@ -130,51 +129,152 @@ class StorageService {
     return '$capturesPath/$timestampStr.json';
   }
 
-  /// Load all recordings from the backend
+  /// Load all recordings from local filesystem (LOCAL-FIRST)
   Future<List<Recording>> getRecordings() async {
     await initialize();
 
     try {
-      debugPrint('[StorageService] Fetching recordings from backend...');
-      final response = await _fileSyncService.listCaptures(limit: 100);
+      debugPrint(
+        '[StorageService] Loading recordings from local filesystem...',
+      );
+      final capturesPath = await _fileSystem.getCapturesPath();
+      final capturesDir = Directory(capturesPath);
 
-      final recordings = response.captures.map((capture) {
-        // Determine source from metadata
-        // If source is omiDevice but no deviceId, default to phone to avoid assertion failure
-        final isOmiDevice = capture.source?.toLowerCase() == 'omidevice';
-        final hasDeviceId =
-            capture.deviceId != null && capture.deviceId!.isNotEmpty;
+      if (!await capturesDir.exists()) {
+        debugPrint('[StorageService] Captures directory does not exist yet');
+        return [];
+      }
 
-        final source = isOmiDevice && hasDeviceId
-            ? RecordingSource.omiDevice
-            : RecordingSource.phone;
+      // Find all markdown files (each represents a recording)
+      final recordings = <Recording>[];
+      await for (final entity in capturesDir.list()) {
+        if (entity is File && entity.path.endsWith('.md')) {
+          try {
+            final recording = await _loadRecordingFromMarkdown(entity);
+            if (recording != null) {
+              recordings.add(recording);
+            }
+          } catch (e) {
+            debugPrint(
+              '[StorageService] Error loading recording from ${entity.path}: $e',
+            );
+          }
+        }
+      }
 
-        return Recording(
-          id: capture.id,
-          title:
-              capture.title ??
-              (capture.transcript?.isNotEmpty == true
-                  ? _extractTitleFromTranscript(capture.transcript!)
-                  : 'Recording ${capture.timestamp.toString().split('.')[0]}'),
-          filePath: capture.audioUrl, // URL for downloading
-          timestamp: capture.timestamp,
-          duration: Duration(seconds: (capture.duration?.toInt() ?? 0)),
-          tags: [],
-          transcript: capture.transcript ?? '',
-          fileSizeKB: 0, // Will be populated when downloaded
-          source: source,
-          deviceId: source == RecordingSource.omiDevice
-              ? capture.deviceId
-              : null,
-          buttonTapCount: capture.buttonTapCount,
-        );
-      }).toList();
+      // Sort by timestamp (newest first)
+      recordings.sort((a, b) => b.timestamp.compareTo(a.timestamp));
 
-      debugPrint('[StorageService] Loaded ${recordings.length} recordings');
+      debugPrint(
+        '[StorageService] Loaded ${recordings.length} recordings from filesystem',
+      );
       return recordings;
     } catch (e) {
-      debugPrint('[StorageService] Error getting recordings from backend: $e');
+      debugPrint('[StorageService] Error loading recordings: $e');
       return [];
+    }
+  }
+
+  /// Load a recording from a markdown file
+  Future<Recording?> _loadRecordingFromMarkdown(File mdFile) async {
+    try {
+      final content = await mdFile.readAsString();
+      final filename = p.basename(mdFile.path);
+
+      // Extract timestamp from filename (e.g., "2025-11-05_14-30-22.md")
+      final timestamp = FileSystemService.parseTimestampFromFilename(filename);
+      if (timestamp == null) {
+        debugPrint(
+          '[StorageService] Could not parse timestamp from: $filename',
+        );
+        return null;
+      }
+
+      // Parse YAML frontmatter
+      String? durationStr;
+      String? source;
+
+      final lines = content.split('\n');
+      if (lines.isNotEmpty && lines[0] == '---') {
+        // Find end of frontmatter
+        int endIndex = -1;
+        for (int i = 1; i < lines.length; i++) {
+          if (lines[i] == '---') {
+            endIndex = i;
+            break;
+          }
+        }
+
+        if (endIndex > 0) {
+          // Parse frontmatter fields
+          for (int i = 1; i < endIndex; i++) {
+            final line = lines[i];
+            if (line.contains(':')) {
+              final parts = line.split(':');
+              final key = parts[0].trim();
+              final value = parts.sublist(1).join(':').trim();
+
+              if (key == 'duration') durationStr = value;
+              if (key == 'source') source = value;
+            }
+          }
+        }
+      }
+
+      // Extract transcript (everything after frontmatter)
+      String transcript = content;
+      if (lines.isNotEmpty && lines[0] == '---') {
+        final endIndex = lines.indexOf('---', 1);
+        if (endIndex > 0 && endIndex + 1 < lines.length) {
+          transcript = lines.sublist(endIndex + 1).join('\n').trim();
+        }
+      }
+
+      // Parse duration (format: "MM:SS")
+      Duration duration = Duration.zero;
+      if (durationStr != null) {
+        final parts = durationStr.split(':');
+        if (parts.length == 2) {
+          final minutes = int.tryParse(parts[0]) ?? 0;
+          final seconds = int.tryParse(parts[1]) ?? 0;
+          duration = Duration(minutes: minutes, seconds: seconds);
+        }
+      }
+
+      // Check if corresponding audio file exists
+      final audioPath = mdFile.path.replaceAll('.md', '.wav');
+      final audioExists = await File(audioPath).exists();
+
+      // Generate title from first line of transcript
+      final title = _extractTitleFromTranscript(transcript);
+
+      // Get file size
+      final stat = await mdFile.stat();
+      final fileSizeKB = stat.size / 1024;
+
+      // Determine recording source
+      final recordingSource = source == 'omiDevice'
+          ? RecordingSource.omiDevice
+          : RecordingSource.phone;
+
+      return Recording(
+        id: filename.replaceAll('.md', ''), // Use timestamp as ID
+        title: title,
+        filePath: audioExists ? audioPath : mdFile.path,
+        timestamp: timestamp,
+        duration: duration,
+        tags: [],
+        transcript: transcript,
+        fileSizeKB: fileSizeKB,
+        source: recordingSource,
+        deviceId: recordingSource == RecordingSource.omiDevice
+            ? 'unknown'
+            : null,
+        buttonTapCount: null,
+      );
+    } catch (e) {
+      debugPrint('[StorageService] Error loading recording from markdown: $e');
+      return null;
     }
   }
 
@@ -188,105 +288,17 @@ class StorageService {
     return '${firstLine.substring(0, 47)}...';
   }
 
-  /// Load a recording from its markdown file
-  Future<Recording?> _loadRecordingFromMarkdown(File mdFile) async {
-    final content = await mdFile.readAsString();
-
-    // Parse frontmatter and content
-    final parts = content.split('---');
-    if (parts.length < 3) {
-      debugPrint('Invalid markdown format in ${mdFile.path}');
-      return null;
-    }
-
-    // Parse YAML frontmatter
-    final frontmatter = _parseYamlFrontmatter(parts[1]);
-    final bodyContent = parts.sublist(2).join('---').trim();
-
-    // Determine file extension based on source
-    final source = frontmatter['source']?.toString() ?? 'phone';
-    final isOmiDevice = source.toLowerCase() == 'omidevice';
-    final audioPath = mdFile.path.replaceAll(
-      '.md',
-      isOmiDevice ? '.wav' : '.m4a',
-    );
-
-    return Recording(
-      id: frontmatter['id']?.toString() ?? '',
-      title: frontmatter['title']?.toString() ?? 'Untitled',
-      filePath: audioPath,
-      timestamp: DateTime.parse(
-        frontmatter['created']?.toString() ?? DateTime.now().toIso8601String(),
-      ),
-      duration: Duration(seconds: frontmatter['duration'] ?? 0),
-      tags: (frontmatter['tags'] as List<dynamic>?)?.cast<String>() ?? [],
-      transcript: bodyContent,
-      fileSizeKB: (frontmatter['fileSize'] ?? 0).toDouble(),
-      source: isOmiDevice ? RecordingSource.omiDevice : RecordingSource.phone,
-      deviceId: frontmatter['deviceId']?.toString(),
-      buttonTapCount: frontmatter['buttonTapCount'] as int?,
-    );
-  }
-
-  /// Simple YAML frontmatter parser
-  Map<String, dynamic> _parseYamlFrontmatter(String yaml) {
-    final result = <String, dynamic>{};
-    final lines = yaml.trim().split('\n');
-
-    String? currentKey;
-    List<String>? currentList;
-
-    for (final line in lines) {
-      final trimmed = line.trim();
-      if (trimmed.isEmpty) continue;
-
-      if (trimmed.startsWith('- ')) {
-        // List item
-        if (currentList != null && currentKey != null) {
-          currentList.add(trimmed.substring(2));
-        }
-      } else if (trimmed.endsWith(':')) {
-        // Key with list value
-        currentKey = trimmed.substring(0, trimmed.length - 1);
-        currentList = [];
-        result[currentKey] = currentList;
-      } else if (trimmed.contains(':')) {
-        // Key-value pair
-        final parts = trimmed.split(':');
-        if (parts.length >= 2) {
-          final key = parts[0].trim();
-          final value = parts.sublist(1).join(':').trim();
-
-          // Try to parse as number
-          if (int.tryParse(value) != null) {
-            result[key] = int.parse(value);
-          } else if (double.tryParse(value) != null) {
-            result[key] = double.parse(value);
-          } else {
-            result[key] = value;
-          }
-
-          currentKey = null;
-          currentList = null;
-        }
-      }
-    }
-
-    return result;
-  }
-
-  /// Save a recording - uploads to backend and returns the backend-assigned ID
-  /// Returns null if upload fails
+  /// Save a recording - LOCAL-FIRST, backend sync is optional
+  /// Returns the recording ID (timestamp-based for local files)
+  ///
+  /// NOTE: Backend sync is being deprecated in favor of Git-based sync.
+  /// This method now primarily ensures the recording exists in local filesystem.
   Future<String?> saveRecording(Recording recording) async {
     if (!_isInitialized && _initializationFuture == null) {
       await initialize();
     }
 
     try {
-      debugPrint(
-        '[StorageService] Uploading recording to backend: ${recording.id}',
-      );
-
       // Check if audio file exists locally
       final audioFile = File(recording.filePath);
       if (!await audioFile.exists()) {
@@ -296,34 +308,38 @@ class StorageService {
         return null;
       }
 
-      // Upload to backend
-      final response = await _fileSyncService.uploadRecording(
-        audioFile: audioFile,
-        timestamp: recording.timestamp,
-        source: recording.source == RecordingSource.omiDevice
-            ? 'OmiDevice'
-            : 'Phone',
-        duration: recording.duration.inSeconds.toDouble(),
-        deviceId: recording.deviceId,
+      // Ensure the recording is saved to captures folder
+      final capturesPath = await _fileSystem.getCapturesPath();
+      final timestamp = FileSystemService.formatTimestampForFilename(
+        recording.timestamp,
       );
 
-      debugPrint(
-        '[StorageService] Upload successful: ${response.id} at ${response.path}',
-      );
+      // Save markdown file with transcript
+      final mdPath = p.join(capturesPath, '$timestamp.md');
+      final mdFile = File(mdPath);
 
-      // If transcript exists, upload it too
-      if (recording.transcript.isNotEmpty) {
-        await uploadTranscript(
-          filename: p.basename(response.path),
-          transcript: recording.transcript,
-          transcriptionMode: await getTranscriptionMode(),
-          title: recording.title,
-        );
+      if (!await mdFile.exists()) {
+        final markdown = _generateMarkdown(recording);
+        await mdFile.writeAsString(markdown);
+        debugPrint('[StorageService] Saved recording locally: $mdPath');
       }
 
-      return response.id; // Return the backend-assigned ID
+      // Copy audio file if not already in captures folder
+      final audioDestPath = p.join(capturesPath, '$timestamp.wav');
+      if (recording.filePath != audioDestPath &&
+          !await File(audioDestPath).exists()) {
+        await audioFile.copy(audioDestPath);
+        debugPrint('[StorageService] Copied audio to: $audioDestPath');
+      }
+
+      // Backend sync is optional and will be handled by Git sync in the future
+      debugPrint(
+        '[StorageService] Recording saved locally (backend sync deprecated)',
+      );
+
+      return timestamp; // Return timestamp as ID for local-first architecture
     } catch (e) {
-      debugPrint('[StorageService] Error uploading recording: $e');
+      debugPrint('[StorageService] Error saving recording locally: $e');
       return null;
     }
   }

@@ -5,7 +5,7 @@ import 'package:app/features/recorder/models/recording.dart';
 import 'package:app/features/recorder/providers/service_providers.dart';
 import 'package:app/features/recorder/providers/omi_providers.dart';
 import 'package:app/features/recorder/screens/recording_detail_screen.dart';
-import 'package:app/features/recorder/screens/recording_screen.dart';
+import 'package:app/features/recorder/screens/live_recording_screen.dart';
 import 'package:app/features/recorder/utils/platform_utils.dart';
 import 'package:app/features/settings/screens/settings_screen.dart';
 import 'package:app/features/recorder/widgets/recording_tile.dart';
@@ -128,9 +128,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   Future<void> _startRecording() async {
-    await Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (context) => const RecordingScreen()));
+    // Use new live recording screen with journal-style interface
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (context) => const LiveRecordingScreen()),
+    );
     // Always refresh when returning from recording flow
     _refreshRecordings();
   }
