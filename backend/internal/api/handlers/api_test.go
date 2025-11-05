@@ -32,10 +32,12 @@ func setupTestApp(t *testing.T) (*fiber.App, *sqlite.Database) {
 	// Initialize services
 	spaceService := space.NewService(spaceRepo, "/tmp/parachute-test")
 	conversationService := conversation.NewService(conversationRepo)
+	spaceDBService := space.NewSpaceDatabaseService("/tmp/parachute-test")
+	contextService := space.NewContextService(spaceDBService)
 
 	// Initialize handlers
 	spaceHandler := handlers.NewSpaceHandler(spaceService)
-	messageHandler := handlers.NewMessageHandler(conversationService, spaceService, nil, nil) // No ACP or WebSocket for tests
+	messageHandler := handlers.NewMessageHandler(conversationService, spaceService, contextService, nil, nil) // No ACP or WebSocket for tests
 
 	// Create Fiber app
 	app := fiber.New()

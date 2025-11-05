@@ -289,7 +289,10 @@ func TestFindAllowOption(t *testing.T) {
 
 func TestPermissionResponseSerialization(t *testing.T) {
 	resp := PermissionResponse{
-		OptionID: "allow",
+		Outcome: PermissionOutcome{
+			Outcome:  "selected",
+			OptionID: "allow",
+		},
 	}
 
 	data, err := json.Marshal(resp)
@@ -297,7 +300,7 @@ func TestPermissionResponseSerialization(t *testing.T) {
 		t.Fatalf("Failed to marshal PermissionResponse: %v", err)
 	}
 
-	expected := `{"optionId":"allow"}`
+	expected := `{"outcome":{"outcome":"selected","optionId":"allow"}}`
 	if string(data) != expected {
 		t.Errorf("Marshaled JSON = %s, want %s", string(data), expected)
 	}
@@ -308,7 +311,10 @@ func TestPermissionResponseSerialization(t *testing.T) {
 		t.Fatalf("Failed to unmarshal PermissionResponse: %v", err)
 	}
 
-	if decoded.OptionID != resp.OptionID {
-		t.Errorf("Decoded optionId = %s, want %s", decoded.OptionID, resp.OptionID)
+	if decoded.Outcome.OptionID != resp.Outcome.OptionID {
+		t.Errorf("Decoded optionId = %s, want %s", decoded.Outcome.OptionID, resp.Outcome.OptionID)
+	}
+	if decoded.Outcome.Outcome != resp.Outcome.Outcome {
+		t.Errorf("Decoded outcome = %s, want %s", decoded.Outcome.Outcome, resp.Outcome.Outcome)
 	}
 }

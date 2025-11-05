@@ -84,7 +84,10 @@ func TestPermissionResponseMarshaling(t *testing.T) {
 		"jsonrpc": "2.0",
 		"id":      0,
 		"result": PermissionResponse{
-			OptionID: "allow",
+			Outcome: PermissionOutcome{
+				Outcome:  "selected",
+				OptionID: "allow",
+			},
 		},
 	}
 
@@ -93,7 +96,7 @@ func TestPermissionResponseMarshaling(t *testing.T) {
 		t.Fatalf("Failed to marshal response: %v", err)
 	}
 
-	expected := `{"id":0,"jsonrpc":"2.0","result":{"optionId":"allow"}}`
+	expected := `{"id":0,"jsonrpc":"2.0","result":{"outcome":{"outcome":"selected","optionId":"allow"}}}`
 
 	// JSON field order doesn't matter, so let's unmarshal and compare
 	var got, want map[string]interface{}
