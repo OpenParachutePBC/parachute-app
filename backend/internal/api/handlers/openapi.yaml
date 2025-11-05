@@ -64,7 +64,7 @@ paths:
       tags:
         - Health
       responses:
-        '200':
+        "200":
           description: Server is healthy
           content:
             application/json:
@@ -82,7 +82,7 @@ paths:
       tags:
         - Spaces
       responses:
-        '200':
+        "200":
           description: List of spaces
           content:
             application/json:
@@ -92,9 +92,9 @@ paths:
                   spaces:
                     type: array
                     items:
-                      $ref: '#/components/schemas/Space'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+                      $ref: "#/components/schemas/Space"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
     post:
       summary: Create a new space
@@ -106,18 +106,18 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateSpaceParams'
+              $ref: "#/components/schemas/CreateSpaceParams"
       responses:
-        '201':
+        "201":
           description: Space created successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Space'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+                $ref: "#/components/schemas/Space"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /api/spaces/{id}:
     get:
@@ -126,18 +126,18 @@ paths:
       tags:
         - Spaces
       parameters:
-        - $ref: '#/components/parameters/SpaceID'
+        - $ref: "#/components/parameters/SpaceID"
       responses:
-        '200':
+        "200":
           description: Space details
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Space'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+                $ref: "#/components/schemas/Space"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
     put:
       summary: Update a space
@@ -145,26 +145,26 @@ paths:
       tags:
         - Spaces
       parameters:
-        - $ref: '#/components/parameters/SpaceID'
+        - $ref: "#/components/parameters/SpaceID"
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/UpdateSpaceParams'
+              $ref: "#/components/schemas/UpdateSpaceParams"
       responses:
-        '200':
+        "200":
           description: Space updated successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Space'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+                $ref: "#/components/schemas/Space"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
     delete:
       summary: Delete a space
@@ -172,14 +172,14 @@ paths:
       tags:
         - Spaces
       parameters:
-        - $ref: '#/components/parameters/SpaceID'
+        - $ref: "#/components/parameters/SpaceID"
       responses:
-        '204':
+        "204":
           description: Space deleted successfully
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /api/spaces/{id}/notes:
     get:
@@ -188,7 +188,7 @@ paths:
       tags:
         - Space Notes
       parameters:
-        - $ref: '#/components/parameters/SpaceID'
+        - $ref: "#/components/parameters/SpaceID"
         - name: tags
           in: query
           description: Filter by tags (comma-separated)
@@ -223,7 +223,7 @@ paths:
             default: 0
             minimum: 0
       responses:
-        '200':
+        "200":
           description: List of notes
           content:
             application/json:
@@ -233,16 +233,16 @@ paths:
                   notes:
                     type: array
                     items:
-                      $ref: '#/components/schemas/RelevantNote'
+                      $ref: "#/components/schemas/RelevantNote"
                   total:
                     type: integer
                     example: 42
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
     post:
       summary: Link a note to a space
@@ -250,15 +250,15 @@ paths:
       tags:
         - Space Notes
       parameters:
-        - $ref: '#/components/parameters/SpaceID'
+        - $ref: "#/components/parameters/SpaceID"
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/LinkNoteRequest'
+              $ref: "#/components/schemas/LinkNoteRequest"
       responses:
-        '201':
+        "201":
           description: Note linked successfully
           content:
             application/json:
@@ -272,12 +272,12 @@ paths:
                     type: string
                   capture_id:
                     type: string
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /api/spaces/{id}/notes/{capture_id}:
     put:
@@ -286,7 +286,7 @@ paths:
       tags:
         - Space Notes
       parameters:
-        - $ref: '#/components/parameters/SpaceID'
+        - $ref: "#/components/parameters/SpaceID"
         - name: capture_id
           in: path
           required: true
@@ -298,9 +298,9 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/UpdateNoteContextRequest'
+              $ref: "#/components/schemas/UpdateNoteContextRequest"
       responses:
-        '200':
+        "200":
           description: Note context updated successfully
           content:
             application/json:
@@ -314,12 +314,12 @@ paths:
                     type: string
                   capture_id:
                     type: string
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
     delete:
       summary: Unlink a note from a space
@@ -327,7 +327,7 @@ paths:
       tags:
         - Space Notes
       parameters:
-        - $ref: '#/components/parameters/SpaceID'
+        - $ref: "#/components/parameters/SpaceID"
         - name: capture_id
           in: path
           required: true
@@ -335,7 +335,7 @@ paths:
           schema:
             type: string
       responses:
-        '200':
+        "200":
           description: Note unlinked successfully
           content:
             application/json:
@@ -349,12 +349,12 @@ paths:
                     type: string
                   capture_id:
                     type: string
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /api/spaces/{id}/notes/{capture_id}/content:
     get:
@@ -363,7 +363,7 @@ paths:
       tags:
         - Space Notes
       parameters:
-        - $ref: '#/components/parameters/SpaceID'
+        - $ref: "#/components/parameters/SpaceID"
         - name: capture_id
           in: path
           required: true
@@ -371,7 +371,7 @@ paths:
           schema:
             type: string
       responses:
-        '200':
+        "200":
           description: Note content
           content:
             application/json:
@@ -397,12 +397,12 @@ paths:
                   last_referenced:
                     type: string
                     format: date-time
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /api/spaces/{id}/database/stats:
     get:
@@ -411,20 +411,20 @@ paths:
       tags:
         - Space Notes
       parameters:
-        - $ref: '#/components/parameters/SpaceID'
+        - $ref: "#/components/parameters/SpaceID"
       responses:
-        '200':
+        "200":
           description: Database statistics
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DatabaseStats'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+                $ref: "#/components/schemas/DatabaseStats"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /api/spaces/{id}/database/tables/{table_name}:
     get:
@@ -433,7 +433,7 @@ paths:
       tags:
         - Space Notes
       parameters:
-        - $ref: '#/components/parameters/SpaceID'
+        - $ref: "#/components/parameters/SpaceID"
         - name: table_name
           in: path
           required: true
@@ -442,7 +442,7 @@ paths:
             type: string
             example: "relevant_notes"
       responses:
-        '200':
+        "200":
           description: Table data
           content:
             application/json:
@@ -458,12 +458,12 @@ paths:
                     items:
                       type: array
                       items: {}
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /api/conversations:
     get:
@@ -479,7 +479,7 @@ paths:
           schema:
             type: string
       responses:
-        '200':
+        "200":
           description: List of conversations
           content:
             application/json:
@@ -489,11 +489,11 @@ paths:
                   conversations:
                     type: array
                     items:
-                      $ref: '#/components/schemas/Conversation'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+                      $ref: "#/components/schemas/Conversation"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
     post:
       summary: Create a new conversation
@@ -505,18 +505,18 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateConversationParams'
+              $ref: "#/components/schemas/CreateConversationParams"
       responses:
-        '201':
+        "201":
           description: Conversation created successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Conversation'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+                $ref: "#/components/schemas/Conversation"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /api/conversations/{id}:
     get:
@@ -532,16 +532,16 @@ paths:
           schema:
             type: string
       responses:
-        '200':
+        "200":
           description: Conversation details
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Conversation'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+                $ref: "#/components/schemas/Conversation"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
     put:
       summary: Update a conversation
@@ -566,18 +566,18 @@ paths:
                   type: string
                   example: "Updated Title"
       responses:
-        '200':
+        "200":
           description: Conversation updated successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Conversation'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+                $ref: "#/components/schemas/Conversation"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
     delete:
       summary: Delete a conversation
@@ -592,12 +592,12 @@ paths:
           schema:
             type: string
       responses:
-        '204':
+        "204":
           description: Conversation deleted successfully
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /api/messages:
     get:
@@ -613,7 +613,7 @@ paths:
           schema:
             type: string
       responses:
-        '200':
+        "200":
           description: List of messages
           content:
             application/json:
@@ -623,11 +623,11 @@ paths:
                   messages:
                     type: array
                     items:
-                      $ref: '#/components/schemas/Message'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+                      $ref: "#/components/schemas/Message"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
     post:
       summary: Send a message
@@ -646,20 +646,20 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/SendMessageRequest'
+              $ref: "#/components/schemas/SendMessageRequest"
       responses:
-        '201':
+        "201":
           description: User message created successfully (assistant response will stream via WebSocket)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Message'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+                $ref: "#/components/schemas/Message"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /api/captures/upload:
     post:
@@ -698,7 +698,7 @@ paths:
                   description: Device ID
                   example: "omi-123456"
       responses:
-        '201':
+        "201":
           description: Capture uploaded successfully
           content:
             application/json:
@@ -716,12 +716,37 @@ paths:
                   createdAt:
                     type: string
                     format: date-time
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /api/captures/{filename}/transcript:
+    get:
+      summary: Get capture transcript
+      description: Returns transcript markdown
+      tags:
+        - Captures
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          description: Audio filename
+          schema:
+            type: string
+            example: "2025-10-26_00-00-17.wav"
+      responses:
+        "200":
+          description: Transcript markdown
+          content:
+            text/markdown:
+              schema:
+                type: string
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
     post:
       summary: Upload transcript for a capture
       description: Uploads transcript text generated from audio
@@ -740,9 +765,9 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/TranscriptData'
+              $ref: "#/components/schemas/TranscriptData"
       responses:
-        '200':
+        "200":
           description: Transcript uploaded successfully
           content:
             application/json:
@@ -755,10 +780,10 @@ paths:
                   transcriptPath:
                     type: string
                     example: "captures/2025-10-26_00-00-17.md"
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /api/captures:
     get:
@@ -783,7 +808,7 @@ paths:
             default: 0
             minimum: 0
       responses:
-        '200':
+        "200":
           description: List of captures
           content:
             application/json:
@@ -793,7 +818,7 @@ paths:
                   captures:
                     type: array
                     items:
-                      $ref: '#/components/schemas/CaptureMetadata'
+                      $ref: "#/components/schemas/CaptureMetadata"
                   total:
                     type: integer
                   limit:
@@ -802,8 +827,8 @@ paths:
                     type: integer
                   hasMore:
                     type: boolean
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /api/captures/{filename}:
     get:
@@ -820,17 +845,17 @@ paths:
             type: string
             example: "2025-10-26_00-00-17.wav"
       responses:
-        '200':
+        "200":
           description: Audio file
           content:
             audio/wav:
               schema:
                 type: string
                 format: binary
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
     delete:
       summary: Delete a capture
@@ -846,7 +871,7 @@ paths:
             type: string
             example: "2025-10-26_00-00-17.wav"
       responses:
-        '200':
+        "200":
           description: Capture deleted successfully
           content:
             application/json:
@@ -856,36 +881,10 @@ paths:
                   success:
                     type: boolean
                     example: true
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
-
-  /api/captures/{filename}/transcript:
-    get:
-      summary: Get capture transcript
-      description: Returns transcript markdown
-      tags:
-        - Captures
-      parameters:
-        - name: filename
-          in: path
-          required: true
-          description: Audio filename
-          schema:
-            type: string
-            example: "2025-10-26_00-00-17.wav"
-      responses:
-        '200':
-          description: Transcript markdown
-          content:
-            text/markdown:
-              schema:
-                type: string
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /api/files/browse:
     get:
@@ -901,16 +900,16 @@ paths:
             type: string
             example: "spaces/my-project"
       responses:
-        '200':
+        "200":
           description: File listing
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/BrowseResult'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+                $ref: "#/components/schemas/BrowseResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /api/files/read:
     get:
@@ -927,7 +926,7 @@ paths:
             type: string
             example: "spaces/my-project/CLAUDE.md"
       responses:
-        '200':
+        "200":
           description: File content
           content:
             application/json:
@@ -938,12 +937,12 @@ paths:
                     type: string
                   content:
                     type: string
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /api/files/download:
     get:
@@ -960,19 +959,19 @@ paths:
             type: string
             example: "captures/2025-10-26_00-00-17.wav"
       responses:
-        '200':
+        "200":
           description: File download
           content:
             application/octet-stream:
               schema:
                 type: string
                 format: binary
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /api/registry/spaces:
     get:
@@ -981,7 +980,7 @@ paths:
       tags:
         - Registry
       responses:
-        '200':
+        "200":
           description: List of registered spaces
           content:
             application/json:
@@ -991,9 +990,9 @@ paths:
                   spaces:
                     type: array
                     items:
-                      $ref: '#/components/schemas/RegistrySpace'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+                      $ref: "#/components/schemas/RegistrySpace"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
     post:
       summary: Create a new space in registry
@@ -1005,18 +1004,18 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateRegistrySpaceParams'
+              $ref: "#/components/schemas/CreateRegistrySpaceParams"
       responses:
-        '201':
+        "201":
           description: Space created successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RegistrySpace'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+                $ref: "#/components/schemas/RegistrySpace"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /api/registry/spaces/add:
     post:
@@ -1029,18 +1028,18 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/AddRegistrySpaceParams'
+              $ref: "#/components/schemas/AddRegistrySpaceParams"
       responses:
-        '201':
+        "201":
           description: Space added successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RegistrySpace'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+                $ref: "#/components/schemas/RegistrySpace"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /api/registry/spaces/{id}:
     get:
@@ -1056,16 +1055,16 @@ paths:
           schema:
             type: string
       responses:
-        '200':
+        "200":
           description: Space details
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RegistrySpace'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+                $ref: "#/components/schemas/RegistrySpace"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
     delete:
       summary: Remove space from registry
@@ -1080,7 +1079,7 @@ paths:
           schema:
             type: string
       responses:
-        '200':
+        "200":
           description: Space removed successfully
           content:
             application/json:
@@ -1093,10 +1092,10 @@ paths:
                   message:
                     type: string
                     example: "Space removed from registry (folder not deleted)"
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /api/registry/captures:
     get:
@@ -1105,7 +1104,7 @@ paths:
       tags:
         - Registry
       responses:
-        '200':
+        "200":
           description: List of registered captures
           content:
             application/json:
@@ -1115,9 +1114,9 @@ paths:
                   captures:
                     type: array
                     items:
-                      $ref: '#/components/schemas/RegistryCapture'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+                      $ref: "#/components/schemas/RegistryCapture"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
     post:
       summary: Add capture to registry
@@ -1129,18 +1128,18 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/AddCaptureParams'
+              $ref: "#/components/schemas/AddCaptureParams"
       responses:
-        '201':
+        "201":
           description: Capture added successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RegistryCapture'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+                $ref: "#/components/schemas/RegistryCapture"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /api/registry/captures/{id}:
     get:
@@ -1156,16 +1155,16 @@ paths:
           schema:
             type: string
       responses:
-        '200':
+        "200":
           description: Capture details
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RegistryCapture'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+                $ref: "#/components/schemas/RegistryCapture"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /api/registry/settings:
     get:
@@ -1174,7 +1173,7 @@ paths:
       tags:
         - Registry
       responses:
-        '200':
+        "200":
           description: Settings
           content:
             application/json:
@@ -1187,8 +1186,8 @@ paths:
                   spaces_folder:
                     type: string
                     example: "spaces"
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /api/registry/settings/{key}:
     put:
@@ -1217,7 +1216,7 @@ paths:
                   type: string
                   example: "recordings"
       responses:
-        '200':
+        "200":
           description: Setting updated successfully
           content:
             application/json:
@@ -1231,10 +1230,10 @@ paths:
                     type: string
                   value:
                     type: string
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /ws:
     get:
@@ -1290,7 +1289,7 @@ paths:
       tags:
         - WebSocket
       responses:
-        '101':
+        "101":
           description: Switching Protocols - WebSocket connection established
 
 components:
@@ -1683,7 +1682,7 @@ components:
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/Error'
+            $ref: "#/components/schemas/Error"
           example:
             error: "Invalid request body"
 
@@ -1692,7 +1691,7 @@ components:
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/Error'
+            $ref: "#/components/schemas/Error"
           example:
             error: "Resource not found"
 
@@ -1701,6 +1700,6 @@ components:
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/Error'
+            $ref: "#/components/schemas/Error"
           example:
             error: "Internal server error"
