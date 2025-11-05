@@ -38,8 +38,23 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
   }
 
   void _startPeriodicRefresh() {
-    // Refresh every 2 seconds to update processing status
-    _refreshTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
+    // Only refresh while processing is happening
+    // Stop once both transcription and title generation are complete or failed
+    _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
+      // Check if we still need to refresh
+      final isProcessing =
+          _recording.transcriptionStatus == ProcessingStatus.pending ||
+          _recording.transcriptionStatus == ProcessingStatus.processing ||
+          _recording.titleGenerationStatus == ProcessingStatus.pending ||
+          _recording.titleGenerationStatus == ProcessingStatus.processing;
+
+      if (!isProcessing) {
+        // Processing complete, stop refreshing
+        _refreshTimer?.cancel();
+        return;
+      }
+
+      // Fetch updated recording from backend
       final updated = await ref
           .read(storageServiceProvider)
           .getRecording(_recording.id);

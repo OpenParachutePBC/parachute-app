@@ -23,6 +23,7 @@ type CaptureMetadata struct {
 
 // CaptureInfo represents a summary of a capture for listing
 type CaptureInfo struct {
+	ID            string    `json:"id"`
 	Filename      string    `json:"filename"`
 	Title         string    `json:"title,omitempty"`
 	Timestamp     time.Time `json:"timestamp"`

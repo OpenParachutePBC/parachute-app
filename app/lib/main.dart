@@ -53,7 +53,8 @@ void main() async {
       }
 
       debugPrint('[Main] Initializing Opus codec...');
-      opus_dart.initOpus(loadedLib);
+      // Cast to dynamic to work around static analysis issue with conditional exports
+      opus_dart.initOpus(loadedLib as dynamic);
       debugPrint('[Main] ✅ Opus codec initialized successfully');
     } else {
       // Use opus_flutter for supported platforms (Android, iOS, Windows)

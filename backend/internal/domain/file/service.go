@@ -160,6 +160,7 @@ func (s *Service) ListCaptures(limit, offset int) ([]CaptureInfo, int, error) {
 		}
 
 		captureInfo := CaptureInfo{
+			ID:            metadata.ID,
 			Filename:      metadata.Filename,
 			Timestamp:     metadata.Timestamp,
 			Duration:      metadata.Duration,

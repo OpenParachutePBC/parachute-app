@@ -199,8 +199,6 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
       final fileSizeKB = await ref
           .read(audioServiceProvider)
           .getFileSizeKB(recordingPath);
-      final fileName = recordingPath.split('/').last;
-      final recordingId = fileName.replaceAll('.m4a', '').split('-').last;
 
       // Get services before navigation to avoid ref disposal issues
       final storageService = ref.read(storageServiceProvider);
@@ -208,8 +206,9 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
       final whisperService = ref.read(whisperServiceProvider);
       final titleService = ref.read(titleGenerationServiceProvider);
 
-      final recording = Recording(
-        id: recordingId,
+      // Create a temporary recording with a placeholder ID
+      final tempRecording = Recording(
+        id: 'temp-${DateTime.now().millisecondsSinceEpoch}',
         title: title,
         filePath: recordingPath,
         timestamp: DateTime.now(),
@@ -219,16 +218,19 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
         fileSizeKB: fileSizeKB,
       );
 
-      await storageService.saveRecording(recording);
+      // Upload to backend and get the real ID
+      final backendId = await storageService.saveRecording(tempRecording);
+      if (backendId == null) {
+        throw Exception('Failed to upload recording to backend');
+      }
 
       debugPrint(
-        '[RecordingScreen] ✅ Recording saved, starting background processing...',
+        '[RecordingScreen] ✅ Recording saved with ID: $backendId, starting background processing...',
       );
 
       // Start background processing (fire and forget)
-
       _startBackgroundProcessing(
-        recordingId,
+        backendId,
         recordingPath,
         storageService,
         whisperLocalService,
@@ -237,6 +239,14 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
       ).catchError((e) {
         debugPrint('[RecordingScreen] ❌ Background processing failed: $e');
       });
+
+      // Update the recording object with the backend ID and processing status
+      // It will be refreshed from backend on the detail page
+      final recordingForNav = tempRecording.copyWith(
+        id: backendId,
+        transcriptionStatus: ProcessingStatus.pending,
+        titleGenerationStatus: ProcessingStatus.pending,
+      );
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -249,7 +259,8 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
         // Navigate to recording detail page
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(
-            builder: (context) => RecordingDetailScreen(recording: recording),
+            builder: (context) =>
+                RecordingDetailScreen(recording: recordingForNav),
           ),
         );
       }
@@ -326,15 +337,28 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
         '[RecordingScreen] ✅ Transcription complete: ${transcript.length} chars',
       );
 
+      // Fetch fresh recording data to ensure we have the latest
+      recording = await storageService.getRecording(recordingId);
+      if (recording == null) {
+        debugPrint('[RecordingScreen] ❌ Recording not found: $recordingId');
+        return;
+      }
+
       // Update with transcript first
-      recording = recording?.copyWith(
+      recording = recording.copyWith(
         transcript: transcript,
         transcriptionStatus: ProcessingStatus.completed,
         titleGenerationStatus: ProcessingStatus.processing,
       );
-      if (recording != null) {
-        await storageService.updateRecording(recording);
+
+      debugPrint(
+        '[RecordingScreen] 💾 Saving transcript (${transcript.length} chars)...',
+      );
+      final success = await storageService.updateRecording(recording);
+      if (success) {
         debugPrint('[RecordingScreen] ✅ Transcript saved');
+      } else {
+        debugPrint('[RecordingScreen] ❌ Failed to save transcript');
       }
 
       // Check if title generation is enabled

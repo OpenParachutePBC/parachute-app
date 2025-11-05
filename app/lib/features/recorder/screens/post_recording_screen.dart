@@ -417,10 +417,11 @@ class _PostRecordingScreenState extends ConsumerState<PostRecordingScreen> {
       // Extract recording ID from the file path
       // Path format: /path/to/2025-10-06-1759784172526.m4a
       final fileName = widget.recordingPath.split('/').last;
-      final recordingId = fileName.replaceAll('.m4a', '').split('-').last;
+      // Create temporary recording with placeholder ID
+      final tempId = 'temp-${DateTime.now().millisecondsSinceEpoch}';
 
       final recording = Recording(
-        id: recordingId,
+        id: tempId,
         title: _titleController.text.trim().isNotEmpty
             ? _titleController.text.trim()
             : 'Untitled Recording',
@@ -432,11 +433,12 @@ class _PostRecordingScreenState extends ConsumerState<PostRecordingScreen> {
         fileSizeKB: fileSizeKB,
       );
 
-      final success = await ref
+      // Upload and get backend-assigned ID
+      final backendId = await ref
           .read(storageServiceProvider)
           .saveRecording(recording);
 
-      if (success && mounted) {
+      if (backendId != null && mounted) {
         // Show success message first
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Recording saved successfully')),

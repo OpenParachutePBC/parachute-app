@@ -275,8 +275,9 @@ class StorageService {
     return result;
   }
 
-  /// Save a recording - uploads to backend and optionally keeps local cache
-  Future<bool> saveRecording(Recording recording) async {
+  /// Save a recording - uploads to backend and returns the backend-assigned ID
+  /// Returns null if upload fails
+  Future<String?> saveRecording(Recording recording) async {
     if (!_isInitialized && _initializationFuture == null) {
       await initialize();
     }
@@ -292,7 +293,7 @@ class StorageService {
         debugPrint(
           '[StorageService] Audio file not found: ${recording.filePath}',
         );
-        return false;
+        return null;
       }
 
       // Upload to backend
@@ -306,7 +307,9 @@ class StorageService {
         deviceId: recording.deviceId,
       );
 
-      debugPrint('[StorageService] Upload successful: ${response.path}');
+      debugPrint(
+        '[StorageService] Upload successful: ${response.id} at ${response.path}',
+      );
 
       // If transcript exists, upload it too
       if (recording.transcript.isNotEmpty) {
@@ -318,10 +321,10 @@ class StorageService {
         );
       }
 
-      return true;
+      return response.id; // Return the backend-assigned ID
     } catch (e) {
       debugPrint('[StorageService] Error uploading recording: $e');
-      return false;
+      return null;
     }
   }
 
@@ -395,8 +398,41 @@ class StorageService {
 
   /// Update an existing recording
   Future<bool> updateRecording(Recording updatedRecording) async {
-    // For file-based system, updating is the same as saving
-    return await saveRecording(updatedRecording);
+    try {
+      debugPrint('[StorageService] Updating recording: ${updatedRecording.id}');
+
+      // Extract filename from URL or path
+      final filename = p.basename(updatedRecording.filePath);
+
+      // If transcript exists, upload it
+      if (updatedRecording.transcript.isNotEmpty) {
+        debugPrint(
+          '[StorageService] Uploading transcript for $filename (${updatedRecording.transcript.length} chars)',
+        );
+
+        final transcriptionMode = await getTranscriptionMode();
+        final success = await uploadTranscript(
+          filename: filename,
+          transcript: updatedRecording.transcript,
+          transcriptionMode: transcriptionMode,
+          title: updatedRecording.title,
+        );
+
+        if (success) {
+          debugPrint('[StorageService] ✅ Transcript uploaded successfully');
+        } else {
+          debugPrint('[StorageService] ❌ Transcript upload failed');
+        }
+
+        return success;
+      }
+
+      debugPrint('[StorageService] No transcript to upload');
+      return true;
+    } catch (e) {
+      debugPrint('[StorageService] Error updating recording: $e');
+      return false;
+    }
   }
 
   /// Delete a recording from backend
@@ -443,10 +479,19 @@ class StorageService {
 
   /// Get a single recording by ID
   Future<Recording?> getRecording(String recordingId) async {
+    debugPrint('[StorageService] Looking for recording with ID: $recordingId');
     final recordings = await getRecordings();
     try {
-      return recordings.firstWhere((r) => r.id == recordingId);
+      final found = recordings.firstWhere((r) => r.id == recordingId);
+      debugPrint('[StorageService] Found recording: ${found.id}');
+      return found;
     } catch (e) {
+      debugPrint(
+        '[StorageService] Recording not found in list of ${recordings.length} recordings',
+      );
+      debugPrint(
+        '[StorageService] Available IDs: ${recordings.map((r) => r.id).take(5).join(", ")}...',
+      );
       return null;
     }
   }
