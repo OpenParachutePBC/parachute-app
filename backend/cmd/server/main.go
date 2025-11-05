@@ -137,6 +137,7 @@ func main() {
 	spaceHandler := handlers.NewSpaceHandler(spaceService)
 	fileHandler := handlers.NewFileHandler(fileService)
 	spaceNotesHandler := handlers.NewSpaceNotesHandler(spaceService, spaceDBService)
+	swaggerHandler := handlers.NewSwaggerHandler()
 
 	// Initialize WebSocket handler if ACP is available
 	var wsHandler *handlers.WebSocketHandler
@@ -182,6 +183,10 @@ func main() {
 
 	// API routes
 	api := app.Group("/api")
+
+	// API documentation routes
+	api.Get("/docs", swaggerHandler.ServeUI)
+	api.Get("/docs/openapi.yaml", swaggerHandler.ServeSpec)
 
 	// Registry routes (new flexible architecture)
 	registry := api.Group("/registry")

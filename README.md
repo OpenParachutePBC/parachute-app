@@ -111,6 +111,7 @@ The app includes three main features accessible via bottom navigation:
 ## Documentation
 
 - **[Architecture](ARCHITECTURE.md)** - System design and technical decisions
+- **[API Documentation](http://localhost:8080/api/docs)** - Interactive REST API documentation (Swagger UI)
 - **[Branding](docs/BRANDING.md)** - Brand identity and philosophy
 - **[Launch Guide](docs/LAUNCH-GUIDE.md)** - Comprehensive implementation guide
 - **[Setup Guide](docs/SETUP.md)** - Environment setup instructions

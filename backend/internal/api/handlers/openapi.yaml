@@ -1,0 +1,1706 @@
+openapi: 3.0.3
+info:
+  title: Parachute API
+  description: |
+    REST API for Parachute - A second brain app with Claude AI integration.
+
+    Parachute provides a local-first, vault-based system for managing AI conversations,
+    voice recordings, and knowledge across multiple spaces. Each space acts as a cognitive
+    context with its own CLAUDE.md system prompt and SQLite knowledge database.
+
+    ## Architecture
+    - **Backend**: Go (Fiber v3) + SQLite
+    - **Frontend**: Flutter + Riverpod
+    - **AI Integration**: Claude via Agent Client Protocol (ACP)
+    - **Data Storage**: Local vault (default: ~/Parachute/)
+
+    ## Key Concepts
+    - **Spaces**: Cognitive contexts with conversations and linked notes
+    - **Captures**: Voice recordings with transcripts
+    - **Conversations**: Chat sessions with Claude within a space
+    - **Messages**: User and assistant messages in conversations
+    - **Registry**: Global index of spaces and captures
+
+    ## Authentication
+    Currently uses ANTHROPIC_API_KEY environment variable or ~/.claude/.credentials.json
+
+  version: 1.0.0
+  contact:
+    name: Parachute Support
+    url: https://github.com/ParachuteLabs/parachute
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+
+tags:
+  - name: Health
+    description: Health check endpoints
+  - name: Spaces
+    description: Space management (cognitive contexts)
+  - name: Space Notes
+    description: Link and manage notes within spaces
+  - name: Conversations
+    description: Conversation management
+  - name: Messages
+    description: Message handling and streaming
+  - name: Captures
+    description: Voice recording upload and management
+  - name: Files
+    description: File browsing and download
+  - name: Registry
+    description: Global registry for spaces and captures
+  - name: WebSocket
+    description: Real-time message streaming
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      description: Returns server health status
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ok"
+
+  /api/spaces:
+    get:
+      summary: List all spaces
+      description: Returns all spaces for the authenticated user
+      tags:
+        - Spaces
+      responses:
+        '200':
+          description: List of spaces
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  spaces:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Space'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    post:
+      summary: Create a new space
+      description: Creates a new space with optional icon and color
+      tags:
+        - Spaces
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSpaceParams'
+      responses:
+        '201':
+          description: Space created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Space'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/spaces/{id}:
+    get:
+      summary: Get a space by ID
+      description: Returns a single space
+      tags:
+        - Spaces
+      parameters:
+        - $ref: '#/components/parameters/SpaceID'
+      responses:
+        '200':
+          description: Space details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Space'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    put:
+      summary: Update a space
+      description: Updates space name, icon, or color
+      tags:
+        - Spaces
+      parameters:
+        - $ref: '#/components/parameters/SpaceID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSpaceParams'
+      responses:
+        '200':
+          description: Space updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Space'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    delete:
+      summary: Delete a space
+      description: Deletes a space and its data
+      tags:
+        - Spaces
+      parameters:
+        - $ref: '#/components/parameters/SpaceID'
+      responses:
+        '204':
+          description: Space deleted successfully
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/spaces/{id}/notes:
+    get:
+      summary: Get notes linked to a space
+      description: Returns all notes linked to this space with optional filtering
+      tags:
+        - Space Notes
+      parameters:
+        - $ref: '#/components/parameters/SpaceID'
+        - name: tags
+          in: query
+          description: Filter by tags (comma-separated)
+          schema:
+            type: string
+            example: "important,project-x"
+        - name: start_date
+          in: query
+          description: Filter notes after this date (RFC3339)
+          schema:
+            type: string
+            format: date-time
+        - name: end_date
+          in: query
+          description: Filter notes before this date (RFC3339)
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          description: Maximum number of notes to return
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 200
+        - name: offset
+          in: query
+          description: Number of notes to skip
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+      responses:
+        '200':
+          description: List of notes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  notes:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/RelevantNote'
+                  total:
+                    type: integer
+                    example: 42
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    post:
+      summary: Link a note to a space
+      description: Links an existing capture/note to this space with context and tags
+      tags:
+        - Space Notes
+      parameters:
+        - $ref: '#/components/parameters/SpaceID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LinkNoteRequest'
+      responses:
+        '201':
+          description: Note linked successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "note linked successfully"
+                  space_id:
+                    type: string
+                  capture_id:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/spaces/{id}/notes/{capture_id}:
+    put:
+      summary: Update note context
+      description: Updates the space-specific context and tags for a linked note
+      tags:
+        - Space Notes
+      parameters:
+        - $ref: '#/components/parameters/SpaceID'
+        - name: capture_id
+          in: path
+          required: true
+          description: Capture ID
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateNoteContextRequest'
+      responses:
+        '200':
+          description: Note context updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "note context updated successfully"
+                  space_id:
+                    type: string
+                  capture_id:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    delete:
+      summary: Unlink a note from a space
+      description: Removes the link between a note and this space (does not delete the note file)
+      tags:
+        - Space Notes
+      parameters:
+        - $ref: '#/components/parameters/SpaceID'
+        - name: capture_id
+          in: path
+          required: true
+          description: Capture ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Note unlinked successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "note unlinked successfully"
+                  space_id:
+                    type: string
+                  capture_id:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/spaces/{id}/notes/{capture_id}/content:
+    get:
+      summary: Get note content
+      description: Returns the full content of a linked note
+      tags:
+        - Space Notes
+      parameters:
+        - $ref: '#/components/parameters/SpaceID'
+        - name: capture_id
+          in: path
+          required: true
+          description: Capture ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Note content
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  capture_id:
+                    type: string
+                  note_path:
+                    type: string
+                    example: "captures/2025-10-26_00-00-17.md"
+                  content:
+                    type: string
+                  space_context:
+                    type: string
+                  tags:
+                    type: array
+                    items:
+                      type: string
+                  linked_at:
+                    type: string
+                    format: date-time
+                  last_referenced:
+                    type: string
+                    format: date-time
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/spaces/{id}/database/stats:
+    get:
+      summary: Get space database statistics
+      description: Returns statistics about the space's SQLite knowledge database
+      tags:
+        - Space Notes
+      parameters:
+        - $ref: '#/components/parameters/SpaceID'
+      responses:
+        '200':
+          description: Database statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseStats'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/spaces/{id}/database/tables/{table_name}:
+    get:
+      summary: Query a space database table
+      description: Returns raw data from a space database table
+      tags:
+        - Space Notes
+      parameters:
+        - $ref: '#/components/parameters/SpaceID'
+        - name: table_name
+          in: path
+          required: true
+          description: Table name
+          schema:
+            type: string
+            example: "relevant_notes"
+      responses:
+        '200':
+          description: Table data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  columns:
+                    type: array
+                    items:
+                      type: string
+                  rows:
+                    type: array
+                    items:
+                      type: array
+                      items: {}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/conversations:
+    get:
+      summary: List conversations
+      description: Returns conversations for a specific space
+      tags:
+        - Conversations
+      parameters:
+        - name: space_id
+          in: query
+          required: true
+          description: Space ID to filter conversations
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of conversations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  conversations:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Conversation'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    post:
+      summary: Create a new conversation
+      description: Creates a new conversation in a space
+      tags:
+        - Conversations
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateConversationParams'
+      responses:
+        '201':
+          description: Conversation created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Conversation'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/conversations/{id}:
+    get:
+      summary: Get a conversation by ID
+      description: Returns a single conversation
+      tags:
+        - Conversations
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Conversation ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Conversation details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Conversation'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    put:
+      summary: Update a conversation
+      description: Updates conversation title
+      tags:
+        - Conversations
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Conversation ID
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                  example: "Updated Title"
+      responses:
+        '200':
+          description: Conversation updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Conversation'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    delete:
+      summary: Delete a conversation
+      description: Deletes a conversation and all its messages
+      tags:
+        - Conversations
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Conversation ID
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Conversation deleted successfully
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/messages:
+    get:
+      summary: List messages
+      description: Returns messages for a specific conversation
+      tags:
+        - Messages
+      parameters:
+        - name: conversation_id
+          in: query
+          required: true
+          description: Conversation ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of messages
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  messages:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Message'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    post:
+      summary: Send a message
+      description: |
+        Sends a user message to Claude and returns immediately.
+        The assistant's response will be streamed via WebSocket.
+
+        Connect to `/ws` and subscribe to the conversation to receive:
+        - `message_chunk`: Text chunks of the assistant's response
+        - `tool_call`: Tool call initiated by Claude
+        - `tool_call_update`: Tool call status update
+      tags:
+        - Messages
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendMessageRequest'
+      responses:
+        '201':
+          description: User message created successfully (assistant response will stream via WebSocket)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/captures/upload:
+    post:
+      summary: Upload a voice capture
+      description: Uploads audio file with metadata
+      tags:
+        - Captures
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - audio
+                - timestamp
+              properties:
+                audio:
+                  type: string
+                  format: binary
+                  description: Audio file (WAV format)
+                timestamp:
+                  type: string
+                  format: date-time
+                  description: Recording timestamp (RFC3339)
+                duration:
+                  type: number
+                  format: float
+                  description: Recording duration in seconds
+                source:
+                  type: string
+                  description: Recording source
+                  example: "omi-device"
+                deviceId:
+                  type: string
+                  description: Device ID
+                  example: "omi-123456"
+      responses:
+        '201':
+          description: Capture uploaded successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  path:
+                    type: string
+                    example: "captures/2025-10-26_00-00-17.wav"
+                  url:
+                    type: string
+                    example: "/api/captures/2025-10-26_00-00-17.wav"
+                  createdAt:
+                    type: string
+                    format: date-time
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/captures/{filename}/transcript:
+    post:
+      summary: Upload transcript for a capture
+      description: Uploads transcript text generated from audio
+      tags:
+        - Captures
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          description: Audio filename
+          schema:
+            type: string
+            example: "2025-10-26_00-00-17.wav"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TranscriptData'
+      responses:
+        '200':
+          description: Transcript uploaded successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  transcriptPath:
+                    type: string
+                    example: "captures/2025-10-26_00-00-17.md"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/captures:
+    get:
+      summary: List captures
+      description: Returns paginated list of captures
+      tags:
+        - Captures
+      parameters:
+        - name: limit
+          in: query
+          description: Maximum number of captures to return
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 200
+        - name: offset
+          in: query
+          description: Number of captures to skip
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+      responses:
+        '200':
+          description: List of captures
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  captures:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CaptureMetadata'
+                  total:
+                    type: integer
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+                  hasMore:
+                    type: boolean
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/captures/{filename}:
+    get:
+      summary: Download capture audio
+      description: Downloads audio file
+      tags:
+        - Captures
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          description: Audio filename
+          schema:
+            type: string
+            example: "2025-10-26_00-00-17.wav"
+      responses:
+        '200':
+          description: Audio file
+          content:
+            audio/wav:
+              schema:
+                type: string
+                format: binary
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    delete:
+      summary: Delete a capture
+      description: Deletes audio file and associated files (transcript, metadata)
+      tags:
+        - Captures
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          description: Audio filename
+          schema:
+            type: string
+            example: "2025-10-26_00-00-17.wav"
+      responses:
+        '200':
+          description: Capture deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/captures/{filename}/transcript:
+    get:
+      summary: Get capture transcript
+      description: Returns transcript markdown
+      tags:
+        - Captures
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          description: Audio filename
+          schema:
+            type: string
+            example: "2025-10-26_00-00-17.wav"
+      responses:
+        '200':
+          description: Transcript markdown
+          content:
+            text/markdown:
+              schema:
+                type: string
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/files/browse:
+    get:
+      summary: Browse files
+      description: Lists files and directories in the vault
+      tags:
+        - Files
+      parameters:
+        - name: path
+          in: query
+          description: Relative path to browse (empty for vault root)
+          schema:
+            type: string
+            example: "spaces/my-project"
+      responses:
+        '200':
+          description: File listing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BrowseResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/files/read:
+    get:
+      summary: Read file content
+      description: Returns file content as JSON
+      tags:
+        - Files
+      parameters:
+        - name: path
+          in: query
+          required: true
+          description: Relative file path
+          schema:
+            type: string
+            example: "spaces/my-project/CLAUDE.md"
+      responses:
+        '200':
+          description: File content
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  path:
+                    type: string
+                  content:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/files/download:
+    get:
+      summary: Download file
+      description: Downloads file with appropriate content type
+      tags:
+        - Files
+      parameters:
+        - name: path
+          in: query
+          required: true
+          description: Relative file path
+          schema:
+            type: string
+            example: "captures/2025-10-26_00-00-17.wav"
+      responses:
+        '200':
+          description: File download
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/registry/spaces:
+    get:
+      summary: List registered spaces
+      description: Returns all spaces in the global registry
+      tags:
+        - Registry
+      responses:
+        '200':
+          description: List of registered spaces
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  spaces:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/RegistrySpace'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    post:
+      summary: Create a new space in registry
+      description: Creates a new space directory with CLAUDE.md
+      tags:
+        - Registry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRegistrySpaceParams'
+      responses:
+        '201':
+          description: Space created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegistrySpace'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/registry/spaces/add:
+    post:
+      summary: Add existing space to registry
+      description: Registers an existing space directory
+      tags:
+        - Registry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddRegistrySpaceParams'
+      responses:
+        '201':
+          description: Space added successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegistrySpace'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/registry/spaces/{id}:
+    get:
+      summary: Get registered space by ID
+      description: Returns a single space from the registry
+      tags:
+        - Registry
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Space ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Space details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegistrySpace'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    delete:
+      summary: Remove space from registry
+      description: Removes space from registry (does not delete folder)
+      tags:
+        - Registry
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Space ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Space removed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Space removed from registry (folder not deleted)"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/registry/captures:
+    get:
+      summary: List registered captures
+      description: Returns all captures in the global registry
+      tags:
+        - Registry
+      responses:
+        '200':
+          description: List of registered captures
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  captures:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/RegistryCapture'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    post:
+      summary: Add capture to registry
+      description: Registers a new capture/note
+      tags:
+        - Registry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddCaptureParams'
+      responses:
+        '201':
+          description: Capture added successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegistryCapture'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/registry/captures/{id}:
+    get:
+      summary: Get registered capture by ID
+      description: Returns a single capture from the registry
+      tags:
+        - Registry
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Capture ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Capture details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegistryCapture'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/registry/settings:
+    get:
+      summary: Get settings
+      description: Returns commonly used settings
+      tags:
+        - Registry
+      responses:
+        '200':
+          description: Settings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  notes_folder:
+                    type: string
+                    example: "captures"
+                  spaces_folder:
+                    type: string
+                    example: "spaces"
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/registry/settings/{key}:
+    put:
+      summary: Update a setting
+      description: Updates a configuration setting
+      tags:
+        - Registry
+      parameters:
+        - name: key
+          in: path
+          required: true
+          description: Setting key
+          schema:
+            type: string
+            example: "notes_folder"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - value
+              properties:
+                value:
+                  type: string
+                  example: "recordings"
+      responses:
+        '200':
+          description: Setting updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  key:
+                    type: string
+                  value:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /ws:
+    get:
+      summary: WebSocket connection
+      description: |
+        WebSocket endpoint for real-time message streaming.
+
+        ## Connection
+        Connect using WebSocket protocol to receive real-time updates.
+
+        ## Client Messages
+        Send JSON messages to subscribe to conversations:
+        ```json
+        {
+          "type": "subscribe",
+          "conversation_id": "conv-123"
+        }
+        ```
+
+        ## Server Messages
+        Receive streaming updates:
+
+        ### Message Chunk
+        ```json
+        {
+          "type": "message_chunk",
+          "conversation_id": "conv-123",
+          "text": "Here is some "
+        }
+        ```
+
+        ### Tool Call
+        ```json
+        {
+          "type": "tool_call",
+          "conversation_id": "conv-123",
+          "tool_call_id": "tc-123",
+          "title": "Reading file",
+          "kind": "read_file",
+          "status": "running"
+        }
+        ```
+
+        ### Tool Call Update
+        ```json
+        {
+          "type": "tool_call_update",
+          "conversation_id": "conv-123",
+          "tool_call_id": "tc-123",
+          "status": "completed"
+        }
+        ```
+      tags:
+        - WebSocket
+      responses:
+        '101':
+          description: Switching Protocols - WebSocket connection established
+
+components:
+  parameters:
+    SpaceID:
+      name: id
+      in: path
+      required: true
+      description: Space ID
+      schema:
+        type: string
+        example: "space-abc123"
+
+  schemas:
+    Space:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "space-abc123"
+        user_id:
+          type: string
+          example: "default"
+        name:
+          type: string
+          example: "My Project"
+        path:
+          type: string
+          example: "/Users/john/Parachute/spaces/my-project"
+        icon:
+          type: string
+          example: "🚀"
+        color:
+          type: string
+          example: "#2E7D32"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateSpaceParams:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          example: "My Project"
+        icon:
+          type: string
+          example: "🚀"
+        color:
+          type: string
+          example: "#2E7D32"
+
+    UpdateSpaceParams:
+      type: object
+      properties:
+        name:
+          type: string
+          example: "Updated Project Name"
+        icon:
+          type: string
+          example: "🎯"
+        color:
+          type: string
+          example: "#1976D2"
+
+    RelevantNote:
+      type: object
+      properties:
+        capture_id:
+          type: string
+        note_path:
+          type: string
+          example: "captures/2025-10-26_00-00-17.md"
+        context:
+          type: string
+          example: "Discussion about project architecture"
+        tags:
+          type: array
+          items:
+            type: string
+          example: ["architecture", "planning"]
+        linked_at:
+          type: string
+          format: date-time
+        last_referenced:
+          type: string
+          format: date-time
+
+    LinkNoteRequest:
+      type: object
+      required:
+        - capture_id
+        - note_path
+      properties:
+        capture_id:
+          type: string
+        note_path:
+          type: string
+          example: "captures/2025-10-26_00-00-17.md"
+        context:
+          type: string
+          example: "Discussion about project architecture"
+        tags:
+          type: array
+          items:
+            type: string
+          example: ["architecture", "planning"]
+
+    UpdateNoteContextRequest:
+      type: object
+      properties:
+        context:
+          type: string
+          example: "Updated context"
+        tags:
+          type: array
+          items:
+            type: string
+          example: ["updated", "tags"]
+
+    DatabaseStats:
+      type: object
+      properties:
+        note_count:
+          type: integer
+          example: 42
+        total_references:
+          type: integer
+          example: 127
+        unique_tags:
+          type: array
+          items:
+            type: string
+          example: ["project-x", "architecture", "planning"]
+        recent_notes:
+          type: array
+          items:
+            type: string
+          example: ["2025-10-26_00-00-17.md", "2025-10-25_14-30-22.md"]
+
+    Conversation:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "conv-abc123"
+        space_id:
+          type: string
+          example: "space-abc123"
+        title:
+          type: string
+          example: "Project Planning Discussion"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateConversationParams:
+      type: object
+      required:
+        - space_id
+        - title
+      properties:
+        space_id:
+          type: string
+          example: "space-abc123"
+        title:
+          type: string
+          example: "New Conversation"
+
+    Message:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "msg-abc123"
+        conversation_id:
+          type: string
+          example: "conv-abc123"
+        role:
+          type: string
+          enum: [user, assistant]
+          example: "user"
+        content:
+          type: string
+          example: "What are the key architectural decisions?"
+        created_at:
+          type: string
+          format: date-time
+        metadata:
+          type: string
+          description: JSON metadata
+
+    SendMessageRequest:
+      type: object
+      required:
+        - conversation_id
+        - content
+      properties:
+        conversation_id:
+          type: string
+          example: "conv-abc123"
+        content:
+          type: string
+          example: "What are the key architectural decisions?"
+
+    CaptureMetadata:
+      type: object
+      properties:
+        id:
+          type: string
+        filename:
+          type: string
+          example: "2025-10-26_00-00-17.wav"
+        timestamp:
+          type: string
+          format: date-time
+        duration:
+          type: number
+          format: float
+          example: 127.5
+        source:
+          type: string
+          example: "omi-device"
+        device_id:
+          type: string
+          example: "omi-123456"
+        has_transcript:
+          type: boolean
+        has_audio:
+          type: boolean
+
+    TranscriptData:
+      type: object
+      required:
+        - transcript
+      properties:
+        transcript:
+          type: string
+          example: "This is the transcribed text from the audio recording."
+        segments:
+          type: array
+          items:
+            type: object
+            properties:
+              start:
+                type: number
+                format: float
+              end:
+                type: number
+                format: float
+              text:
+                type: string
+
+    BrowseResult:
+      type: object
+      properties:
+        path:
+          type: string
+          example: "spaces/my-project"
+        entries:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              type:
+                type: string
+                enum: [file, directory]
+              size:
+                type: integer
+              modified:
+                type: string
+                format: date-time
+
+    RegistrySpace:
+      type: object
+      properties:
+        id:
+          type: string
+        path:
+          type: string
+          example: "/Users/john/Parachute/spaces/my-project"
+        name:
+          type: string
+          example: "My Project"
+        added_at:
+          type: string
+          format: date-time
+        last_accessed:
+          type: string
+          format: date-time
+        config:
+          type: string
+          description: JSON configuration
+
+    CreateRegistrySpaceParams:
+      type: object
+      required:
+        - name
+        - path
+      properties:
+        name:
+          type: string
+          example: "My Project"
+        path:
+          type: string
+          example: "/Users/john/Parachute/spaces"
+        config:
+          type: string
+          description: JSON configuration
+
+    AddRegistrySpaceParams:
+      type: object
+      required:
+        - path
+      properties:
+        path:
+          type: string
+          example: "/Users/john/Parachute/spaces/my-project"
+        name:
+          type: string
+          example: "My Project"
+        config:
+          type: string
+          description: JSON configuration
+
+    RegistryCapture:
+      type: object
+      properties:
+        id:
+          type: string
+        base_name:
+          type: string
+          example: "2025-10-26_00-00-17"
+        title:
+          type: string
+          example: "Project Discussion"
+        created_at:
+          type: string
+          format: date-time
+        has_audio:
+          type: boolean
+        has_transcript:
+          type: boolean
+        metadata:
+          type: string
+          description: JSON metadata
+
+    AddCaptureParams:
+      type: object
+      required:
+        - base_name
+        - title
+      properties:
+        base_name:
+          type: string
+          example: "2025-10-26_00-00-17"
+        title:
+          type: string
+          example: "Project Discussion"
+        has_audio:
+          type: boolean
+          default: true
+        has_transcript:
+          type: boolean
+          default: false
+        metadata:
+          type: string
+          description: JSON metadata
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Error message"
+
+  responses:
+    BadRequest:
+      description: Bad Request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Invalid request body"
+
+    NotFound:
+      description: Not Found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Resource not found"
+
+    InternalServerError:
+      description: Internal Server Error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Internal server error"
