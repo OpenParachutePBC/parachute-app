@@ -59,8 +59,10 @@ class SimpleTranscriptionService {
   bool _isProcessing = false;
 
   // File management
-  String? _audioFilePath;
+  String? _audioFilePath; // Final merged audio file
   String? _tempDirectory;
+  final List<String> _segmentAudioFiles = []; // Individual segment recordings
+  String? _currentSegmentFile; // Current segment being recorded
 
   // Segments (paragraphs)
   final List<TranscriptionSegment> _segments = [];
@@ -109,26 +111,35 @@ class SimpleTranscriptionService {
         await initialize();
       }
 
-      // Create audio file path (WAV format for Whisper compatibility)
+      // Set final audio file path (will be created at the end by merging segments)
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       _audioFilePath = path.join(_tempDirectory!, 'recording_$timestamp.wav');
 
-      // Start continuous recording with WAV format
+      // Create first segment file
+      _currentSegmentFile = path.join(
+        _tempDirectory!,
+        'segment_${_nextSegmentIndex}_$timestamp.wav',
+      );
+
+      // Start recording first segment
       await _recorder.start(
         const RecordConfig(
           encoder: AudioEncoder.wav,
           sampleRate: 16000,
           numChannels: 1,
         ),
-        path: _audioFilePath!,
+        path: _currentSegmentFile!,
       );
 
       _isRecording = true;
       _isPaused = false;
       _segments.clear();
       _nextSegmentIndex = 1;
+      _segmentAudioFiles.clear();
 
-      debugPrint('[SimpleTranscription] Recording started: $_audioFilePath');
+      debugPrint(
+        '[SimpleTranscription] Recording started: $_currentSegmentFile',
+      );
       return true;
     } catch (e) {
       debugPrint('[SimpleTranscription] Failed to start: $e');
@@ -141,29 +152,50 @@ class SimpleTranscriptionService {
     if (!_isRecording || _isPaused) return;
 
     try {
-      // Pause the recorder
-      await _recorder.pause();
+      // Stop current segment
+      final segmentPath = await _recorder.stop();
       _isPaused = true;
 
-      debugPrint('[SimpleTranscription] Paused, starting transcription...');
+      debugPrint('[SimpleTranscription] Paused, segment saved: $segmentPath');
 
-      // Process the audio recorded so far (non-blocking)
-      _processCurrentAudio();
+      // Save segment file
+      if (_currentSegmentFile != null) {
+        _segmentAudioFiles.add(_currentSegmentFile!);
+      }
+
+      // Process this segment only (non-blocking)
+      _processCurrentSegment(_currentSegmentFile!);
     } catch (e) {
       debugPrint('[SimpleTranscription] Failed to pause: $e');
     }
   }
 
-  /// Resume recording (continues same file, even if processing)
+  /// Resume recording (starts new segment file)
   Future<void> resumeRecording() async {
     if (!_isRecording || !_isPaused) return;
 
     try {
-      await _recorder.resume();
+      // Create new segment file
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      _currentSegmentFile = path.join(
+        _tempDirectory!,
+        'segment_${_nextSegmentIndex}_$timestamp.wav',
+      );
+
+      // Start recording new segment
+      await _recorder.start(
+        const RecordConfig(
+          encoder: AudioEncoder.wav,
+          sampleRate: 16000,
+          numChannels: 1,
+        ),
+        path: _currentSegmentFile!,
+      );
+
       _isPaused = false;
 
       debugPrint(
-        '[SimpleTranscription] Resumed recording (processing may continue in background)',
+        '[SimpleTranscription] Resumed, new segment: $_currentSegmentFile',
       );
     } catch (e) {
       debugPrint('[SimpleTranscription] Failed to resume: $e');
@@ -179,17 +211,18 @@ class SimpleTranscriptionService {
       final needsFinalTranscription = !_isPaused && !_isProcessing;
 
       // Stop the recorder first
-      final finalPath = await _recorder.stop();
+      await _recorder.stop();
 
       _isRecording = false;
       _isPaused = false;
 
-      // If we need final transcription, do it now
-      if (needsFinalTranscription && _audioFilePath != null) {
+      // If we need final transcription, process the last segment
+      if (needsFinalTranscription && _currentSegmentFile != null) {
         debugPrint(
           '[SimpleTranscription] Processing final segment before stopping...',
         );
-        await _processCurrentAudio();
+        _segmentAudioFiles.add(_currentSegmentFile!);
+        await _processCurrentSegment(_currentSegmentFile!);
       } else {
         // Wait for any ongoing processing to complete
         while (_isProcessing) {
@@ -197,8 +230,19 @@ class SimpleTranscriptionService {
         }
       }
 
+      // Merge all segment files into final audio file
+      if (_segmentAudioFiles.isNotEmpty && _audioFilePath != null) {
+        debugPrint(
+          '[SimpleTranscription] Merging ${_segmentAudioFiles.length} segments...',
+        );
+        await _mergeAudioSegments(_segmentAudioFiles, _audioFilePath!);
+        debugPrint(
+          '[SimpleTranscription] Segments merged into: $_audioFilePath',
+        );
+      }
+
       debugPrint('[SimpleTranscription] Stopped: ${_segments.length} segments');
-      return finalPath ?? _audioFilePath;
+      return _audioFilePath;
     } catch (e) {
       debugPrint('[SimpleTranscription] Failed to stop: $e');
       return _audioFilePath;
@@ -264,8 +308,8 @@ class SimpleTranscriptionService {
   // Private methods
 
   /// Process the audio file recorded so far
-  Future<void> _processCurrentAudio() async {
-    if (_audioFilePath == null || _isProcessing) return;
+  Future<void> _processCurrentSegment(String segmentFilePath) async {
+    if (_isProcessing) return;
 
     _isProcessing = true;
     _processingStreamController.add(true);
@@ -289,34 +333,21 @@ class SimpleTranscriptionService {
       _segmentStreamController.add(processingSegment);
 
       debugPrint(
-        '[SimpleTranscription] Transcribing segment $_nextSegmentIndex...',
+        '[SimpleTranscription] Transcribing segment $_nextSegmentIndex from $segmentFilePath...',
       );
 
-      // Transcribe the entire audio file
-      // Note: This will re-transcribe everything, but Whisper is fast enough
-      final fullText = await _whisperService.transcribeAudio(_audioFilePath!);
+      // Transcribe ONLY this segment file
+      final segmentText = await _whisperService.transcribeAudio(
+        segmentFilePath,
+      );
 
-      // Extract just the new text (after previous segments)
-      final previousText = _segments
-          .where(
-            (s) =>
-                s.index < _nextSegmentIndex &&
-                s.status == TranscriptionSegmentStatus.completed,
-          )
-          .map((s) => s.text)
-          .join('\n\n');
-
-      String newText = fullText;
-      if (previousText.isNotEmpty) {
-        // Remove the previous text to get only new content
-        if (fullText.startsWith(previousText)) {
-          newText = fullText.substring(previousText.length).trim();
-        }
-      }
+      debugPrint(
+        '[SimpleTranscription] Segment transcribed: ${segmentText.length} chars',
+      );
 
       // Update to completed
       final completedSegment = processingSegment.copyWith(
-        text: newText,
+        text: segmentText.trim(),
         status: TranscriptionSegmentStatus.completed,
       );
       _segments[_segments.length - 1] = completedSegment;
@@ -324,9 +355,7 @@ class SimpleTranscriptionService {
 
       _nextSegmentIndex++;
 
-      debugPrint(
-        '[SimpleTranscription] Segment completed: ${newText.length} chars',
-      );
+      debugPrint('[SimpleTranscription] Segment completed successfully');
     } catch (e) {
       debugPrint('[SimpleTranscription] Transcription failed: $e');
 
@@ -353,6 +382,83 @@ class SimpleTranscriptionService {
     }
 
     return transcriptDir.path;
+  }
+
+  /// Merge multiple WAV segment files into a single WAV file
+  Future<void> _mergeAudioSegments(
+    List<String> segmentPaths,
+    String outputPath,
+  ) async {
+    try {
+      if (segmentPaths.isEmpty) return;
+
+      // If only one segment, just copy it
+      if (segmentPaths.length == 1) {
+        final sourceFile = File(segmentPaths.first);
+        await sourceFile.copy(outputPath);
+        return;
+      }
+
+      // For multiple segments, we need to concatenate the audio data
+      // WAV file structure: RIFF header (44 bytes) + audio data
+      final outputFile = File(outputPath);
+      final sink = outputFile.openWrite();
+
+      try {
+        int totalDataSize = 0;
+        final List<List<int>> audioDataChunks = [];
+
+        // Read all segment files and extract audio data
+        for (final segmentPath in segmentPaths) {
+          final file = File(segmentPath);
+          final bytes = await file.readAsBytes();
+
+          // Skip WAV header (44 bytes) and get audio data
+          if (bytes.length > 44) {
+            final audioData = bytes.sublist(44);
+            audioDataChunks.add(audioData);
+            totalDataSize += audioData.length;
+          }
+        }
+
+        // Write WAV header from first file (assumes all segments have same format)
+        final firstFile = File(segmentPaths.first);
+        final firstBytes = await firstFile.readAsBytes();
+        final header = firstBytes.sublist(0, 44);
+
+        // Update the file size in the header
+        final totalFileSize = 36 + totalDataSize;
+        header[4] = totalFileSize & 0xFF;
+        header[5] = (totalFileSize >> 8) & 0xFF;
+        header[6] = (totalFileSize >> 16) & 0xFF;
+        header[7] = (totalFileSize >> 24) & 0xFF;
+
+        // Update data chunk size
+        header[40] = totalDataSize & 0xFF;
+        header[41] = (totalDataSize >> 8) & 0xFF;
+        header[42] = (totalDataSize >> 16) & 0xFF;
+        header[43] = (totalDataSize >> 24) & 0xFF;
+
+        // Write header
+        sink.add(header);
+
+        // Write all audio data chunks
+        for (final audioData in audioDataChunks) {
+          sink.add(audioData);
+        }
+
+        await sink.flush();
+      } finally {
+        await sink.close();
+      }
+
+      debugPrint(
+        '[SimpleTranscription] Merged ${segmentPaths.length} segments into $outputPath',
+      );
+    } catch (e) {
+      debugPrint('[SimpleTranscription] Error merging audio segments: $e');
+      rethrow;
+    }
   }
 }
 

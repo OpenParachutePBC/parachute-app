@@ -5,16 +5,20 @@ import 'package:path/path.dart' as p;
 
 /// Git service for managing local Git repositories
 ///
-/// Proof-of-concept implementation using git2dart (libgit2 bindings)
+/// Implementation using git2dart (libgit2 bindings)
 ///
 /// This service wraps git2dart operations for:
 /// - Repository initialization
 /// - Adding files to staging
 /// - Committing changes
-/// - Future: push/pull, authentication, conflict resolution
+/// - GitHub integration (clone, push, pull)
+/// - Authentication with Personal Access Tokens
 class GitService {
   GitService._internal();
   static final GitService instance = GitService._internal();
+
+  /// GitHub Personal Access Token for authentication
+  String? _githubToken;
 
   /// Check if a directory is a Git repository
   Future<bool> isGitRepository(String path) async {
@@ -86,6 +90,25 @@ class GitService {
       return true;
     } catch (e) {
       debugPrint('[GitService] ❌ Error adding file: $e');
+      return false;
+    }
+  }
+
+  /// Add all files to the staging area (git add .)
+  Future<bool> addAll({required Repository repo}) async {
+    try {
+      debugPrint('[GitService] Adding all files to staging...');
+
+      final index = repo.index;
+      // Add all files (equivalent to git add .)
+      // Pass ['.'] to add all files in the repository
+      index.addAll(['.']);
+      index.write();
+
+      debugPrint('[GitService] ✅ All files added to staging');
+      return true;
+    } catch (e) {
+      debugPrint('[GitService] ❌ Error adding all files: $e');
       return false;
     }
   }
@@ -183,6 +206,34 @@ class GitService {
     }
   }
 
+  /// Check if repository has any commits
+  Future<bool> hasCommits({required Repository repo}) async {
+    try {
+      // Try to get HEAD reference
+      final head = repo.head;
+      return true;
+    } catch (e) {
+      // If HEAD doesn't exist, there are no commits
+      debugPrint('[GitService] No commits found: $e');
+      return false;
+    }
+  }
+
+  /// Get current branch name
+  String? getCurrentBranch({required Repository repo}) {
+    try {
+      final head = repo.head;
+      // head.name returns something like "refs/heads/main" or "refs/heads/master"
+      // Extract just the branch name
+      final branchName = head.name.replaceFirst('refs/heads/', '');
+      debugPrint('[GitService] Current branch: $branchName');
+      return branchName;
+    } catch (e) {
+      debugPrint('[GitService] ❌ Error getting current branch: $e');
+      return null;
+    }
+  }
+
   /// Get commit history (last N commits)
   Future<List<Map<String, dynamic>>> getCommitHistory(
     Repository repo, {
@@ -275,6 +326,266 @@ class GitService {
     } catch (e) {
       debugPrint('[GitService] ❌ Test failed: $e');
       return false;
+    }
+  }
+
+  // ============================================================================
+  // GitHub Integration
+  // ============================================================================
+
+  /// Set GitHub Personal Access Token for authentication
+  void setGitHubToken(String token) {
+    _githubToken = token;
+    debugPrint('[GitService] GitHub token set');
+  }
+
+  /// Clear GitHub Personal Access Token
+  void clearGitHubToken() {
+    _githubToken = null;
+    debugPrint('[GitService] GitHub token cleared');
+  }
+
+  /// Clone a GitHub repository
+  ///
+  /// [url] - Repository URL (e.g., "https://github.com/user/repo.git")
+  /// [localPath] - Local path where repository will be cloned
+  /// [username] - GitHub username (usually "git" or actual username)
+  ///
+  /// Returns the cloned Repository or null if failed
+  Future<Repository?> initializeRepository(String path) async {
+    try {
+      debugPrint('[GitService] Initializing repository at: $path');
+
+      // Initialize the repository
+      final repo = Repository.init(path: path, bare: false);
+
+      debugPrint('[GitService] ✅ Repository initialized successfully');
+      return repo;
+    } catch (e) {
+      debugPrint('[GitService] ❌ Error initializing repository: $e');
+      return null;
+    }
+  }
+
+  /// Clone a repository from a remote URL
+  ///
+  /// Returns the cloned Repository or null if failed
+  Future<Repository?> cloneRepository({
+    required String url,
+    required String localPath,
+    String username = 'git',
+  }) async {
+    try {
+      debugPrint('[GitService] Cloning repository from: $url');
+      debugPrint('[GitService] Clone destination: $localPath');
+
+      if (_githubToken == null) {
+        debugPrint('[GitService] ❌ No GitHub token set');
+        return null;
+      }
+
+      // Ensure parent directory exists
+      final dir = Directory(localPath);
+      if (await dir.exists()) {
+        debugPrint('[GitService] ❌ Directory already exists: $localPath');
+        return null;
+      }
+
+      await dir.parent.create(recursive: true);
+
+      // Create credentials for authentication
+      final credentials = UserPass(username: username, password: _githubToken!);
+
+      // Clone repository
+      final repo = Repository.clone(
+        url: url,
+        localPath: localPath,
+        bare: false,
+        callbacks: Callbacks(credentials: credentials),
+      );
+
+      debugPrint('[GitService] ✅ Repository cloned successfully');
+      return repo;
+    } catch (e) {
+      debugPrint('[GitService] ❌ Error cloning repository: $e');
+      return null;
+    }
+  }
+
+  /// Add a remote to a repository
+  ///
+  /// [repo] - Repository to add remote to
+  /// [name] - Name of the remote (e.g., "origin")
+  /// [url] - URL of the remote repository
+  ///
+  /// Returns true if remote was added successfully
+  Future<bool> addRemote({
+    required Repository repo,
+    required String name,
+    required String url,
+  }) async {
+    try {
+      debugPrint('[GitService] Adding remote $name: $url');
+
+      Remote.create(repo: repo, name: name, url: url);
+
+      debugPrint('[GitService] ✅ Remote added successfully');
+      return true;
+    } catch (e) {
+      debugPrint('[GitService] ❌ Error adding remote: $e');
+      return false;
+    }
+  }
+
+  /// Push changes to remote repository
+  ///
+  /// [repo] - Repository to push from
+  /// [remoteName] - Name of remote (default: "origin")
+  /// [branchName] - Branch to push (default: "main")
+  /// [username] - GitHub username for authentication
+  ///
+  /// Returns true if push succeeded
+  Future<bool> push({
+    required Repository repo,
+    String remoteName = 'origin',
+    String branchName = 'main',
+    String username = 'git',
+  }) async {
+    try {
+      debugPrint('[GitService] Pushing to $remoteName/$branchName');
+
+      if (_githubToken == null) {
+        debugPrint('[GitService] ❌ No GitHub token set');
+        return false;
+      }
+
+      // Get remote
+      final remote = Remote.lookup(repo: repo, name: remoteName);
+
+      // Create credentials for authentication
+      final credentials = UserPass(username: username, password: _githubToken!);
+
+      // Push to remote
+      remote.push(
+        refspecs: ['refs/heads/$branchName:refs/heads/$branchName'],
+        callbacks: Callbacks(credentials: credentials),
+      );
+
+      debugPrint('[GitService] ✅ Push successful');
+      return true;
+    } catch (e) {
+      debugPrint('[GitService] ❌ Error pushing: $e');
+      return false;
+    }
+  }
+
+  /// Pull changes from remote repository
+  ///
+  /// [repo] - Repository to pull into
+  /// [remoteName] - Name of remote (default: "origin")
+  /// [branchName] - Branch to pull (default: "main")
+  /// [username] - GitHub username for authentication
+  ///
+  /// Returns true if pull succeeded
+  Future<bool> pull({
+    required Repository repo,
+    String remoteName = 'origin',
+    String branchName = 'main',
+    String username = 'git',
+  }) async {
+    try {
+      debugPrint('[GitService] Pulling from $remoteName/$branchName');
+
+      if (_githubToken == null) {
+        debugPrint('[GitService] ❌ No GitHub token set');
+        return false;
+      }
+
+      // Get remote
+      final remote = Remote.lookup(repo: repo, name: remoteName);
+
+      // Create credentials for authentication
+      final credentials = UserPass(username: username, password: _githubToken!);
+
+      // Fetch from remote
+      remote.fetch(
+        refspecs: [
+          'refs/heads/$branchName:refs/remotes/$remoteName/$branchName',
+        ],
+        callbacks: Callbacks(credentials: credentials),
+      );
+
+      // Get remote branch
+      final remoteBranch = Branch.lookup(
+        repo: repo,
+        name: '$remoteName/$branchName',
+        type: GitBranch.remote,
+      );
+
+      // Merge remote branch into current branch
+      final annotatedCommit = AnnotatedCommit.lookup(
+        repo: repo,
+        oid: remoteBranch.target,
+      );
+
+      // Perform merge
+      Merge.commit(repo: repo, commit: annotatedCommit);
+
+      debugPrint('[GitService] ✅ Pull successful');
+      return true;
+    } catch (e) {
+      debugPrint('[GitService] ❌ Error pulling: $e');
+      return false;
+    }
+  }
+
+  /// Get current sync status
+  ///
+  /// Returns a map with sync information:
+  /// - hasRemote: bool
+  /// - remoteName: String?
+  /// - remoteUrl: String?
+  /// - currentBranch: String?
+  /// - ahead: int (commits ahead of remote)
+  /// - behind: int (commits behind remote)
+  Future<Map<String, dynamic>> getSyncStatus(Repository repo) async {
+    try {
+      final status = <String, dynamic>{
+        'hasRemote': false,
+        'remoteName': null,
+        'remoteUrl': null,
+        'currentBranch': null,
+        'ahead': 0,
+        'behind': 0,
+      };
+
+      // Get current branch
+      try {
+        final head = repo.head;
+        final branchName = head.name.replaceAll('refs/heads/', '');
+        status['currentBranch'] = branchName;
+      } catch (e) {
+        debugPrint('[GitService] No HEAD found: $e');
+      }
+
+      // Check for remotes
+      try {
+        final remoteNames = repo.remotes;
+        if (remoteNames.isNotEmpty) {
+          final remoteName = remoteNames.first;
+          final remote = Remote.lookup(repo: repo, name: remoteName);
+          status['hasRemote'] = true;
+          status['remoteName'] = remote.name;
+          status['remoteUrl'] = remote.url;
+        }
+      } catch (e) {
+        debugPrint('[GitService] Error getting remotes: $e');
+      }
+
+      return status;
+    } catch (e) {
+      debugPrint('[GitService] ❌ Error getting sync status: $e');
+      return {'hasRemote': false, 'error': e.toString()};
     }
   }
 }

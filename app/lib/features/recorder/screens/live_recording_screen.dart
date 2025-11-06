@@ -407,10 +407,7 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
   Widget _buildBody() {
     return Column(
       children: [
-        // Prominent status banner at top
-        if (_isRecording || _isProcessing) _buildStatusBanner(),
-
-        // Text editor
+        // Content area with segments and inline status
         Expanded(
           child: Padding(
             padding: const EdgeInsets.all(16.0),
@@ -429,21 +426,7 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
                     : null,
               ),
               padding: const EdgeInsets.all(16),
-              child: TextField(
-                controller: _textController,
-                focusNode: _textFocusNode,
-                maxLines: null,
-                expands: true,
-                scrollController: _scrollController,
-                decoration: InputDecoration(
-                  border: InputBorder.none,
-                  hintText: _isRecording
-                      ? 'Speak, then pause to see your words...'
-                      : 'Tap "Start Recording" to begin...',
-                  hintStyle: const TextStyle(fontSize: 16, color: Colors.grey),
-                ),
-                style: const TextStyle(fontSize: 16, height: 1.5),
-              ),
+              child: _buildContentList(),
             ),
           ),
         ),
@@ -455,6 +438,212 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
         ),
         const SizedBox(height: 8),
       ],
+    );
+  }
+
+  /// Build the content list showing segments and current status inline
+  Widget _buildContentList() {
+    if (_segments.isEmpty && !_isRecording && !_isProcessing) {
+      // Empty state
+      return Center(
+        child: Text(
+          'Tap "Start Recording" to begin...',
+          style: const TextStyle(fontSize: 16, color: Colors.grey),
+        ),
+      );
+    }
+
+    // Count how many status indicators we need to show
+    int statusIndicatorCount = 0;
+    if (_isProcessing) statusIndicatorCount++;
+    if (_isRecording && !_isPaused) statusIndicatorCount++;
+    if (_isPaused)
+      statusIndicatorCount = 1; // Paused replaces recording indicator
+
+    return ListView.builder(
+      controller: _scrollController,
+      itemCount: _segments.length + statusIndicatorCount,
+      itemBuilder: (context, index) {
+        // Show completed segments
+        if (index < _segments.length) {
+          final segment = _segments[index];
+          if (segment.status == TranscriptionSegmentStatus.completed) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 16.0),
+              child: Text(
+                segment.text,
+                style: const TextStyle(fontSize: 16, height: 1.5),
+              ),
+            );
+          }
+          return const SizedBox.shrink();
+        }
+
+        // Show status indicators after segments
+        final statusIndex = index - _segments.length;
+
+        // First status: Processing indicator (if processing)
+        if (statusIndex == 0 && _isProcessing) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 16.0),
+            child: _buildProcessingIndicator(),
+          );
+        }
+
+        // Second status (or first if not processing): Recording/Paused indicator
+        if ((_isProcessing && statusIndex == 1) ||
+            (!_isProcessing && statusIndex == 0)) {
+          if (_isPaused) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 16.0),
+              child: _buildPausedIndicator(),
+            );
+          } else if (_isRecording) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 16.0),
+              child: _buildRecordingIndicator(),
+            );
+          }
+        }
+
+        return const SizedBox.shrink();
+      },
+    );
+  }
+
+  /// Build processing status indicator
+  Widget _buildProcessingIndicator() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.orange.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: Colors.orange.shade700.withValues(alpha: 0.3),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.sync, color: Colors.orange.shade700, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Processing transcription',
+                  style: TextStyle(
+                    color: Colors.orange.shade700,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Please wait...',
+                  style: TextStyle(
+                    color: Colors.orange.shade700.withValues(alpha: 0.8),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Build paused status indicator
+  Widget _buildPausedIndicator() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.orange.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: Colors.orange.shade700.withValues(alpha: 0.3),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.pause_circle_filled,
+            color: Colors.orange.shade700,
+            size: 20,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Recording paused',
+                  style: TextStyle(
+                    color: Colors.orange.shade700,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Press Resume to continue',
+                  style: TextStyle(
+                    color: Colors.orange.shade700.withValues(alpha: 0.8),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Build recording status indicator
+  Widget _buildRecordingIndicator() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.red.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: Colors.red.shade700.withValues(alpha: 0.3),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.fiber_manual_record, color: Colors.red.shade700, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Recording',
+                  style: TextStyle(
+                    color: Colors.red.shade700,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  _formattedDuration,
+                  style: TextStyle(
+                    color: Colors.red.shade700.withValues(alpha: 0.8),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -488,143 +677,6 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
         textAlign: TextAlign.center,
       );
     }
-  }
-
-  Widget _buildStatusBanner() {
-    final Color backgroundColor;
-    final Color foregroundColor;
-    final IconData icon;
-    final String message;
-    final String detail;
-
-    if (_isProcessing) {
-      backgroundColor = Colors.orange;
-      foregroundColor = Colors.white;
-      icon = Icons.sync;
-      message = 'Processing transcription';
-      detail = 'Please wait...';
-    } else if (_isPaused) {
-      backgroundColor = Colors.orange.shade700;
-      foregroundColor = Colors.white;
-      icon = Icons.pause_circle_filled;
-      message = 'Recording paused';
-      detail = 'Press Resume to continue';
-    } else if (_isRecording) {
-      backgroundColor = Colors.red;
-      foregroundColor = Colors.white;
-      icon = Icons.fiber_manual_record;
-      message = 'Recording';
-      detail = _formattedDuration;
-    } else {
-      return const SizedBox.shrink();
-    }
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-      decoration: BoxDecoration(
-        color: backgroundColor,
-        boxShadow: [
-          BoxShadow(
-            color: backgroundColor.withValues(alpha: 0.3),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          // Animated icon
-          if (_isProcessing)
-            SizedBox(
-              width: 24,
-              height: 24,
-              child: CircularProgressIndicator(
-                strokeWidth: 3,
-                valueColor: AlwaysStoppedAnimation<Color>(foregroundColor),
-              ),
-            )
-          else if (_isRecording && !_isPaused)
-            _buildPulsingDot(foregroundColor)
-          else
-            Icon(icon, color: foregroundColor, size: 24),
-
-          const SizedBox(width: 12),
-
-          // Status text
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  message,
-                  style: TextStyle(
-                    color: foregroundColor,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  detail,
-                  style: TextStyle(
-                    color: foregroundColor.withValues(alpha: 0.9),
-                    fontSize: 14,
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // Word count badge
-          if (_wordCount > 0)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: foregroundColor.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                '$_wordCount words',
-                style: TextStyle(
-                  color: foregroundColor,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPulsingDot(Color color) {
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0.0, end: 1.0),
-      duration: const Duration(milliseconds: 1000),
-      builder: (context, value, child) {
-        return Container(
-          width: 24,
-          height: 24,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: color,
-            boxShadow: [
-              BoxShadow(
-                color: color.withValues(alpha: 0.6),
-                blurRadius: 8 * value,
-                spreadRadius: 4 * value,
-              ),
-            ],
-          ),
-        );
-      },
-      onEnd: () {
-        if (mounted && _isRecording && !_isPaused) {
-          setState(() {});
-        }
-      },
-    );
   }
 
   Widget _buildBottomBar() {

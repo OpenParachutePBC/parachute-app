@@ -15,6 +15,7 @@ import 'package:app/features/recorder/providers/service_providers.dart';
 import 'package:app/features/recorder/screens/device_pairing_screen.dart';
 import 'package:app/features/recorder/utils/platform_utils.dart';
 import 'package:app/features/recorder/widgets/whisper_model_download_card.dart';
+import 'package:app/features/settings/widgets/git_sync_settings_card.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -1653,6 +1654,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       ],
                     ),
                   ),
+                  const SizedBox(height: 32),
+                  const Divider(),
+                  const SizedBox(height: 32),
+
+                  // Git Sync Section
+                  const Text(
+                    'Git Sync',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 16),
+                  const GitSyncSettingsCard(),
                   const SizedBox(height: 32),
                   const Divider(),
                   const SizedBox(height: 32),

@@ -4,6 +4,7 @@ import 'package:app/features/recorder/models/recording.dart';
 import 'package:app/core/services/file_system_service.dart';
 import 'package:app/core/services/file_sync_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path/path.dart' as p;
 
 /// File-based storage service for client-server sync architecture
@@ -17,6 +18,7 @@ import 'package:path/path.dart' as p;
 /// - Local cache for downloaded files
 class StorageService {
   final FileSyncService _fileSyncService;
+  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
 
   static const String _hasInitializedKey = 'has_initialized';
   static const String _openaiApiKeyKey = 'openai_api_key';
@@ -851,5 +853,105 @@ class StorageService {
   Future<bool> hasHuggingFaceToken() async {
     final token = await getHuggingFaceToken();
     return token != null && token.isNotEmpty;
+  }
+
+  // GitHub Token Management
+
+  /// Get GitHub Personal Access Token for Git sync
+  // TODO: Use secure storage when code signing is enabled
+  // For now using SharedPreferences due to keychain entitlement requiring code signing
+  Future<String?> getGitHubToken() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString('github_token');
+    } catch (e) {
+      debugPrint('Error getting GitHub token: $e');
+      return null;
+    }
+  }
+
+  /// Save GitHub Personal Access Token
+  Future<bool> saveGitHubToken(String token) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return await prefs.setString('github_token', token);
+    } catch (e) {
+      debugPrint('Error saving GitHub token: $e');
+      return false;
+    }
+  }
+
+  /// Delete GitHub Personal Access Token
+  Future<bool> deleteGitHubToken() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return await prefs.remove('github_token');
+    } catch (e) {
+      debugPrint('Error deleting GitHub token: $e');
+      return false;
+    }
+  }
+
+  /// Check if GitHub token exists
+  Future<bool> hasGitHubToken() async {
+    final token = await getGitHubToken();
+    return token != null && token.isNotEmpty;
+  }
+
+  // GitHub Repository URL Management
+
+  /// Get GitHub repository URL for Git sync
+  Future<String?> getGitHubRepositoryUrl() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString('github_repository_url');
+    } catch (e) {
+      debugPrint('Error getting GitHub repository URL: $e');
+      return null;
+    }
+  }
+
+  /// Save GitHub repository URL
+  Future<bool> saveGitHubRepositoryUrl(String url) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return await prefs.setString('github_repository_url', url);
+    } catch (e) {
+      debugPrint('Error saving GitHub repository URL: $e');
+      return false;
+    }
+  }
+
+  /// Delete GitHub repository URL
+  Future<bool> deleteGitHubRepositoryUrl() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return await prefs.remove('github_repository_url');
+    } catch (e) {
+      debugPrint('Error deleting GitHub repository URL: $e');
+      return false;
+    }
+  }
+
+  /// Check if Git sync is enabled
+  Future<bool> isGitSyncEnabled() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool('git_sync_enabled') ?? false;
+    } catch (e) {
+      debugPrint('Error checking Git sync enabled: $e');
+      return false;
+    }
+  }
+
+  /// Set Git sync enabled status
+  Future<bool> setGitSyncEnabled(bool enabled) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return await prefs.setBool('git_sync_enabled', enabled);
+    } catch (e) {
+      debugPrint('Error setting Git sync enabled: $e');
+      return false;
+    }
   }
 }
