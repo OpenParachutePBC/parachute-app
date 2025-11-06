@@ -127,32 +127,38 @@ The app includes three main features accessible via bottom navigation:
 
 ## Current Status
 
-🚀 **Active Development** - Feature-Complete Alpha
+🚀 **Active Development** - Local-First Alpha with Git Sync
 
-Core functionality is working. Current focus: Space SQLite Knowledge System for linking notes to spaces.
+Core functionality is working with full local-first architecture. Current focus: Recording UI polish and refinement.
 
-**Completed:**
+**Recently Completed (Nov 6, 2025):**
 
-- [x] Project structure and documentation
-- [x] Backend (Go + Fiber + SQLite)
-- [x] Frontend (Flutter + Riverpod)
-- [x] ACP integration with Claude AI
-- [x] WebSocket streaming conversations
+- [x] **Git-based sync** - Multi-device synchronization via GitHub
+- [x] **Auto-sync** - Automatic commits after save/update/delete
+- [x] **Manual sync** - UI indicator with file counts
+- [x] **Periodic sync** - Background sync every 5 minutes
+- [x] **Settings persistence** - Git configuration saved across restarts
+- [x] **Local-first architecture** - Complete removal of backend dependencies for recordings
+- [x] **Context field** - Space-specific interpretation notes for recordings
+- [x] **Inline editing** - Edit title, transcript, and context directly
+
+**Core Features Complete:**
+
 - [x] Voice recorder with Omi device support
 - [x] Local AI transcription (Whisper models)
 - [x] Gemma 2B title generation with HuggingFace integration
-- [x] File browser with markdown preview
 - [x] Vault-based architecture with configurable location
 - [x] Obsidian/Logseq compatibility
-- [x] Configurable subfolder names
+- [x] File browser with markdown preview
 - [x] 4-step onboarding flow
-- [x] Background model downloads
-- [x] Platform-specific storage defaults
+- [x] ACP integration with Claude AI
+- [x] WebSocket streaming conversations
 
-**In Progress:**
+**Next Steps:**
 
-- [ ] Space SQLite Knowledge System (note linking)
-- [ ] Cross-space note discovery
+- [ ] Recording UI polish (error handling, loading states)
+- [ ] Performance optimization for large recordings
+- [ ] Space SQLite Knowledge System (deferred until polish complete)
 
 See [ROADMAP.md](ROADMAP.md) for detailed progress and future plans.
 
@@ -186,6 +192,7 @@ See [ROADMAP.md](ROADMAP.md) for detailed progress and future plans.
 | **Vault Integration**   | ✅           | ❌             | ❌          | ❌  |
 | **Voice Recording**     | ✅           | ❌             | ❌          | ❌  |
 | **Obsidian Compatible** | ✅           | ❌             | ❌          | ❌  |
+| **Git Sync**            | ✅           | ❌             | ❌          | ❌  |
 | **Use Case**            | Second brain | Chat           | Coding      | IDE |
 
 **Our Niche:** The only open, cross-platform second brain for Claude AI that works with your existing knowledge vault
@@ -210,4 +217,4 @@ Questions? Ideas? Reach out: [contact info TBD]
 
 ---
 
-**Status:** Active Development (Alpha) - Last Updated: November 1, 2025
+**Status:** Active Development (Alpha) - Last Updated: November 6, 2025

@@ -1,11 +1,49 @@
-# Polish Tasks - November 2025
+# Polish Tasks - Recording UI Refinement
 
-**Status**: 🚧 Active Sprint
+**Status**: 🎯 Active Sprint (Week of Nov 6, 2025)
 **Updated**: November 6, 2025
 
-This document tracks polish and completion tasks for the two current priorities:
-1. Recording UI refinements
-2. GitHub sync integration completion
+Now that Git sync is complete, focus shifts to polishing the recording UI and user experience.
+
+## Quick Action Items (Start Here)
+
+**Highest Priority - User Experience:**
+
+1. **Error Handling** - Add user-friendly error messages for transcription failures
+2. **Loading States** - Implement proper loading indicators and skeleton screens
+3. **Save Feedback** - Show confirmation when edits are saved
+4. **Unsaved Changes Warning** - Prevent data loss when navigating away
+
+**High Priority - Performance:** 5. **Large Recording Optimization** - Test and optimize with 1hr+ recordings 6. **Background Processing** - Ensure UI stays responsive during transcription
+
+**Medium Priority - Features:** 7. **Auto-save** - Implement auto-save for inline edits (debounced) 8. **Keyboard Shortcuts** - Add shortcuts for common actions (save, cancel) 9. **Context Field UX** - Clarify purpose and make it more intuitive
+
+---
+
+## Detailed Task Breakdown
+
+### Context Field Integration
+
+**Status**: ✅ Implemented, needs refinement
+
+**What's Done**:
+
+- Context field added to Recording model
+- Inline editing in RecordingDetailScreen
+- Saves to recording JSON metadata
+
+**Polish Needed**:
+
+- [ ] **UX**: Should context be optional or encouraged?
+- [ ] **Placeholder text**: Add helpful hints for what context means
+- [ ] **Integration**: How does context relate to space linking?
+- [ ] **Display**: Show context prominently in recording list/cards?
+- [ ] **Validation**: Character limits, markdown support?
+
+**Questions**:
+
+- Is context meant to be space-specific (different per space) or recording-level?
+- Should we auto-populate context when linking to a space?
 
 ---
 
@@ -16,11 +54,13 @@ This document tracks polish and completion tasks for the two current priorities:
 **Status**: ✅ Implemented, needs refinement
 
 **What's Done**:
+
 - Context field added to Recording model
 - Inline editing in RecordingDetailScreen
 - Saves to recording JSON metadata
 
 **Polish Needed**:
+
 - [ ] **UX**: Should context be optional or encouraged?
 - [ ] **Placeholder text**: Add helpful hints for what context means
 - [ ] **Integration**: How does context relate to space linking?
@@ -28,6 +68,7 @@ This document tracks polish and completion tasks for the two current priorities:
 - [ ] **Validation**: Character limits, markdown support?
 
 **Questions**:
+
 - Is context meant to be space-specific (different per space) or recording-level?
 - Should we auto-populate context when linking to a space?
 
@@ -38,11 +79,13 @@ This document tracks polish and completion tasks for the two current priorities:
 **Status**: ✅ Implemented, needs UX review
 
 **What's Done**:
+
 - Title, transcript, and context all editable inline
 - Save button persists changes to filesystem
 - Controllers maintain state
 
 **Polish Needed**:
+
 - [ ] **Visual feedback**: Clearer "edit mode" vs "view mode" states
 - [ ] **Save indicator**: Show when changes are saved successfully
 - [ ] **Unsaved changes**: Warn user if navigating away with unsaved edits
@@ -57,11 +100,13 @@ This document tracks polish and completion tasks for the two current priorities:
 **Status**: ⚠️ Partially implemented
 
 **What's Done**:
+
 - ProcessingStatus enum tracks states
 - Periodic refresh updates status
 - Shows status in UI
 
 **Polish Needed**:
+
 - [ ] **Progress indicators**: Better visual progress for transcription
 - [ ] **Error states**: Clear messaging when transcription fails
 - [ ] **Retry logic**: Allow user to retry failed transcription
@@ -76,11 +121,13 @@ This document tracks polish and completion tasks for the two current priorities:
 **Status**: ✅ Implemented, needs polish
 
 **What's Done**:
+
 - Gemma 2B title generation works
 - Can be disabled in settings
 - Background processing
 
 **Polish Needed**:
+
 - [ ] **Manual override**: Easy way to regenerate title
 - [ ] **Edit before accepting**: Preview generated title before saving
 - [ ] **Fallback**: Better default titles when generation disabled/fails
@@ -94,6 +141,7 @@ This document tracks polish and completion tasks for the two current priorities:
 **Status**: 🆕 Needs investigation
 
 **Polish Needed**:
+
 - [ ] **Large recordings**: Test with 1+ hour recordings
 - [ ] **Memory usage**: Profile memory with many recordings
 - [ ] **Startup time**: Optimize initial recording list load
@@ -107,6 +155,7 @@ This document tracks polish and completion tasks for the two current priorities:
 **Status**: ⚠️ Basic implementation
 
 **Polish Needed**:
+
 - [ ] **File system errors**: Handle disk full, permissions issues
 - [ ] **Transcription failures**: Clear error messages with retry
 - [ ] **Model download failures**: Better recovery from failed downloads
@@ -123,10 +172,12 @@ This document tracks polish and completion tasks for the two current priorities:
 **Status**: ⚠️ Local only, needs remote ops
 
 **What's Done**:
+
 - GitService with init, add, commit, status ✅
 - git2dart POC validated ✅
 
 **Polish Needed**:
+
 - [ ] **Clone**: Implement `GitService.clone(url, path, token)`
 - [ ] **Push**: Implement `GitService.push(repo, token)`
 - [ ] **Pull**: Implement `GitService.pull(repo, token)`
@@ -143,6 +194,7 @@ This document tracks polish and completion tasks for the two current priorities:
 **Status**: ❌ Not started
 
 **Needed**:
+
 - [ ] **GitHub PAT input**: Text field with password visibility toggle
 - [ ] **Token validation**: Test connection to GitHub API
 - [ ] **Repository selection**: UI for choosing/creating repo
@@ -156,6 +208,7 @@ This document tracks polish and completion tasks for the two current priorities:
 - [ ] **Manual sync button**: Force sync now
 
 **Design Notes**:
+
 - Should be accessible from main Settings screen
 - Use flutter_secure_storage for PAT persistence
 - Clear instructions for creating GitHub PAT with correct scopes
@@ -167,6 +220,7 @@ This document tracks polish and completion tasks for the two current priorities:
 **Status**: ❌ Not started
 
 **Needed**:
+
 - [ ] **Hook into save flow**: After recording saved to disk
 - [ ] **Git operations**:
   1. Add new/modified files (markdown + WAV + JSON)
@@ -177,6 +231,7 @@ This document tracks polish and completion tasks for the two current priorities:
 - [ ] **User control**: Setting to disable auto-commit?
 
 **Code Location**:
+
 - Hook: `app/lib/features/recorder/services/storage_service.dart`
 - Git ops: `app/lib/core/services/git/git_service.dart`
 
@@ -187,6 +242,7 @@ This document tracks polish and completion tasks for the two current priorities:
 **Status**: ❌ Not started
 
 **Needed**:
+
 - [ ] **Global sync status**: Icon in app bar showing sync state
   - ✅ Synced (green checkmark)
   - 🔄 Syncing (spinning icon)
@@ -206,11 +262,13 @@ This document tracks polish and completion tasks for the two current priorities:
 **Status**: ⚠️ Basic strategy defined, not implemented
 
 **Current Strategy** (MVP):
+
 - Detect merge conflicts after pull
 - Alert user to conflicts
 - "Last write wins" for different files (most recordings are new files)
 
 **Polish Needed**:
+
 - [ ] **Conflict detection**: Use git2dart to detect merge conflicts
 - [ ] **User notification**: Clear dialog explaining conflict
 - [ ] **Basic resolution**: Implement "keep local" or "keep remote"
@@ -218,6 +276,7 @@ This document tracks polish and completion tasks for the two current priorities:
 - [ ] **Prevention**: Encourage frequent pulls/pushes
 
 **Future Enhancement** (Phase 4):
+
 - LLM-assisted conflict resolution
 - Visual diff UI
 - Per-file resolution choices
@@ -229,6 +288,7 @@ This document tracks polish and completion tasks for the two current priorities:
 **Status**: ❌ Not started
 
 **Needed**:
+
 - [ ] **Network errors**: Retry push/pull with exponential backoff
 - [ ] **Auth errors**: Clear message, link to settings
 - [ ] **Merge errors**: Guide user through resolution
@@ -244,6 +304,7 @@ This document tracks polish and completion tasks for the two current priorities:
 **Status**: ⚠️ POC tests only
 
 **Needed**:
+
 - [ ] **Unit tests**: GitService methods (clone, push, pull)
 - [ ] **Integration tests**: Full sync flow end-to-end
 - [ ] **Mock GitHub**: Test without real GitHub API
@@ -281,6 +342,7 @@ This document tracks polish and completion tasks for the two current priorities:
 ## Definition of Done
 
 ### Recording UI Polish
+
 - ✅ All inline editing feels smooth and intuitive
 - ✅ Error states are clear and actionable
 - ✅ Loading states provide good feedback
@@ -288,6 +350,7 @@ This document tracks polish and completion tasks for the two current priorities:
 - ✅ No data loss scenarios (all saves succeed or error clearly)
 
 ### GitHub Sync
+
 - ✅ User can authenticate with GitHub PAT
 - ✅ User can select/create repository
 - ✅ Recordings auto-commit and push after save
@@ -321,6 +384,7 @@ This document tracks polish and completion tasks for the two current priorities:
 ## Timeline
 
 **Target**: End of Week (Nov 10, 2025)
+
 - [ ] Recording UI polish complete
 - [ ] GitHub clone, push, pull implemented
 - [ ] Settings screen for GitHub PAT
@@ -328,6 +392,7 @@ This document tracks polish and completion tasks for the two current priorities:
 - [ ] Basic error handling in place
 
 **Stretch Goal** (Nov 13, 2025):
+
 - [ ] Sync status indicators polished
 - [ ] Conflict detection working
 - [ ] Full test coverage for Git operations
