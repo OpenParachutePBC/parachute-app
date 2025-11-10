@@ -26,6 +26,8 @@ class StorageService {
   static const String _transcriptionModeKey = 'transcription_mode';
   static const String _preferredWhisperModelKey = 'preferred_whisper_model';
   static const String _autoTranscribeKey = 'auto_transcribe';
+  static const String _autoPauseRecordingKey = 'auto_pause_recording';
+  static const String _audioDebugOverlayKey = 'audio_debug_overlay';
   static const String _titleGenerationModeKey = 'title_generation_mode';
   static const String _preferredGemmaModelKey = 'preferred_gemma_model';
   static const String _preferredSmolLMModelKey = 'preferred_smollm_model';
@@ -844,6 +846,50 @@ class StorageService {
       return await prefs.setBool(_autoTranscribeKey, enabled);
     } catch (e) {
       debugPrint('Error setting auto-transcribe: $e');
+      return false;
+    }
+  }
+
+  /// Get auto-pause recording setting (VAD-based auto-chunking)
+  Future<bool> getAutoPauseRecording() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(_autoPauseRecordingKey) ?? true; // Default: ON
+    } catch (e) {
+      debugPrint('Error getting auto-pause recording setting: $e');
+      return true; // Default: ON
+    }
+  }
+
+  /// Set auto-pause recording setting
+  Future<bool> setAutoPauseRecording(bool enabled) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return await prefs.setBool(_autoPauseRecordingKey, enabled);
+    } catch (e) {
+      debugPrint('Error setting auto-pause recording: $e');
+      return false;
+    }
+  }
+
+  /// Get audio debug overlay setting
+  Future<bool> getAudioDebugOverlay() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(_audioDebugOverlayKey) ?? true; // Default: ON
+    } catch (e) {
+      debugPrint('Error getting audio debug overlay: $e');
+      return true;
+    }
+  }
+
+  /// Set audio debug overlay setting
+  Future<bool> setAudioDebugOverlay(bool enabled) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return await prefs.setBool(_audioDebugOverlayKey, enabled);
+    } catch (e) {
+      debugPrint('Error setting audio debug overlay: $e');
       return false;
     }
   }

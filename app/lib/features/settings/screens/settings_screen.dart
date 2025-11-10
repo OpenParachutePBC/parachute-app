@@ -43,6 +43,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   TranscriptionMode _transcriptionMode = TranscriptionMode.api;
   WhisperModelType _preferredModel = WhisperModelType.base;
   bool _autoTranscribe = false;
+  bool _autoPauseRecording = false;
+  bool _audioDebugOverlay = false;
   String _storageInfo = '0 MB used';
 
   // Title Generation settings
@@ -144,6 +146,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
     // Load auto-transcribe setting
     _autoTranscribe = await storageService.getAutoTranscribe();
+
+    // Load auto-pause recording setting
+    _autoPauseRecording = await storageService.getAutoPauseRecording();
+
+    // Load audio debug overlay setting
+    _audioDebugOverlay = await storageService.getAudioDebugOverlay();
 
     // Load storage info
     _storageInfo = await modelManager.getStorageInfo();
@@ -611,6 +619,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Future<void> _setAutoTranscribe(bool enabled) async {
     await ref.read(storageServiceProvider).setAutoTranscribe(enabled);
     setState(() => _autoTranscribe = enabled);
+  }
+
+  Future<void> _setAutoPauseRecording(bool enabled) async {
+    await ref.read(storageServiceProvider).setAutoPauseRecording(enabled);
+    setState(() => _autoPauseRecording = enabled);
+  }
+
+  Future<void> _setAudioDebugOverlay(bool enabled) async {
+    await ref.read(storageServiceProvider).setAudioDebugOverlay(enabled);
+    setState(() => _audioDebugOverlay = enabled);
   }
 
   Future<void> _refreshWhisperStorage() async {
@@ -1731,6 +1749,32 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     onChanged: _setAutoTranscribe,
                     activeTrackColor: Theme.of(context).colorScheme.primary,
                   ),
+                  const SizedBox(height: 16),
+
+                  // Auto-pause toggle (VAD-based chunking)
+                  SwitchListTile(
+                    title: const Text('Auto-pause recording'),
+                    subtitle: const Text(
+                      'Automatically detect silence and segment recordings',
+                    ),
+                    value: _autoPauseRecording,
+                    onChanged: _setAutoPauseRecording,
+                    activeTrackColor: Theme.of(context).colorScheme.primary,
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // Audio debug overlay toggle
+                  SwitchListTile(
+                    title: const Text('Audio debug overlay'),
+                    subtitle: const Text(
+                      'Show real-time audio levels and noise filtering graph',
+                    ),
+                    value: _audioDebugOverlay,
+                    onChanged: _setAudioDebugOverlay,
+                    activeTrackColor: Theme.of(context).colorScheme.primary,
+                  ),
+
                   const SizedBox(height: 32),
                   const Divider(),
                   const SizedBox(height: 32),

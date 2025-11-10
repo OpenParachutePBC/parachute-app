@@ -1,18 +1,41 @@
 # Parachute Development Roadmap
 
-**Last Updated**: November 6, 2025
+**Last Updated**: November 10, 2025
 
 ---
 
-## Current Focus: Recording UI Polish & Refinement
+## Current Focus: Space SQLite Knowledge System
 
-**Status**: 🎯 Active Development
+**Status**: 🔜 Next Up
 **Priority**: P0
-**Timeline**: Week of November 6, 2025
 
-Polish and refine the recording interface based on the completed Git sync foundation. Focus on user experience, error handling, and performance.
+The auto-pause feature is complete! Next up: resuming the Space SQLite Knowledge System that was deferred when we pivoted to local-first recording.
 
-**See**: [docs/polish-tasks.md](docs/polish-tasks.md)
+**See**: [docs/features/space-sqlite-knowledge-system.md](docs/features/space-sqlite-knowledge-system.md)
+
+### Recent Major Achievement: Auto-Pause Voice Recording ✅
+
+**Completed**: November 10, 2025
+
+Automatic silence detection with intelligent noise suppression is now **fully functional**:
+
+- ✅ VAD (Voice Activity Detection) - RMS energy-based speech detection
+- ✅ SmartChunker - Auto-segment on 1s silence
+- ✅ OS-level noise suppression (echoCancel, autoGain, noiseSuppress)
+- ✅ High-pass filter (80Hz cutoff) - Removes low-frequency rumble
+- ✅ Visual debug overlay with real-time audio graphs
+- ✅ Settings toggle for auto-pause and debug mode
+- ✅ 116 comprehensive tests covering all components
+
+**Audio Pipeline**: `Mic → OS Suppression → High-Pass Filter → VAD → SmartChunker → Whisper`
+
+**Implementation Docs**:
+
+- [docs/implementation/noise-filtering-phase1.md](docs/implementation/noise-filtering-phase1.md) - Current implementation
+- [docs/implementation/auto-pause-branch-audit.md](docs/implementation/auto-pause-branch-audit.md) - Complete audit
+- [docs/implementation/auto-pause-vad-implementation.md](docs/implementation/auto-pause-vad-implementation.md) - Research
+
+**Result**: Hands-free journaling with natural pauses. No manual pause button needed!
 
 ### Recent Major Achievement: Git-Based Sync ✅
 
@@ -95,6 +118,27 @@ The **local-first architecture** means:
 - [x] Unified RecordingDetailScreen with clean, focused design
 - [x] Periodic refresh for processing status updates
 - [x] Link captures to spaces UI integration
+
+#### Auto-Pause Voice Recording ✅ (COMPLETED - Nov 7-10, 2025)
+
+- [x] **Week 1**: VAD, Resampler, SmartChunker (ports from RichardTate)
+- [x] AutoPauseTranscriptionService with VAD-based chunking
+- [x] Settings toggle for auto-pause mode
+- [x] UI integration with adaptive controls
+- [x] OS-level noise suppression (echoCancel, autoGain, noiseSuppress)
+- [x] High-pass filter (80Hz cutoff) for low-frequency noise removal
+- [x] Visual debug overlay with real-time audio graphs
+- [x] 116 comprehensive unit tests (all passing)
+- [x] Complete documentation and implementation audit
+
+**Audio Pipeline**: Mic → OS Suppression → High-Pass Filter → VAD → SmartChunker → Whisper
+
+**Implementation Docs**:
+
+- [docs/implementation/noise-filtering-phase1.md](docs/implementation/noise-filtering-phase1.md)
+- [docs/implementation/auto-pause-branch-audit.md](docs/implementation/auto-pause-branch-audit.md)
+
+**Note**: RNNoise FFI (Week 2 from original plan) deferred - OS suppression + high-pass filter proved sufficient for typical environments.
 
 #### Git-Based Sync Foundation ✅ (COMPLETED - Nov 6, 2025)
 
