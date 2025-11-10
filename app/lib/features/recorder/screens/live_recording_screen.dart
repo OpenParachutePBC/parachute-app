@@ -2,7 +2,10 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:app/features/recorder/services/live_transcription_service_v2.dart';
+import 'package:app/features/recorder/services/live_transcription_service_v2.dart'
+    as v2;
+import 'package:app/features/recorder/services/live_transcription_service_v3.dart'
+    as v3;
 import 'package:app/features/recorder/providers/service_providers.dart';
 import 'package:app/core/services/file_system_service.dart';
 import 'package:app/features/files/providers/local_file_browser_provider.dart';
@@ -26,7 +29,9 @@ class LiveRecordingScreen extends ConsumerStatefulWidget {
 }
 
 class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
-  late SimpleTranscriptionService _transcriptionService;
+  dynamic
+  _transcriptionService; // SimpleTranscriptionService OR AutoPauseTranscriptionService
+  bool _useAutoPause = false; // Determined at init time
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final FocusNode _textFocusNode = FocusNode();
@@ -41,8 +46,8 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
   DateTime? _startTime;
   int _wordCount = 0;
 
-  // Segments
-  final List<TranscriptionSegment> _segments = [];
+  // Segments (using dynamic type to support both v2 and v3)
+  final List<dynamic> _segments = [];
 
   @override
   void initState() {
@@ -65,14 +70,29 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
   Future<void> _initializeService() async {
     try {
       final whisperService = ref.read(whisperLocalServiceProvider);
-      _transcriptionService = SimpleTranscriptionService(whisperService);
+      final storageService = ref.read(storageServiceProvider);
+
+      // Check if auto-pause is enabled
+      _useAutoPause = await storageService.getAutoPauseRecording();
+
+      // Initialize appropriate service
+      if (_useAutoPause) {
+        debugPrint('[LiveRecordingScreen] Using AUTO-PAUSE mode (V3)');
+        _transcriptionService = v3.AutoPauseTranscriptionService(
+          whisperService,
+        );
+      } else {
+        debugPrint('[LiveRecordingScreen] Using MANUAL mode (V2)');
+        _transcriptionService = v2.SimpleTranscriptionService(whisperService);
+      }
+
       await _transcriptionService.initialize();
 
       // Listen to segment updates
       _transcriptionService.segmentStream.listen(_handleSegmentUpdate);
 
       // Listen to processing state
-      _transcriptionService.processingStream.listen((isProcessing) {
+      _transcriptionService.isProcessingStream.listen((isProcessing) {
         if (mounted) {
           setState(() {
             _isProcessing = isProcessing;
@@ -102,7 +122,7 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
     }
   }
 
-  void _handleSegmentUpdate(TranscriptionSegment segment) {
+  void _handleSegmentUpdate(dynamic segment) {
     if (!mounted) return;
 
     setState(() {
@@ -119,14 +139,14 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
     });
 
     // Auto-scroll when new text appears
-    if (segment.status == TranscriptionSegmentStatus.completed) {
+    if (segment.status.toString().contains('completed')) {
       Future.delayed(const Duration(milliseconds: 100), _scrollToBottom);
     }
   }
 
   void _updateTextController() {
     final completedText = _segments
-        .where((s) => s.status == TranscriptionSegmentStatus.completed)
+        .where((s) => s.status.toString().contains('completed'))
         .map((s) => s.text)
         .join('\n\n');
 
@@ -446,10 +466,20 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
   }
 
   Widget _buildSyncStatusIndicator() {
-    // Placeholder for Git sync status
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
+        // Show auto-pause indicator if enabled
+        if (_useAutoPause) ...[
+          Icon(Icons.auto_awesome, size: 16, color: Colors.blue),
+          const SizedBox(width: 4),
+          Text(
+            'Auto-pause',
+            style: TextStyle(fontSize: 14, color: Colors.blue),
+          ),
+          const SizedBox(width: 12),
+        ],
+        // Git sync status
         Icon(Icons.cloud_done, size: 16, color: Colors.green),
         const SizedBox(width: 4),
         Text('Synced', style: TextStyle(fontSize: 14, color: Colors.green)),
@@ -518,7 +548,7 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
           final segment = _segments[index];
 
           // Show completed segments as text
-          if (segment.status == TranscriptionSegmentStatus.completed) {
+          if (segment.status.toString().contains('completed')) {
             return Padding(
               padding: const EdgeInsets.only(bottom: 16.0),
               child: Text(
@@ -529,7 +559,7 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
           }
 
           // Show processing segments with indicator
-          if (segment.status == TranscriptionSegmentStatus.processing) {
+          if (segment.status.toString().contains('processing')) {
             return Padding(
               padding: const EdgeInsets.only(bottom: 16.0),
               child: _buildProcessingIndicator(segmentNumber: segment.index),
@@ -537,7 +567,7 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
           }
 
           // Show pending (queued) segments with indicator
-          if (segment.status == TranscriptionSegmentStatus.pending) {
+          if (segment.status.toString().contains('pending')) {
             return Padding(
               padding: const EdgeInsets.only(bottom: 16.0),
               child: _buildQueuedIndicator(segmentNumber: segment.index),
@@ -545,7 +575,7 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
           }
 
           // Show failed segments with indicator
-          if (segment.status == TranscriptionSegmentStatus.failed) {
+          if (segment.status.toString().contains('failed')) {
             return Padding(
               padding: const EdgeInsets.only(bottom: 16.0),
               child: _buildFailedIndicator(segmentNumber: segment.index),
@@ -882,36 +912,40 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
   Widget _buildRecordingControls() {
     return Row(
       children: [
-        // Pause/Resume button
-        Expanded(
-          flex: 2,
-          child: ElevatedButton.icon(
-            onPressed:
-                _togglePause, // Always enabled - can resume during processing
-            icon: Icon(_isPaused ? Icons.play_arrow : Icons.pause, size: 24),
-            label: Text(
-              _isPaused ? 'Resume' : 'Pause',
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _isPaused
-                  ? Colors.green
-                  : Colors.orange.shade700,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 18),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+        // Pause/Resume button (only in manual mode)
+        if (!_useAutoPause) ...[
+          Expanded(
+            flex: 2,
+            child: ElevatedButton.icon(
+              onPressed:
+                  _togglePause, // Always enabled - can resume during processing
+              icon: Icon(_isPaused ? Icons.play_arrow : Icons.pause, size: 24),
+              label: Text(
+                _isPaused ? 'Resume' : 'Pause',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
-              elevation: 2,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _isPaused
+                    ? Colors.green
+                    : Colors.orange.shade700,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 18),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                elevation: 2,
+              ),
             ),
           ),
-        ),
-
-        const SizedBox(width: 12),
+          const SizedBox(width: 12),
+        ],
 
         // Stop & Save button (prominent, single action)
         Expanded(
-          flex: 3,
+          flex: _useAutoPause ? 1 : 3,
           child: ElevatedButton.icon(
             onPressed: _stopAndSave, // Single action to finish
             icon: const Icon(Icons.check_circle, size: 28),
