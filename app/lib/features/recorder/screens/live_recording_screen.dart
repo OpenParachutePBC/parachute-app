@@ -820,25 +820,25 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.red.shade50,
+        color: Colors.blue.shade50,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: Colors.red.shade700.withValues(alpha: 0.3),
+          color: Colors.blue.shade700.withValues(alpha: 0.3),
           width: 1,
         ),
       ),
       child: Row(
         children: [
-          Icon(Icons.fiber_manual_record, color: Colors.red.shade700, size: 20),
+          Icon(Icons.mic, color: Colors.blue.shade700, size: 20),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Recording',
+                  'Listening',
                   style: TextStyle(
-                    color: Colors.red.shade700,
+                    color: Colors.blue.shade700,
                     fontWeight: FontWeight.w600,
                     fontSize: 14,
                   ),
@@ -847,7 +847,7 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
                 Text(
                   _formattedDuration,
                   style: TextStyle(
-                    color: Colors.red.shade700.withValues(alpha: 0.8),
+                    color: Colors.blue.shade700.withValues(alpha: 0.8),
                     fontSize: 12,
                   ),
                 ),
