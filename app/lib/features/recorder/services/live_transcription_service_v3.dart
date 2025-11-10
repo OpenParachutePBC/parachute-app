@@ -111,7 +111,7 @@ class AutoPauseTranscriptionService {
 
   /// Start auto-pause recording
   Future<bool> startRecording({
-    double vadEnergyThreshold = 300.0,
+    double vadEnergyThreshold = 150.0, // Lower = more sensitive
     Duration silenceThreshold = const Duration(seconds: 1),
     Duration minChunkDuration = const Duration(milliseconds: 500),
     Duration maxChunkDuration = const Duration(seconds: 30),
@@ -197,9 +197,17 @@ class AutoPauseTranscriptionService {
     // Process through SmartChunker (VAD + auto-chunking)
     _chunker!.processSamples(samples);
 
-    // Emit VAD activity status (true = speech detected)
-    // Note: We'll add this in Week 2 when we need real-time UI feedback
-    // For now, we just need the chunking to work
+    // Debug: Show VAD stats periodically
+    if (_allAudioSamples.length % 100 == 0) {
+      // Every ~1 second (100 chunks)
+      final stats = _chunker!.stats;
+      debugPrint(
+        '[AutoPauseTranscription] VAD Stats: '
+        'Speech: ${stats.vadStats.speechDuration.inMilliseconds}ms, '
+        'Silence: ${stats.vadStats.silenceDuration.inMilliseconds}ms, '
+        'Buffer: ${stats.bufferDuration.inSeconds}s',
+      );
+    }
   }
 
   /// Handle chunk ready from SmartChunker
@@ -209,8 +217,8 @@ class AutoPauseTranscriptionService {
     ); // 16 samples/ms at 16kHz
 
     debugPrint(
-      '[AutoPauseTranscription] Auto-chunk detected: '
-      '${duration.inSeconds}s, ${samples.length} samples',
+      '[AutoPauseTranscription] 🎤 Auto-chunk detected! '
+      'Duration: ${duration.inSeconds}s (${samples.length} samples)',
     );
 
     // Queue for transcription
@@ -247,6 +255,31 @@ class AutoPauseTranscriptionService {
     } catch (e) {
       debugPrint('[AutoPauseTranscription] Failed to stop: $e');
       return null;
+    }
+  }
+
+  /// Cancel recording without saving
+  Future<void> cancelRecording() async {
+    if (!_isRecording) return;
+
+    try {
+      // Stop recorder
+      await _recorder.stop();
+      _isRecording = false;
+
+      // Clear chunker
+      if (_chunker != null) {
+        _chunker = null;
+      }
+
+      // Clear all data
+      _segments.clear();
+      _allAudioSamples.clear();
+      _processingQueue.clear();
+
+      debugPrint('[AutoPauseTranscription] Recording cancelled');
+    } catch (e) {
+      debugPrint('[AutoPauseTranscription] Failed to cancel: $e');
     }
   }
 
