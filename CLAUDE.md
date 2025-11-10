@@ -174,6 +174,8 @@ Backend tries `ANTHROPIC_API_KEY` env var, then falls back to `~/.claude/.creden
 
 **Why:** Avoids messy history with reverts and bug-filled commits.
 
+**Important:** Always use `git --no-pager` when running git commands in bash (prevents pager from blocking output).
+
 ---
 
 ## Common Quick Fixes

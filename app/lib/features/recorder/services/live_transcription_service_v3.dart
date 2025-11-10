@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:record/record.dart';
 import 'package:path/path.dart' as path;
 import 'package:app/features/recorder/services/whisper_local_service.dart';
 import 'package:app/features/recorder/services/vad/smart_chunker.dart';
+import 'package:app/features/recorder/services/audio_processing/simple_noise_filter.dart';
 
 /// Represents a transcribed segment (auto-detected via VAD)
 class TranscriptionSegment {
@@ -49,14 +51,14 @@ enum TranscriptionSegmentStatus {
 
 /// Auto-pause transcription service using VAD-based chunking
 ///
-/// Flow (Week 1 - No RNNoise yet):
+/// Flow (Phase 1 - Simple noise filtering):
 /// 1. User starts recording → Continuous audio capture
-/// 2. Audio → SmartChunker (VAD) → Auto-detects silence
+/// 2. Audio → High-pass filter (removes low-freq noise) → SmartChunker (VAD) → Auto-detects silence
 /// 3. On 1s silence → Auto-chunks → Transcribes
 /// 4. User stops → Transcribes final segment
 ///
-/// Future (Week 2 - With RNNoise):
-/// Audio → RNNoise → SmartChunker → Transcription
+/// Future (Phase 2 - Full RNNoise):
+/// Audio → RNNoise (full noise suppression) → SmartChunker → Transcription
 class AutoPauseTranscriptionService {
   final WhisperLocalService _whisperService;
 
@@ -64,7 +66,8 @@ class AutoPauseTranscriptionService {
   final AudioRecorder _recorder = AudioRecorder();
   bool _isRecording = false;
 
-  // VAD & Chunking
+  // Noise filtering & VAD
+  SimpleNoiseFilter? _noiseFilter;
   SmartChunker? _chunker;
   final List<List<int>> _allAudioSamples = []; // Complete recording
 
@@ -111,7 +114,8 @@ class AutoPauseTranscriptionService {
 
   /// Start auto-pause recording
   Future<bool> startRecording({
-    double vadEnergyThreshold = 150.0, // Lower = more sensitive
+    double vadEnergyThreshold =
+        200.0, // With noise filtering, can use lower threshold
     Duration silenceThreshold = const Duration(seconds: 1),
     Duration minChunkDuration = const Duration(milliseconds: 500),
     Duration maxChunkDuration = const Duration(seconds: 30),
@@ -134,6 +138,13 @@ class AutoPauseTranscriptionService {
         await initialize();
       }
 
+      // Initialize noise filter (removes low-frequency background noise)
+      _noiseFilter = SimpleNoiseFilter(
+        cutoffFreq:
+            80.0, // Remove frequencies below 80Hz (fans, AC hum, rumble)
+        sampleRate: 16000,
+      );
+
       // Initialize SmartChunker
       _chunker = SmartChunker(
         config: SmartChunkerConfig(
@@ -150,12 +161,16 @@ class AutoPauseTranscriptionService {
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       _audioFilePath = path.join(_tempDirectory!, 'recording_$timestamp.wav');
 
-      // Start recording with stream
+      // Start recording with stream (with OS-level noise suppression)
       final stream = await _recorder.startStream(
         const RecordConfig(
           encoder: AudioEncoder.pcm16bits,
           sampleRate: 16000,
           numChannels: 1,
+          // Enable hardware/OS noise suppression
+          echoCancel: true,
+          autoGain: true,
+          noiseSuppress: true,
         ),
       );
 
@@ -186,16 +201,30 @@ class AutoPauseTranscriptionService {
 
   /// Process incoming audio chunk from stream
   void _processAudioChunk(Uint8List audioBytes) {
-    if (!_isRecording || _chunker == null) return;
+    if (!_isRecording || _chunker == null || _noiseFilter == null) return;
 
     // Convert bytes to int16 samples
-    final samples = _bytesToInt16(audioBytes);
+    final rawSamples = _bytesToInt16(audioBytes);
 
-    // Save to complete recording
-    _allAudioSamples.add(samples);
+    // Apply noise filter BEFORE VAD (removes low-frequency background noise)
+    final cleanSamples = _noiseFilter!.process(rawSamples);
 
-    // Process through SmartChunker (VAD + auto-chunking)
-    _chunker!.processSamples(samples);
+    // Debug: Log filter effectiveness periodically
+    if (_allAudioSamples.length % 100 == 0) {
+      final rawEnergy = _calculateRMS(rawSamples);
+      final cleanEnergy = _calculateRMS(cleanSamples);
+      debugPrint(
+        '[NoiseFilter] Raw: ${rawEnergy.toStringAsFixed(1)}, '
+        'Clean: ${cleanEnergy.toStringAsFixed(1)}, '
+        'Reduction: ${((1 - cleanEnergy / rawEnergy) * 100).toStringAsFixed(1)}%',
+      );
+    }
+
+    // Save clean audio to complete recording
+    _allAudioSamples.add(cleanSamples);
+
+    // Process clean audio through SmartChunker (VAD + auto-chunking)
+    _chunker!.processSamples(cleanSamples);
 
     // Debug: Show VAD stats periodically
     if (_allAudioSamples.length % 100 == 0) {
@@ -226,6 +255,28 @@ class AutoPauseTranscriptionService {
   }
 
   /// Stop recording and transcribe final segment
+  /// Pause recording (manual pause in addition to auto-pause)
+  Future<void> pauseRecording() async {
+    if (!_isRecording) return;
+    try {
+      await _recorder.pause();
+      debugPrint('[AutoPauseTranscription] Recording paused');
+    } catch (e) {
+      debugPrint('[AutoPauseTranscription] Failed to pause: $e');
+    }
+  }
+
+  /// Resume recording
+  Future<void> resumeRecording() async {
+    if (!_isRecording) return;
+    try {
+      await _recorder.resume();
+      debugPrint('[AutoPauseTranscription] Recording resumed');
+    } catch (e) {
+      debugPrint('[AutoPauseTranscription] Failed to resume: $e');
+    }
+  }
+
   Future<String?> stopRecording() async {
     if (!_isRecording) return null;
 
@@ -238,6 +289,12 @@ class AutoPauseTranscriptionService {
       if (_chunker != null) {
         _chunker!.flush();
         _chunker = null;
+      }
+
+      // Reset noise filter for next recording
+      if (_noiseFilter != null) {
+        _noiseFilter!.reset();
+        _noiseFilter = null;
       }
 
       // Wait for all queued segments to finish processing
@@ -302,7 +359,9 @@ class AutoPauseTranscriptionService {
         duration: Duration(milliseconds: (samples.length / 16).round()),
       ),
     );
-    _segmentStreamController.add(_segments.last);
+    if (!_segmentStreamController.isClosed) {
+      _segmentStreamController.add(_segments.last);
+    }
 
     // Start processing if not already running
     if (!_isProcessingQueue) {
@@ -314,7 +373,9 @@ class AutoPauseTranscriptionService {
   Future<void> _processQueue() async {
     if (_isProcessingQueue) return;
     _isProcessingQueue = true;
-    _processingStreamController.add(true);
+    if (!_processingStreamController.isClosed) {
+      _processingStreamController.add(true);
+    }
 
     while (_processingQueue.isNotEmpty) {
       final segment = _processingQueue.removeAt(0);
@@ -322,7 +383,9 @@ class AutoPauseTranscriptionService {
     }
 
     _isProcessingQueue = false;
-    _processingStreamController.add(false);
+    if (!_processingStreamController.isClosed) {
+      _processingStreamController.add(false);
+    }
   }
 
   /// Transcribe a single segment
@@ -338,25 +401,62 @@ class AutoPauseTranscriptionService {
     _segments[segmentIndex] = _segments[segmentIndex].copyWith(
       status: TranscriptionSegmentStatus.processing,
     );
-    _segmentStreamController.add(_segments[segmentIndex]);
+    if (!_segmentStreamController.isClosed) {
+      _segmentStreamController.add(_segments[segmentIndex]);
+    }
 
     try {
+      // Validate segment has audio data
+      if (segment.samples.isEmpty) {
+        throw Exception('Segment has no audio data');
+      }
+
       // Save samples to temp WAV file for Whisper
       final tempWavPath = path.join(
         _tempDirectory!,
         'temp_segment_${segment.index}.wav',
       );
+
+      debugPrint(
+        '[AutoPauseTranscription] Saving temp WAV: $tempWavPath (${segment.samples.length} samples)',
+      );
       await _saveSamplesToWav(segment.samples, tempWavPath);
+
+      // Verify file was created
+      final file = File(tempWavPath);
+      if (!await file.exists()) {
+        throw Exception('Failed to create temp WAV file: $tempWavPath');
+      }
+      debugPrint(
+        '[AutoPauseTranscription] ✅ Temp WAV created: ${await file.length()} bytes',
+      );
 
       // Transcribe
       final text = await _whisperService.transcribeAudio(tempWavPath);
+
+      // Clean up temp WAV file after successful transcription
+      try {
+        await file.delete();
+        debugPrint(
+          '[AutoPauseTranscription] Cleaned up temp WAV: $tempWavPath',
+        );
+      } catch (e) {
+        debugPrint('[AutoPauseTranscription] Failed to delete temp WAV: $e');
+      }
+
+      // Check if text is empty (Whisper sometimes returns empty for noise)
+      if (text.trim().isEmpty) {
+        throw Exception('Transcription returned empty text');
+      }
 
       // Update with result
       _segments[segmentIndex] = _segments[segmentIndex].copyWith(
         text: text.trim(),
         status: TranscriptionSegmentStatus.completed,
       );
-      _segmentStreamController.add(_segments[segmentIndex]);
+      if (!_segmentStreamController.isClosed) {
+        _segmentStreamController.add(_segments[segmentIndex]);
+      }
 
       debugPrint(
         '[AutoPauseTranscription] Segment ${segment.index} done: "$text"',
@@ -364,11 +464,25 @@ class AutoPauseTranscriptionService {
     } catch (e) {
       debugPrint('[AutoPauseTranscription] Transcription failed: $e');
 
+      // Clean up temp WAV file on error too
+      try {
+        final errorFile = File(
+          path.join(_tempDirectory!, 'temp_segment_${segment.index}.wav'),
+        );
+        if (await errorFile.exists()) {
+          await errorFile.delete();
+        }
+      } catch (_) {
+        // Ignore cleanup errors
+      }
+
       _segments[segmentIndex] = _segments[segmentIndex].copyWith(
         text: '[Transcription failed]',
         status: TranscriptionSegmentStatus.failed,
       );
-      _segmentStreamController.add(_segments[segmentIndex]);
+      if (!_segmentStreamController.isClosed) {
+        _segmentStreamController.add(_segments[segmentIndex]);
+      }
     }
   }
 
@@ -476,6 +590,16 @@ class AutoPauseTranscriptionService {
       }
     }
     return samples;
+  }
+
+  /// Calculate RMS (Root Mean Square) energy for debugging
+  double _calculateRMS(List<int> samples) {
+    if (samples.isEmpty) return 0.0;
+    double sumSquares = 0.0;
+    for (final sample in samples) {
+      sumSquares += sample * sample;
+    }
+    return sqrt(sumSquares / samples.length);
   }
 
   /// Cleanup

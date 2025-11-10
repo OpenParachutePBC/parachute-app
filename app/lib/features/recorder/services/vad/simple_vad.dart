@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'package:flutter/foundation.dart';
 
 /// Configuration for Voice Activity Detection
 /// Ported from RichardTate: server/internal/transcription/vad.go
@@ -9,8 +10,9 @@ class VADConfig {
   /// Frame duration in milliseconds (default: 10ms)
   final int frameDurationMs;
 
-  /// Energy threshold for speech detection (default: 100.0)
-  /// This threshold determines what RMS energy level is considered speech
+  /// Energy threshold for speech detection (default: 100.0 for RichardTate)
+  /// This threshold determines what RMS energy level is considered speech.
+  /// Note: Real-world usage may require 400-800+ to account for background noise
   final double energyThreshold;
 
   /// Silence duration to trigger chunk boundary in milliseconds (default: 1000ms)
@@ -84,6 +86,8 @@ class SimpleVAD {
     return isSpeech;
   }
 
+  int _debugFrameCount = 0; // For sampling energy values
+
   /// Calculate RMS energy of audio samples
   ///
   /// This is the core algorithm that determines speech vs silence.
@@ -100,6 +104,15 @@ class SimpleVAD {
     }
 
     final rms = sqrt(sumSquares / samples.length);
+
+    // Debug: Log energy every 100 frames (~1 second)
+    _debugFrameCount++;
+    if (_debugFrameCount % 100 == 0) {
+      debugPrint(
+        '[VAD] Energy: ${rms.toStringAsFixed(1)}, Threshold: ${config.energyThreshold}, Speech: ${rms > config.energyThreshold}',
+      );
+    }
+
     return rms;
   }
 
