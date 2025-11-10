@@ -1,0 +1,472 @@
+import 'dart:async';
+import 'dart:io';
+import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
+import 'package:record/record.dart';
+import 'package:path/path.dart' as path;
+import 'package:app/features/recorder/services/whisper_local_service.dart';
+import 'package:app/features/recorder/services/vad/smart_chunker.dart';
+
+/// Represents a transcribed segment (auto-detected via VAD)
+class TranscriptionSegment {
+  final int index; // Segment number (1, 2, 3, ...)
+  final String text;
+  final TranscriptionSegmentStatus status;
+  final DateTime timestamp;
+  final Duration duration; // Audio duration of this segment
+
+  TranscriptionSegment({
+    required this.index,
+    required this.text,
+    required this.status,
+    required this.timestamp,
+    required this.duration,
+  });
+
+  TranscriptionSegment copyWith({
+    int? index,
+    String? text,
+    TranscriptionSegmentStatus? status,
+    DateTime? timestamp,
+    Duration? duration,
+  }) {
+    return TranscriptionSegment(
+      index: index ?? this.index,
+      text: text ?? this.text,
+      status: status ?? this.status,
+      timestamp: timestamp ?? this.timestamp,
+      duration: duration ?? this.duration,
+    );
+  }
+}
+
+enum TranscriptionSegmentStatus {
+  pending, // Waiting to be transcribed
+  processing, // Currently being transcribed
+  completed, // Transcription done
+  failed, // Transcription error
+}
+
+/// Auto-pause transcription service using VAD-based chunking
+///
+/// Flow (Week 1 - No RNNoise yet):
+/// 1. User starts recording → Continuous audio capture
+/// 2. Audio → SmartChunker (VAD) → Auto-detects silence
+/// 3. On 1s silence → Auto-chunks → Transcribes
+/// 4. User stops → Transcribes final segment
+///
+/// Future (Week 2 - With RNNoise):
+/// Audio → RNNoise → SmartChunker → Transcription
+class AutoPauseTranscriptionService {
+  final WhisperLocalService _whisperService;
+
+  // Recording state
+  final AudioRecorder _recorder = AudioRecorder();
+  bool _isRecording = false;
+
+  // VAD & Chunking
+  SmartChunker? _chunker;
+  final List<List<int>> _allAudioSamples = []; // Complete recording
+
+  // File management
+  String? _audioFilePath;
+  String? _tempDirectory;
+
+  // Segments (auto-detected paragraphs)
+  final List<TranscriptionSegment> _segments = [];
+  int _nextSegmentIndex = 1;
+
+  // Processing queue
+  final List<_QueuedSegment> _processingQueue = [];
+  bool _isProcessingQueue = false;
+
+  // Progress streaming
+  final _segmentStreamController =
+      StreamController<TranscriptionSegment>.broadcast();
+  final _processingStreamController = StreamController<bool>.broadcast();
+  final _vadActivityController = StreamController<bool>.broadcast();
+
+  Stream<TranscriptionSegment> get segmentStream =>
+      _segmentStreamController.stream;
+  Stream<bool> get isProcessingStream => _processingStreamController.stream;
+  Stream<bool> get vadActivityStream =>
+      _vadActivityController.stream; // true = speech, false = silence
+
+  bool get isRecording => _isRecording;
+  bool get isProcessing => _isProcessingQueue;
+  List<TranscriptionSegment> get segments => List.unmodifiable(_segments);
+
+  AutoPauseTranscriptionService(this._whisperService);
+
+  /// Initialize service and create temp directory
+  Future<void> initialize() async {
+    if (_tempDirectory != null) return;
+
+    final tempDir = Directory.systemTemp;
+    _tempDirectory = path.join(tempDir.path, 'parachute_transcription');
+    await Directory(_tempDirectory!).create(recursive: true);
+
+    debugPrint('[AutoPauseTranscription] Initialized: $_tempDirectory');
+  }
+
+  /// Start auto-pause recording
+  Future<bool> startRecording({
+    double vadEnergyThreshold = 300.0,
+    Duration silenceThreshold = const Duration(seconds: 1),
+    Duration minChunkDuration = const Duration(milliseconds: 500),
+    Duration maxChunkDuration = const Duration(seconds: 30),
+  }) async {
+    if (_isRecording) {
+      debugPrint('[AutoPauseTranscription] Already recording');
+      return false;
+    }
+
+    try {
+      // Check permissions
+      final hasPermission = await _recorder.hasPermission();
+      if (!hasPermission) {
+        debugPrint('[AutoPauseTranscription] No recording permission');
+        return false;
+      }
+
+      // Ensure temp directory exists
+      if (_tempDirectory == null) {
+        await initialize();
+      }
+
+      // Initialize SmartChunker
+      _chunker = SmartChunker(
+        config: SmartChunkerConfig(
+          sampleRate: 16000,
+          silenceThreshold: silenceThreshold,
+          minChunkDuration: minChunkDuration,
+          maxChunkDuration: maxChunkDuration,
+          vadEnergyThreshold: vadEnergyThreshold,
+          onChunkReady: _handleChunk,
+        ),
+      );
+
+      // Set final audio file path
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      _audioFilePath = path.join(_tempDirectory!, 'recording_$timestamp.wav');
+
+      // Start recording with stream
+      final stream = await _recorder.startStream(
+        const RecordConfig(
+          encoder: AudioEncoder.pcm16bits,
+          sampleRate: 16000,
+          numChannels: 1,
+        ),
+      );
+
+      _isRecording = true;
+      _segments.clear();
+      _nextSegmentIndex = 1;
+      _allAudioSamples.clear();
+      _processingQueue.clear();
+
+      // Process audio stream through VAD chunker
+      stream.listen(
+        _processAudioChunk,
+        onError: (error) {
+          debugPrint('[AutoPauseTranscription] Stream error: $error');
+        },
+        onDone: () {
+          debugPrint('[AutoPauseTranscription] Stream completed');
+        },
+      );
+
+      debugPrint('[AutoPauseTranscription] Recording started with VAD');
+      return true;
+    } catch (e) {
+      debugPrint('[AutoPauseTranscription] Failed to start: $e');
+      return false;
+    }
+  }
+
+  /// Process incoming audio chunk from stream
+  void _processAudioChunk(Uint8List audioBytes) {
+    if (!_isRecording || _chunker == null) return;
+
+    // Convert bytes to int16 samples
+    final samples = _bytesToInt16(audioBytes);
+
+    // Save to complete recording
+    _allAudioSamples.add(samples);
+
+    // Process through SmartChunker (VAD + auto-chunking)
+    _chunker!.processSamples(samples);
+
+    // Emit VAD activity status (true = speech detected)
+    // Note: We'll add this in Week 2 when we need real-time UI feedback
+    // For now, we just need the chunking to work
+  }
+
+  /// Handle chunk ready from SmartChunker
+  void _handleChunk(List<int> samples) {
+    final duration = Duration(
+      milliseconds: (samples.length / 16).round(),
+    ); // 16 samples/ms at 16kHz
+
+    debugPrint(
+      '[AutoPauseTranscription] Auto-chunk detected: '
+      '${duration.inSeconds}s, ${samples.length} samples',
+    );
+
+    // Queue for transcription
+    _queueSegmentForProcessing(samples);
+  }
+
+  /// Stop recording and transcribe final segment
+  Future<String?> stopRecording() async {
+    if (!_isRecording) return null;
+
+    try {
+      // Stop recorder
+      await _recorder.stop();
+      _isRecording = false;
+
+      // Flush final chunk from SmartChunker
+      if (_chunker != null) {
+        _chunker!.flush();
+        _chunker = null;
+      }
+
+      // Wait for all queued segments to finish processing
+      while (_isProcessingQueue || _processingQueue.isNotEmpty) {
+        await Future.delayed(const Duration(milliseconds: 100));
+      }
+
+      // Merge all audio into final WAV file
+      if (_allAudioSamples.isNotEmpty && _audioFilePath != null) {
+        await _saveCompleteRecording();
+      }
+
+      debugPrint('[AutoPauseTranscription] Recording stopped: $_audioFilePath');
+      return _audioFilePath;
+    } catch (e) {
+      debugPrint('[AutoPauseTranscription] Failed to stop: $e');
+      return null;
+    }
+  }
+
+  /// Queue a segment for transcription (non-blocking)
+  void _queueSegmentForProcessing(List<int> samples) {
+    final segment = _QueuedSegment(
+      index: _nextSegmentIndex++,
+      samples: samples,
+    );
+
+    _processingQueue.add(segment);
+
+    // Add pending segment to UI
+    _segments.add(
+      TranscriptionSegment(
+        index: segment.index,
+        text: '',
+        status: TranscriptionSegmentStatus.pending,
+        timestamp: DateTime.now(),
+        duration: Duration(milliseconds: (samples.length / 16).round()),
+      ),
+    );
+    _segmentStreamController.add(_segments.last);
+
+    // Start processing if not already running
+    if (!_isProcessingQueue) {
+      _processQueue();
+    }
+  }
+
+  /// Process queued segments sequentially
+  Future<void> _processQueue() async {
+    if (_isProcessingQueue) return;
+    _isProcessingQueue = true;
+    _processingStreamController.add(true);
+
+    while (_processingQueue.isNotEmpty) {
+      final segment = _processingQueue.removeAt(0);
+      await _transcribeSegment(segment);
+    }
+
+    _isProcessingQueue = false;
+    _processingStreamController.add(false);
+  }
+
+  /// Transcribe a single segment
+  Future<void> _transcribeSegment(_QueuedSegment segment) async {
+    debugPrint(
+      '[AutoPauseTranscription] Transcribing segment ${segment.index}',
+    );
+
+    // Update segment status to processing
+    final segmentIndex = _segments.indexWhere((s) => s.index == segment.index);
+    if (segmentIndex == -1) return;
+
+    _segments[segmentIndex] = _segments[segmentIndex].copyWith(
+      status: TranscriptionSegmentStatus.processing,
+    );
+    _segmentStreamController.add(_segments[segmentIndex]);
+
+    try {
+      // Save samples to temp WAV file for Whisper
+      final tempWavPath = path.join(
+        _tempDirectory!,
+        'temp_segment_${segment.index}.wav',
+      );
+      await _saveSamplesToWav(segment.samples, tempWavPath);
+
+      // Transcribe
+      final text = await _whisperService.transcribeAudio(tempWavPath);
+
+      // Update with result
+      _segments[segmentIndex] = _segments[segmentIndex].copyWith(
+        text: text.trim(),
+        status: TranscriptionSegmentStatus.completed,
+      );
+      _segmentStreamController.add(_segments[segmentIndex]);
+
+      debugPrint(
+        '[AutoPauseTranscription] Segment ${segment.index} done: "$text"',
+      );
+    } catch (e) {
+      debugPrint('[AutoPauseTranscription] Transcription failed: $e');
+
+      _segments[segmentIndex] = _segments[segmentIndex].copyWith(
+        text: '[Transcription failed]',
+        status: TranscriptionSegmentStatus.failed,
+      );
+      _segmentStreamController.add(_segments[segmentIndex]);
+    }
+  }
+
+  /// Save complete recording as WAV file
+  Future<void> _saveCompleteRecording() async {
+    if (_audioFilePath == null || _allAudioSamples.isEmpty) return;
+
+    // Flatten all samples
+    final allSamples = <int>[];
+    for (final chunk in _allAudioSamples) {
+      allSamples.addAll(chunk);
+    }
+
+    // Save to WAV file
+    await _saveSamplesToWav(allSamples, _audioFilePath!);
+
+    debugPrint(
+      '[AutoPauseTranscription] Saved complete recording: '
+      '${allSamples.length} samples',
+    );
+  }
+
+  /// Save int16 samples to WAV file
+  Future<void> _saveSamplesToWav(List<int> samples, String filePath) async {
+    const sampleRate = 16000;
+    const numChannels = 1;
+    const bitsPerSample = 16;
+
+    final dataSize = samples.length * 2; // 2 bytes per sample
+    final fileSize = 36 + dataSize;
+
+    final bytes = BytesBuilder();
+
+    // RIFF header
+    bytes.add('RIFF'.codeUnits);
+    bytes.add(_int32ToBytes(fileSize));
+    bytes.add('WAVE'.codeUnits);
+
+    // fmt chunk
+    bytes.add('fmt '.codeUnits);
+    bytes.add(_int32ToBytes(16)); // fmt chunk size
+    bytes.add(_int16ToBytes(1)); // PCM format
+    bytes.add(_int16ToBytes(numChannels));
+    bytes.add(_int32ToBytes(sampleRate));
+    bytes.add(
+      _int32ToBytes(sampleRate * numChannels * bitsPerSample ~/ 8),
+    ); // byte rate
+    bytes.add(_int16ToBytes(numChannels * bitsPerSample ~/ 8)); // block align
+    bytes.add(_int16ToBytes(bitsPerSample));
+
+    // data chunk
+    bytes.add('data'.codeUnits);
+    bytes.add(_int32ToBytes(dataSize));
+
+    // Sample data (int16 little-endian)
+    for (final sample in samples) {
+      bytes.add(_int16ToBytes(sample));
+    }
+
+    // Write to file
+    final file = File(filePath);
+    await file.writeAsBytes(bytes.toBytes());
+  }
+
+  /// Convert int32 to little-endian bytes
+  Uint8List _int32ToBytes(int value) {
+    return Uint8List(4)
+      ..[0] = value & 0xFF
+      ..[1] = (value >> 8) & 0xFF
+      ..[2] = (value >> 16) & 0xFF
+      ..[3] = (value >> 24) & 0xFF;
+  }
+
+  /// Convert int16 to little-endian bytes
+  Uint8List _int16ToBytes(int value) {
+    // Ensure value is in int16 range
+    final clamped = value.clamp(-32768, 32767);
+    final unsigned = clamped < 0 ? clamped + 65536 : clamped;
+    return Uint8List(2)
+      ..[0] = unsigned & 0xFF
+      ..[1] = (unsigned >> 8) & 0xFF;
+  }
+
+  /// Get complete transcript (all segments combined)
+  String getCompleteTranscript() {
+    return _segments
+        .where((s) => s.status == TranscriptionSegmentStatus.completed)
+        .map((s) => s.text)
+        .join('\n\n');
+  }
+
+  /// Convert byte array to int16 samples
+  List<int> _bytesToInt16(Uint8List bytes) {
+    final samples = <int>[];
+    for (var i = 0; i < bytes.length; i += 2) {
+      if (i + 1 < bytes.length) {
+        // Little-endian int16
+        final sample = bytes[i] | (bytes[i + 1] << 8);
+        // Convert to signed int16
+        final signed = sample > 32767 ? sample - 65536 : sample;
+        samples.add(signed);
+      }
+    }
+    return samples;
+  }
+
+  /// Cleanup
+  Future<void> dispose() async {
+    await _recorder.dispose();
+    await _segmentStreamController.close();
+    await _processingStreamController.close();
+    await _vadActivityController.close();
+
+    // Clean up temp directory
+    if (_tempDirectory != null) {
+      try {
+        final dir = Directory(_tempDirectory!);
+        if (await dir.exists()) {
+          await dir.delete(recursive: true);
+        }
+      } catch (e) {
+        debugPrint('[AutoPauseTranscription] Cleanup failed: $e');
+      }
+    }
+  }
+}
+
+/// Internal: Queued segment for processing
+class _QueuedSegment {
+  final int index;
+  final List<int> samples;
+
+  _QueuedSegment({required this.index, required this.samples});
+}
