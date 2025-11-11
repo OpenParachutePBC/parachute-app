@@ -43,6 +43,7 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
   bool _isRecording = false;
   bool _isPaused = false;
   bool _isProcessing = false;
+  bool _streamHealthy = true;
   Duration _recordingDuration = Duration.zero;
   Timer? _durationTimer;
   DateTime? _startTime;
@@ -104,6 +105,17 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
           });
         }
       });
+
+      // Listen to stream health (only for V3/auto-pause)
+      if (_useAutoPause) {
+        _transcriptionService.streamHealthStream.listen((isHealthy) {
+          if (mounted) {
+            setState(() {
+              _streamHealthy = isHealthy;
+            });
+          }
+        });
+      }
 
       if (mounted) {
         setState(() {
@@ -474,6 +486,21 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
   }
 
   Widget _buildSyncStatusIndicator() {
+    // Show stream health warning if broken (overrides other indicators)
+    if (_useAutoPause && !_streamHealthy && _isRecording) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.warning_amber_rounded, size: 18, color: Colors.red),
+          const SizedBox(width: 6),
+          Text(
+            'Microphone issue',
+            style: TextStyle(fontSize: 14, color: Colors.red, fontWeight: FontWeight.w600),
+          ),
+        ],
+      );
+    }
+
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [

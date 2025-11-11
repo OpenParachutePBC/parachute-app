@@ -141,53 +141,78 @@ class _AudioDebugOverlayState extends ConsumerState<AudioDebugOverlay> {
   Widget _buildMetrics() {
     final metrics = _latestMetrics!;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildMetricRow(
-          'Raw',
-          metrics.rawEnergy.toStringAsFixed(0),
-          Colors.orange,
-        ),
-        const SizedBox(height: 4),
-        _buildMetricRow(
-          'Clean',
-          metrics.cleanEnergy.toStringAsFixed(0),
-          Colors.blue,
-        ),
-        const SizedBox(height: 4),
-        _buildMetricRow(
-          'Filtered',
-          '${metrics.filterReduction.toStringAsFixed(1)}%',
-          Colors.green,
-        ),
-        const SizedBox(height: 4),
-        _buildMetricRow(
-          'Status',
-          metrics.isSpeech ? 'SPEECH' : 'Silence',
-          metrics.isSpeech ? Colors.green : Colors.grey,
-        ),
-      ],
+    return SizedBox(
+      height: 80, // Fixed height to prevent overflow
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildMetricRow(
+            'Raw',
+            metrics.rawEnergy.toStringAsFixed(0),
+            Colors.orange,
+          ),
+          const SizedBox(height: 4),
+          _buildMetricRow(
+            'Clean',
+            metrics.cleanEnergy.toStringAsFixed(0),
+            Colors.blue,
+          ),
+          const SizedBox(height: 4),
+          _buildMetricRow(
+            'Filtered',
+            '${metrics.filterReduction.toStringAsFixed(1)}%',
+            Colors.green,
+          ),
+          const SizedBox(height: 4),
+          _buildMetricRow(
+            'Status',
+            metrics.isSpeech ? 'SPEECH' : 'Silence',
+            metrics.isSpeech ? Colors.green : Colors.grey,
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildMetricRow(String label, String value, Color color) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(color: Colors.white70, fontSize: 11),
-        ),
-        Text(
-          value,
-          style: TextStyle(
-            color: color,
-            fontSize: 11,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Only show content if we have reasonable space
+        if (constraints.maxWidth < 100) {
+          return const SizedBox.shrink();
+        }
+
+        return Row(
+          mainAxisSize: MainAxisSize.max,
+          children: [
+            Expanded(
+              flex: 2,
+              child: Text(
+                label,
+                style: const TextStyle(color: Colors.white70, fontSize: 11),
+                overflow: TextOverflow.clip,
+                maxLines: 1,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Expanded(
+              flex: 3,
+              child: Text(
+                value,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                ),
+                overflow: TextOverflow.clip,
+                textAlign: TextAlign.end,
+                maxLines: 1,
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

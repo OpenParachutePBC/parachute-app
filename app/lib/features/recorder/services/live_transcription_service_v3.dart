@@ -85,6 +85,11 @@ class AutoPauseTranscriptionService {
   final AudioRecorder _recorder = AudioRecorder();
   bool _isRecording = false;
 
+  // Stream health monitoring
+  DateTime? _lastAudioChunkTime;
+  int _audioChunkCount = 0;
+  Timer? _streamHealthCheckTimer;
+
   // Noise filtering & VAD
   SimpleNoiseFilter? _noiseFilter;
   SmartChunker? _chunker;
@@ -109,6 +114,7 @@ class AutoPauseTranscriptionService {
   final _vadActivityController = StreamController<bool>.broadcast();
   final _debugMetricsController =
       StreamController<AudioDebugMetrics>.broadcast();
+  final _streamHealthController = StreamController<bool>.broadcast(); // true = healthy, false = broken
 
   Stream<TranscriptionSegment> get segmentStream =>
       _segmentStreamController.stream;
@@ -117,6 +123,7 @@ class AutoPauseTranscriptionService {
       _vadActivityController.stream; // true = speech, false = silence
   Stream<AudioDebugMetrics> get debugMetricsStream =>
       _debugMetricsController.stream;
+  Stream<bool> get streamHealthStream => _streamHealthController.stream;
 
   bool get isRecording => _isRecording;
   bool get isProcessing => _isProcessingQueue;
@@ -149,10 +156,13 @@ class AutoPauseTranscriptionService {
     }
 
     try {
-      // Check permissions
+      // Check microphone permission
       final hasPermission = await _recorder.hasPermission();
       if (!hasPermission) {
-        debugPrint('[AutoPauseTranscription] No recording permission');
+        debugPrint('[AutoPauseTranscription] ⚠️ Microphone permission denied!');
+        debugPrint(
+          '[AutoPauseTranscription] ℹ️ Grant access: System Settings → Privacy & Security → Microphone → Enable "Parachute"',
+        );
         return false;
       }
 
@@ -184,18 +194,22 @@ class AutoPauseTranscriptionService {
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       _audioFilePath = path.join(_tempDirectory!, 'recording_$timestamp.wav');
 
-      // Start recording with stream (with OS-level noise suppression)
+      // Start recording with stream
+      // Note: Keeping minimal OS processing to reduce CoreAudio instability
+      debugPrint('[AutoPauseTranscription] 🎙️ Starting audio stream...');
       final stream = await _recorder.startStream(
         const RecordConfig(
           encoder: AudioEncoder.pcm16bits,
           sampleRate: 16000,
           numChannels: 1,
-          // Enable hardware/OS noise suppression
-          echoCancel: true,
-          autoGain: true,
-          noiseSuppress: true,
+          // Minimal OS processing to reduce CoreAudio issues
+          echoCancel: false, // Not needed for voice notes
+          autoGain: true, // Keep for consistent volume
+          noiseSuppress: false, // We handle filtering ourselves
         ),
       );
+
+      debugPrint('[AutoPauseTranscription] Audio config: autoGain=true, echoCancel=false, noiseSuppress=false');
 
       _isRecording = true;
       _segments.clear();
@@ -203,18 +217,33 @@ class AutoPauseTranscriptionService {
       _allAudioSamples.clear();
       _processingQueue.clear();
 
+      // Reset stream health monitoring
+      _lastAudioChunkTime = DateTime.now();
+      _audioChunkCount = 0;
+
       // Process audio stream through VAD chunker
+      debugPrint('[AutoPauseTranscription] 🎧 Setting up stream listener...');
       stream.listen(
         _processAudioChunk,
-        onError: (error) {
-          debugPrint('[AutoPauseTranscription] Stream error: $error');
+        onError: (error, stackTrace) {
+          debugPrint('[AutoPauseTranscription] ❌ STREAM ERROR: $error');
+          debugPrint('[AutoPauseTranscription] Stack trace: $stackTrace');
+          debugPrint('[AutoPauseTranscription] Chunks received before error: $_audioChunkCount');
+          debugPrint('[AutoPauseTranscription] Time since last chunk: ${DateTime.now().difference(_lastAudioChunkTime ?? DateTime.now())}');
         },
         onDone: () {
-          debugPrint('[AutoPauseTranscription] Stream completed');
+          debugPrint('[AutoPauseTranscription] ⚠️ STREAM COMPLETED/CLOSED');
+          debugPrint('[AutoPauseTranscription] Total chunks received: $_audioChunkCount');
+          debugPrint('[AutoPauseTranscription] Recording state: $_isRecording');
         },
+        cancelOnError: false, // Keep stream alive on errors
       );
 
-      debugPrint('[AutoPauseTranscription] Recording started with VAD');
+      // Start health check timer (warns if no audio chunks received)
+      _startStreamHealthCheck();
+
+      debugPrint('[AutoPauseTranscription] ✅ Recording started with VAD');
+      debugPrint('[AutoPauseTranscription] Microphone permission: $hasPermission');
       return true;
     } catch (e) {
       debugPrint('[AutoPauseTranscription] Failed to start: $e');
@@ -224,10 +253,28 @@ class AutoPauseTranscriptionService {
 
   /// Process incoming audio chunk from stream
   void _processAudioChunk(Uint8List audioBytes) {
-    if (!_isRecording || _chunker == null || _noiseFilter == null) return;
+    // Update stream health tracking
+    _lastAudioChunkTime = DateTime.now();
+    _audioChunkCount++;
+
+    // Log first chunk to confirm streaming is working
+    if (_audioChunkCount == 1) {
+      debugPrint('[AutoPauseTranscription] ✅ First audio chunk received! (${audioBytes.length} bytes)');
+    }
+
+    if (!_isRecording || _chunker == null || _noiseFilter == null) {
+      debugPrint('[AutoPauseTranscription] ⚠️ Received audio chunk but not ready: isRecording=$_isRecording, chunker=${_chunker != null}, filter=${_noiseFilter != null}');
+      return;
+    }
 
     // Convert bytes to int16 samples
     final rawSamples = _bytesToInt16(audioBytes);
+
+    // Validate we got samples
+    if (rawSamples.isEmpty) {
+      debugPrint('[AutoPauseTranscription] ⚠️ Received empty sample array from ${audioBytes.length} bytes');
+      return;
+    }
 
     // Apply noise filter BEFORE VAD (removes low-frequency background noise)
     final cleanSamples = _noiseFilter!.process(rawSamples);
@@ -238,6 +285,11 @@ class AutoPauseTranscriptionService {
     final reduction = rawEnergy > 0
         ? ((1 - cleanEnergy / rawEnergy) * 100)
         : 0.0;
+
+    // Log audio levels periodically to help diagnose low volume issues
+    if (_audioChunkCount % 100 == 1) {
+      debugPrint('[AutoPauseTranscription] Audio levels - Raw: ${rawEnergy.toStringAsFixed(1)}, Clean: ${cleanEnergy.toStringAsFixed(1)}, Samples: ${rawSamples.length}');
+    }
 
     if (!_debugMetricsController.isClosed) {
       _debugMetricsController.add(
@@ -269,6 +321,57 @@ class AutoPauseTranscriptionService {
         'Buffer: ${stats.bufferDuration.inSeconds}s',
       );
     }
+  }
+
+  /// Start periodic health check for audio stream
+  void _startStreamHealthCheck() {
+    _streamHealthCheckTimer?.cancel();
+
+    // Initially healthy
+    if (!_streamHealthController.isClosed) {
+      _streamHealthController.add(true);
+    }
+
+    _streamHealthCheckTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
+      if (!_isRecording) {
+        timer.cancel();
+        return;
+      }
+
+      final now = DateTime.now();
+      final timeSinceLastChunk = _lastAudioChunkTime != null
+          ? now.difference(_lastAudioChunkTime!)
+          : null;
+
+      if (timeSinceLastChunk != null && timeSinceLastChunk > const Duration(seconds: 5)) {
+        // Stream is broken - notify UI
+        if (!_streamHealthController.isClosed) {
+          _streamHealthController.add(false);
+        }
+        debugPrint('[AutoPauseTranscription] ⚠️ Audio stream broken (${timeSinceLastChunk.inSeconds}s since last chunk, $_audioChunkCount total chunks)');
+
+        // Log diagnostic info once when stream breaks
+        if (timeSinceLastChunk.inSeconds == 5 || timeSinceLastChunk.inSeconds == 6) {
+          debugPrint('[AutoPauseTranscription] Possible causes:');
+          debugPrint('[AutoPauseTranscription]   - System audio service issue (try: sudo killall coreaudiod)');
+          debugPrint('[AutoPauseTranscription]   - Microphone permission revoked');
+          debugPrint('[AutoPauseTranscription]   - Another app captured audio input');
+          debugPrint('[AutoPauseTranscription]   - macOS audio driver issue (reboot may help)');
+        }
+      } else {
+        // Stream is healthy
+        if (!_streamHealthController.isClosed) {
+          _streamHealthController.add(true);
+        }
+      }
+    });
+  }
+
+  /// Stop stream health check
+  void _stopStreamHealthCheck() {
+    _streamHealthCheckTimer?.cancel();
+    _streamHealthCheckTimer = null;
+    debugPrint('[AutoPauseTranscription] 🔍 Stream health monitoring stopped');
   }
 
   /// Handle chunk ready from SmartChunker
@@ -313,6 +416,12 @@ class AutoPauseTranscriptionService {
     if (!_isRecording) return null;
 
     try {
+      debugPrint('[AutoPauseTranscription] 🛑 Stopping recording...');
+      debugPrint('[AutoPauseTranscription] Total audio chunks received: $_audioChunkCount');
+
+      // Stop health check
+      _stopStreamHealthCheck();
+
       // Stop recorder
       await _recorder.stop();
       _isRecording = false;
@@ -352,6 +461,12 @@ class AutoPauseTranscriptionService {
     if (!_isRecording) return;
 
     try {
+      debugPrint('[AutoPauseTranscription] ❌ Cancelling recording...');
+      debugPrint('[AutoPauseTranscription] Audio chunks received: $_audioChunkCount');
+
+      // Stop health check
+      _stopStreamHealthCheck();
+
       // Stop recorder
       await _recorder.stop();
       _isRecording = false;
@@ -636,11 +751,31 @@ class AutoPauseTranscriptionService {
 
   /// Cleanup
   Future<void> dispose() async {
+    debugPrint('[AutoPauseTranscription] 🧹 Disposing service...');
+
+    // Stop health check
+    _stopStreamHealthCheck();
+
+    // Ensure recording is stopped before disposing (prevents CoreAudio leaks)
+    if (_isRecording) {
+      try {
+        await _recorder.stop();
+        _isRecording = false;
+        debugPrint('[AutoPauseTranscription] Stopped active recording during dispose');
+      } catch (e) {
+        debugPrint('[AutoPauseTranscription] Error stopping recorder: $e');
+      }
+    }
+
+    // Dispose recorder
     await _recorder.dispose();
+
+    // Close all streams
     await _segmentStreamController.close();
     await _processingStreamController.close();
     await _vadActivityController.close();
     await _debugMetricsController.close();
+    await _streamHealthController.close();
 
     // Clean up temp directory
     if (_tempDirectory != null) {
@@ -653,6 +788,8 @@ class AutoPauseTranscriptionService {
         debugPrint('[AutoPauseTranscription] Cleanup failed: $e');
       }
     }
+
+    debugPrint('[AutoPauseTranscription] ✅ Service disposed');
   }
 }
 
