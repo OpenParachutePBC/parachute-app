@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:app/core/providers/feature_flags_provider.dart';
 import 'package:app/features/recorder/models/recording.dart';
 import 'package:app/features/recorder/providers/service_providers.dart';
@@ -8,7 +9,7 @@ import 'package:app/features/recorder/screens/recording_detail_screen.dart';
 import 'package:app/features/recorder/screens/live_recording_screen.dart';
 import 'package:app/features/recorder/utils/platform_utils.dart';
 import 'package:app/features/settings/screens/settings_screen.dart';
-import 'package:app/features/recorder/widgets/recording_tile.dart';
+import 'package:app/features/recorder/widgets/recording_card.dart';
 import 'package:app/core/widgets/git_sync_status_indicator.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -22,6 +23,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     with WidgetsBindingObserver {
   List<Recording> _recordings = [];
   bool _isLoading = true;
+  bool _isGridView = true; // Toggle between grid and list view
 
   @override
   void initState() {
@@ -187,9 +189,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Voice Recorder'),
+        title: const Text('Notes'),
         elevation: 0,
         actions: [
+          // View toggle (grid/list)
+          IconButton(
+            icon: Icon(_isGridView ? Icons.view_list : Icons.grid_view),
+            onPressed: () {
+              setState(() {
+                _isGridView = !_isGridView;
+              });
+            },
+            tooltip: _isGridView ? 'List view' : 'Grid view',
+          ),
           // Git sync status indicator
           const GitSyncStatusIndicator(),
           // Omi device connection indicator (only if platform supports AND feature enabled)
@@ -213,6 +225,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           ? const Center(child: CircularProgressIndicator())
           : _recordings.isEmpty
           ? _buildEmptyState()
+          : _isGridView
+          ? _buildRecordingsGrid()
           : _buildRecordingsList(),
       floatingActionButton: FloatingActionButton(
         onPressed: _startRecording,
@@ -251,33 +265,37 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
   }
 
+  Widget _buildRecordingsGrid() {
+    return MasonryGridView.count(
+      crossAxisCount: 2,
+      mainAxisSpacing: 8,
+      crossAxisSpacing: 8,
+      padding: const EdgeInsets.all(12),
+      itemCount: _recordings.length,
+      itemBuilder: (context, index) {
+        final recording = _recordings[index];
+        return RecordingCard(
+          recording: recording,
+          onTap: () => _openRecordingDetail(recording),
+          onDeleted: _refreshRecordings,
+        );
+      },
+    );
+  }
+
   Widget _buildRecordingsList() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Text(
-            'Past recordings',
-            style: Theme.of(
-              context,
-            ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
-          ),
-        ),
-        Expanded(
-          child: ListView.builder(
-            itemCount: _recordings.length,
-            itemBuilder: (context, index) {
-              final recording = _recordings[index];
-              return RecordingTile(
-                recording: recording,
-                onTap: () => _openRecordingDetail(recording),
-                onDeleted: _refreshRecordings,
-              );
-            },
-          ),
-        ),
-      ],
+    return ListView.separated(
+      padding: const EdgeInsets.all(12),
+      itemCount: _recordings.length,
+      separatorBuilder: (context, index) => const SizedBox(height: 8),
+      itemBuilder: (context, index) {
+        final recording = _recordings[index];
+        return RecordingCard(
+          recording: recording,
+          onTap: () => _openRecordingDetail(recording),
+          onDeleted: _refreshRecordings,
+        );
+      },
     );
   }
 }
