@@ -95,17 +95,27 @@ class GitService {
   }
 
   /// Add all files to the staging area (git add .)
+  /// This includes new files, modifications, AND deletions
   Future<bool> addAll({required Repository repo}) async {
     try {
-      debugPrint('[GitService] Adding all files to staging...');
+      debugPrint(
+        '[GitService] Adding all files to staging (including deletions)...',
+      );
 
       final index = repo.index;
-      // Add all files (equivalent to git add .)
-      // Pass ['.'] to add all files in the repository
+
+      // Add all new and modified files (equivalent to git add .)
       index.addAll(['.']);
+
+      // Update all files to detect deletions (equivalent to git add -u)
+      // This ensures deleted files are staged for removal
+      index.updateAll(['.']);
+
       index.write();
 
-      debugPrint('[GitService] ✅ All files added to staging');
+      debugPrint(
+        '[GitService] ✅ All files added to staging (including deletions)',
+      );
       return true;
     } catch (e) {
       debugPrint('[GitService] ❌ Error adding all files: $e');
@@ -522,19 +532,72 @@ class GitService {
         type: GitBranch.remote,
       );
 
-      // Merge remote branch into current branch
+      // Get current HEAD to check if we need to merge
+      final headRef = repo.head;
+      final headCommit = Commit.lookup(repo: repo, oid: headRef.target);
+
+      // Check if remote is ahead of local
+      if (headCommit.oid.sha == remoteBranch.target.sha) {
+        debugPrint('[GitService] Already up to date');
+        return true;
+      }
+
+      // Create annotated commit for merge
       final annotatedCommit = AnnotatedCommit.lookup(
         repo: repo,
         oid: remoteBranch.target,
       );
 
-      // Perform merge
+      // Perform merge (this sets up the merge state)
       Merge.commit(repo: repo, commit: annotatedCommit);
 
-      debugPrint('[GitService] ✅ Pull successful');
+      // Check if there are conflicts
+      final index = repo.index;
+      if (index.hasConflicts) {
+        debugPrint('[GitService] ❌ Merge conflicts detected');
+        // For now, abort the merge
+        repo.stateCleanup();
+        return false;
+      }
+
+      // Write the merged index to a tree
+      final treeOid = index.writeTree();
+      final tree = Tree.lookup(repo: repo, oid: treeOid);
+
+      // Create signature
+      final signature = Signature.create(
+        name: 'Parachute',
+        email: 'parachute@local',
+        time: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      );
+
+      // Get the remote commit
+      final remoteCommit = Commit.lookup(repo: repo, oid: remoteBranch.target);
+
+      // Create merge commit with both parents
+      final mergeCommitOid = Commit.create(
+        repo: repo,
+        updateRef: 'HEAD',
+        author: signature,
+        committer: signature,
+        message: 'Merge remote-tracking branch \'$remoteName/$branchName\'',
+        tree: tree,
+        parents: [headCommit, remoteCommit],
+      );
+
+      // Clean up merge state
+      repo.stateCleanup();
+
+      debugPrint(
+        '[GitService] ✅ Pull successful with merge commit: ${mergeCommitOid.sha}',
+      );
       return true;
     } catch (e) {
       debugPrint('[GitService] ❌ Error pulling: $e');
+      // Try to clean up merge state if it was started
+      try {
+        repo.stateCleanup();
+      } catch (_) {}
       return false;
     }
   }

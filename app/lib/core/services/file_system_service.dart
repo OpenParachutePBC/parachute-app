@@ -37,10 +37,12 @@ class FileSystemService {
   }
 
   /// Get a user-friendly display of the root path
+  /// Shows the actual full path so users know exactly where their data is stored
   Future<String> getRootPathDisplay() async {
     final path = await getRootPath();
 
-    // Replace home directory with ~ on Unix-like systems
+    // On macOS/Linux, optionally replace home directory with ~ for brevity
+    // But keep full path visible so it's not misleading
     if (Platform.isMacOS || Platform.isLinux) {
       final home = Platform.environment['HOME'];
       if (home != null && path.startsWith(home)) {
@@ -48,17 +50,8 @@ class FileSystemService {
       }
     }
 
-    // On Android, show a simpler path
-    if (Platform.isAndroid && path.contains('/Android/data/')) {
-      // Extract the meaningful part: /storage/emulated/0/Android/data/{package}/files/Parachute
-      // Show as: External Storage/Parachute
-      final parts = path.split('/');
-      final parachuteIndex = parts.lastIndexOf('Parachute');
-      if (parachuteIndex != -1) {
-        return 'External Storage/Parachute';
-      }
-    }
-
+    // On Android, show the full path so users know exactly where data is stored
+    // This prevents confusion about "External Storage" vs internal app storage
     return path;
   }
 
@@ -152,6 +145,34 @@ class FileSystemService {
         _rootFolderPath = await _getDefaultRootPath();
         debugPrint('[FileSystemService] Set default root: $_rootFolderPath');
         await prefs.setString(_rootFolderPathKey, _rootFolderPath!);
+      } else {
+        // Check if we can access the saved path
+        debugPrint('[FileSystemService] Loaded saved root: $_rootFolderPath');
+
+        // On macOS, verify we still have access to the saved path
+        if (Platform.isMacOS) {
+          final savedDir = Directory(_rootFolderPath!);
+          bool hasAccess = false;
+
+          try {
+            // Test if we can list the directory
+            await savedDir.list().first.timeout(
+              const Duration(milliseconds: 100),
+              onTimeout: () => throw Exception('No access'),
+            );
+            hasAccess = true;
+          } catch (e) {
+            debugPrint('[FileSystemService] Lost access to saved path: $e');
+          }
+
+          if (!hasAccess) {
+            debugPrint(
+              '[FileSystemService] Switching to accessible default location',
+            );
+            _rootFolderPath = await _getDefaultRootPath();
+            await prefs.setString(_rootFolderPathKey, _rootFolderPath!);
+          }
+        }
       }
 
       // Load custom subfolder names if set
@@ -179,12 +200,54 @@ class FileSystemService {
 
   /// Get the default root path based on platform
   Future<String> _getDefaultRootPath() async {
-    if (Platform.isMacOS || Platform.isLinux) {
-      // Use ~/Parachute on desktop
+    if (Platform.isMacOS) {
+      // macOS: Try to use ~/Parachute first (preferred location)
+      // If we can't access it due to sandboxing, fall back to app's Documents
+      final home = Platform.environment['HOME'];
+      if (home != null) {
+        final preferredPath = '$home/Parachute';
+        final preferredDir = Directory(preferredPath);
+
+        try {
+          // Try to create the directory to test if we have access
+          if (!await preferredDir.exists()) {
+            await preferredDir.create(recursive: true);
+          }
+
+          // Test if we can actually list the directory (this will fail if no permission)
+          await preferredDir.list().first.timeout(
+            const Duration(milliseconds: 100),
+            onTimeout: () => throw Exception('No access'),
+          );
+
+          debugPrint('[FileSystemService] Using ~/Parachute (access granted)');
+          return preferredPath;
+        } catch (e) {
+          debugPrint('[FileSystemService] Cannot access ~/Parachute: $e');
+          debugPrint(
+            '[FileSystemService] User needs to grant access via Settings',
+          );
+          // Fall through to app Documents directory
+        }
+      }
+
+      // Fallback: Use app's Documents directory (always accessible)
+      final appDir = await getApplicationDocumentsDirectory();
+      debugPrint(
+        '[FileSystemService] Using app Documents: ${appDir.path}/Parachute',
+      );
+      return '${appDir.path}/Parachute';
+    }
+
+    if (Platform.isLinux) {
+      // Linux: Use ~/Parachute (no sandboxing restrictions)
       final home = Platform.environment['HOME'];
       if (home != null) {
         return '$home/Parachute';
       }
+      // Fallback to app documents directory
+      final appDir = await getApplicationDocumentsDirectory();
+      return '${appDir.path}/Parachute';
     }
 
     if (Platform.isAndroid) {
@@ -247,23 +310,72 @@ class FileSystemService {
     debugPrint('[FileSystemService] Folder structure ready');
   }
 
-  /// Set a custom root folder path
+  /// Set a custom root folder path and migrate existing files
   Future<bool> setRootPath(String path) async {
     try {
-      final dir = Directory(path);
-      if (!await dir.exists()) {
-        await dir.create(recursive: true);
+      final oldRootPath = _rootFolderPath;
+
+      // Create new directory structure
+      final newDir = Directory(path);
+      if (!await newDir.exists()) {
+        await newDir.create(recursive: true);
       }
 
+      // If we have an old path and it's different from the new one, migrate files
+      if (oldRootPath != null && oldRootPath != path) {
+        final oldDir = Directory(oldRootPath);
+        if (await oldDir.exists()) {
+          debugPrint(
+            '[FileSystemService] Migrating files from $oldRootPath to $path',
+          );
+
+          // Copy all contents from old directory to new directory
+          await _copyDirectory(oldDir, newDir);
+
+          debugPrint(
+            '[FileSystemService] Migration complete. Old files remain at $oldRootPath (manual cleanup required)',
+          );
+        }
+      }
+
+      // Update the root path
       _rootFolderPath = path;
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_rootFolderPathKey, path);
 
+      // Ensure folder structure exists in new location
       await _ensureFolderStructure();
+
       return true;
     } catch (e) {
       debugPrint('[FileSystemService] Error setting root path: $e');
       return false;
+    }
+  }
+
+  /// Recursively copy a directory and all its contents
+  Future<void> _copyDirectory(Directory source, Directory destination) async {
+    // Ensure destination exists
+    if (!await destination.exists()) {
+      await destination.create(recursive: true);
+    }
+
+    // List all entities in source
+    await for (final entity in source.list(recursive: false)) {
+      final String newPath = entity.path.replaceFirst(
+        source.path,
+        destination.path,
+      );
+
+      if (entity is Directory) {
+        // Recursively copy subdirectory
+        final newDir = Directory(newPath);
+        await _copyDirectory(entity, newDir);
+      } else if (entity is File) {
+        // Copy file
+        debugPrint('[FileSystemService] Copying ${entity.path} to $newPath');
+        await entity.copy(newPath);
+      }
     }
   }
 

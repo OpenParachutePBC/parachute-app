@@ -1,22 +1,51 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as path;
 import 'package:app/features/recorder/models/recording.dart';
 import 'package:app/features/recorder/providers/service_providers.dart';
 import 'package:app/features/recorder/services/whisper_service.dart';
 import 'package:app/features/recorder/services/whisper_local_service.dart';
+import 'package:app/features/recorder/services/live_transcription_service_v3.dart';
 import 'package:app/features/recorder/models/whisper_models.dart';
 import 'package:app/core/providers/title_generation_provider.dart';
+import 'package:app/core/services/file_system_service.dart';
+import 'package:app/features/files/providers/local_file_browser_provider.dart';
 import 'package:app/features/settings/screens/settings_screen.dart';
 import 'package:app/features/space_notes/screens/link_capture_to_space_screen.dart';
 
 /// Unified recording detail screen with inline editing
 /// Inspired by LiveRecordingScreen design - clean, focused, contextual status
 class RecordingDetailScreen extends ConsumerStatefulWidget {
-  final Recording recording;
+  // Existing mode: viewing a saved recording
+  final Recording? recording;
 
-  const RecordingDetailScreen({super.key, required this.recording});
+  // New mode: viewing recording being transcribed
+  final String? timestamp;
+  final String? audioPath;
+  final String? initialTranscript;
+  final Duration? duration;
+  final bool isTranscribing;
+
+  // Constructor for viewing saved recording
+  const RecordingDetailScreen({super.key, required this.recording})
+    : timestamp = null,
+      audioPath = null,
+      initialTranscript = null,
+      duration = null,
+      isTranscribing = false;
+
+  // Constructor for viewing recording being transcribed
+  const RecordingDetailScreen.transcribing({
+    super.key,
+    required this.timestamp,
+    required this.audioPath,
+    required this.initialTranscript,
+    required this.duration,
+    this.isTranscribing = true,
+  }) : recording = null;
 
   @override
   ConsumerState<RecordingDetailScreen> createState() =>
@@ -24,8 +53,9 @@ class RecordingDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
-  late Recording _recording;
+  Recording? _recording; // Nullable now - might not exist yet if transcribing
   Timer? _refreshTimer;
+  StreamSubscription? _transcriptionSubscription;
 
   // Controllers for inline editing
   final TextEditingController _titleController = TextEditingController();
@@ -48,16 +78,30 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
   @override
   void initState() {
     super.initState();
-    _recording = widget.recording;
-    _titleController.text = _recording.title;
-    _transcriptController.text = _recording.transcript;
-    _contextController.text = _recording.context;
-    _startPeriodicRefresh();
+
+    if (widget.recording != null) {
+      // Mode 1: Viewing saved recording
+      _recording = widget.recording;
+      _titleController.text = _recording!.title;
+      _transcriptController.text = _recording!.transcript;
+      _contextController.text = _recording!.context;
+      _startPeriodicRefresh();
+    } else {
+      // Mode 2: Viewing recording being transcribed
+      _isTranscribing = widget.isTranscribing;
+      _titleController.text = 'Untitled Recording'; // Default title
+      _transcriptController.text = widget.initialTranscript ?? '';
+      _contextController.text = '';
+
+      // Listen for transcription updates from provider
+      _listenToTranscriptionUpdates();
+    }
   }
 
   @override
   void dispose() {
     _refreshTimer?.cancel();
+    _transcriptionSubscription?.cancel();
     _titleController.dispose();
     _transcriptController.dispose();
     _contextController.dispose();
@@ -65,14 +109,117 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
     super.dispose();
   }
 
+  /// Listen to transcription updates from the active recording provider
+  void _listenToTranscriptionUpdates() {
+    final activeRecording = ref.read(activeRecordingProvider);
+    final service = activeRecording.service;
+
+    if (service == null) {
+      debugPrint('[RecordingDetail] No active transcription service');
+      return;
+    }
+
+    debugPrint('[RecordingDetail] Listening to transcription updates');
+
+    // Listen to segment updates
+    _transcriptionSubscription = service.segmentStream.listen((segment) {
+      if (!mounted) return;
+
+      debugPrint(
+        '[RecordingDetail] Segment update: ${segment.index} - ${segment.status}',
+      );
+
+      // Update transcript with all completed segments
+      final allSegments = service.segments;
+      final completedText = allSegments
+          .where((s) => s.status == TranscriptionSegmentStatus.completed)
+          .map((s) => s.text)
+          .join('\n\n');
+
+      if (!_isTranscriptEditing && mounted) {
+        setState(() {
+          _transcriptController.text = completedText;
+        });
+      }
+
+      // Check if transcription is complete
+      final hasIncomplete = allSegments.any(
+        (s) =>
+            s.status == TranscriptionSegmentStatus.pending ||
+            s.status == TranscriptionSegmentStatus.processing,
+      );
+
+      if (!hasIncomplete && _isTranscribing) {
+        debugPrint('[RecordingDetail] Transcription complete!');
+        setState(() {
+          _isTranscribing = false;
+        });
+
+        // Save the markdown file now that transcription is complete
+        _saveCompletedRecording();
+      }
+    });
+  }
+
+  /// Save the completed recording (called when transcription finishes)
+  Future<void> _saveCompletedRecording() async {
+    try {
+      debugPrint('[RecordingDetail] Saving completed recording...');
+
+      final fileSystemService = ref.read(fileSystemServiceProvider);
+      final timestamp = widget.timestamp!;
+      final capturesPath = await fileSystemService.getCapturesPath();
+
+      // Create metadata
+      final metadata = StringBuffer();
+      metadata.writeln('---');
+      metadata.writeln('created: ${DateTime.now().toIso8601String()}');
+      metadata.writeln(
+        'duration: ${_formatDuration(widget.duration ?? Duration.zero)}',
+      );
+      metadata.writeln(
+        'words: ${_transcriptController.text.trim().isEmpty ? 0 : _transcriptController.text.trim().split(RegExp(r'\\s+')).length}',
+      );
+      metadata.writeln('source: live_recording');
+      metadata.writeln('---');
+      metadata.writeln();
+
+      // Save markdown file
+      final markdownPath = path.join(capturesPath, '$timestamp.md');
+      await File(
+        markdownPath,
+      ).writeAsString('${metadata.toString()}${_transcriptController.text}');
+
+      debugPrint('[RecordingDetail] ✅ Markdown saved: $markdownPath');
+
+      // Clean up the provider session
+      ref.read(activeRecordingProvider.notifier).clearSession();
+
+      // Trigger recordings list refresh
+      ref.read(recordingsRefreshTriggerProvider.notifier).state++;
+    } catch (e) {
+      debugPrint('[RecordingDetail] ❌ Error saving recording: $e');
+    }
+  }
+
+  String _formatDuration(Duration duration) {
+    final minutes = duration.inMinutes;
+    final seconds = duration.inSeconds % 60;
+    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+  }
+
   void _startPeriodicRefresh() {
+    if (_recording == null) return; // Only for saved recordings
+
     // Only refresh while processing is happening
     _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
+      if (_recording == null) return;
+
       final isProcessing =
-          _recording.transcriptionStatus == ProcessingStatus.pending ||
-          _recording.transcriptionStatus == ProcessingStatus.processing ||
-          _recording.titleGenerationStatus == ProcessingStatus.pending ||
-          _recording.titleGenerationStatus == ProcessingStatus.processing;
+          _recording!.transcriptionStatus == ProcessingStatus.pending ||
+          _recording!.transcriptionStatus == ProcessingStatus.processing ||
+          _recording!.titleGenerationStatus == ProcessingStatus.pending ||
+          _recording!.titleGenerationStatus == ProcessingStatus.processing;
 
       if (!isProcessing) {
         _refreshTimer?.cancel();
@@ -82,23 +229,25 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
       // Fetch updated recording from storage
       final updated = await ref
           .read(storageServiceProvider)
-          .getRecording(_recording.id);
+          .getRecording(_recording!.id);
       if (updated != null && mounted) {
         setState(() {
           _recording = updated;
           // Update controllers if not currently editing
-          if (!_isTitleEditing) _titleController.text = _recording.title;
+          if (!_isTitleEditing) _titleController.text = _recording!.title;
           if (!_isTranscriptEditing) {
-            _transcriptController.text = _recording.transcript;
+            _transcriptController.text = _recording!.transcript;
           }
-          if (!_isContextEditing) _contextController.text = _recording.context;
+          if (!_isContextEditing) _contextController.text = _recording!.context;
         });
       }
     });
   }
 
   Future<void> _saveChanges() async {
-    final updatedRecording = _recording.copyWith(
+    if (_recording == null) return; // Only for saved recordings
+
+    final updatedRecording = _recording!.copyWith(
       title: _titleController.text.trim().isNotEmpty
           ? _titleController.text.trim()
           : 'Untitled Recording',
@@ -128,16 +277,22 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
   }
 
   Future<void> _togglePlayback() async {
+    // Use audioPath for transcribing mode, filePath for saved recording
+    final audioPath = widget.audioPath ?? _recording?.filePath;
+    final duration = widget.duration ?? _recording?.duration ?? Duration.zero;
+
+    if (audioPath == null) return;
+
     if (_isPlaying) {
       await ref.read(audioServiceProvider).stopPlayback();
       setState(() => _isPlaying = false);
     } else {
       final success = await ref
           .read(audioServiceProvider)
-          .playRecording(_recording.filePath);
+          .playRecording(audioPath);
       if (success) {
         setState(() => _isPlaying = true);
-        Future.delayed(_recording.duration, () {
+        Future.delayed(duration, () {
           if (mounted && _isPlaying) {
             setState(() => _isPlaying = false);
           }
@@ -147,7 +302,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
   }
 
   Future<void> _transcribeRecording() async {
-    if (_isTranscribing) return;
+    if (_isTranscribing || _recording == null) return;
 
     final storageService = ref.read(storageServiceProvider);
     final modeString = await storageService.getTranscriptionMode();
@@ -267,7 +422,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
     }
 
     return await localService.transcribeAudio(
-      _recording.filePath,
+      _recording!.filePath,
       onProgress: (progress) {
         if (mounted) {
           setState(() {
@@ -318,11 +473,13 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
 
     return await ref
         .read(whisperServiceProvider)
-        .transcribeAudio(_recording.filePath);
+        .transcribeAudio(_recording!.filePath);
   }
 
   void _linkToSpaces() async {
-    String cleanNotePath = _recording.filePath;
+    if (_recording == null) return;
+
+    String cleanNotePath = _recording!.filePath;
     if (cleanNotePath.startsWith('/api/')) {
       cleanNotePath = cleanNotePath.substring(5);
     }
@@ -336,8 +493,8 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
     final result = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (context) => LinkCaptureToSpaceScreen(
-          captureId: _recording.id,
-          filename: _recording.title,
+          captureId: _recording!.id,
+          filename: _recording!.title,
           notePath: cleanNotePath,
         ),
       ),
@@ -351,6 +508,8 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
   }
 
   void _confirmDelete() async {
+    if (_recording == null) return;
+
     final shouldDelete = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) {
@@ -377,7 +536,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
     if (shouldDelete == true && mounted) {
       final success = await ref
           .read(storageServiceProvider)
-          .deleteRecording(_recording.id);
+          .deleteRecording(_recording!.id);
       if (success && mounted) {
         Navigator.pop(context, true);
         ScaffoldMessenger.of(
@@ -410,7 +569,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
               ),
               onSubmitted: (_) => _saveChanges(),
             )
-          : Text(_recording.title),
+          : Text(_recording?.title ?? _titleController.text),
       centerTitle: true,
       elevation: 0,
       backgroundColor: Colors.transparent,
@@ -504,14 +663,15 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  _recording.durationString,
+                  _recording?.durationString ??
+                      _formatDuration(widget.duration ?? Duration.zero),
                   style: const TextStyle(
                     fontWeight: FontWeight.w600,
                     fontSize: 16,
                   ),
                 ),
                 Text(
-                  _recording.formattedSize,
+                  _recording?.formattedSize ?? 'Processing...',
                   style: TextStyle(
                     color: Colors.grey.withValues(alpha: 0.7),
                     fontSize: 14,
@@ -537,14 +697,14 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
         Icon(Icons.access_time, size: 16, color: Colors.grey.shade600),
         const SizedBox(width: 4),
         Text(
-          _recording.timeAgo,
+          _recording?.timeAgo ?? 'Just now',
           style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
         ),
         const SizedBox(width: 16),
         Icon(Icons.folder, size: 16, color: Colors.grey.shade600),
         const SizedBox(width: 4),
         Text(
-          _recording.source == RecordingSource.omiDevice ? 'Omi' : 'Phone',
+          _recording?.source == RecordingSource.omiDevice ? 'Omi' : 'Phone',
           style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
         ),
       ],
@@ -582,12 +742,13 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
               ),
               Row(
                 children: [
-                  if (_recording.transcript.isNotEmpty && !_isTranscriptEditing)
+                  if ((_recording?.transcript.isNotEmpty ?? false) &&
+                      !_isTranscriptEditing)
                     IconButton(
                       icon: const Icon(Icons.copy, size: 20),
                       onPressed: () {
                         Clipboard.setData(
-                          ClipboardData(text: _recording.transcript),
+                          ClipboardData(text: _recording?.transcript ?? ''),
                         );
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
@@ -597,7 +758,9 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
                       },
                       tooltip: 'Copy',
                     ),
-                  if (_recording.transcript.isEmpty && !_isTranscribing)
+                  if ((_recording?.transcript.isEmpty ?? true) &&
+                      !_isTranscribing &&
+                      _recording != null)
                     ElevatedButton.icon(
                       onPressed: _transcribeRecording,
                       icon: const Icon(Icons.auto_awesome, size: 18),
@@ -619,7 +782,9 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
           if (_isTranscribing) _buildTranscribingIndicator(),
 
           // Content
-          if (_recording.transcript.isEmpty && !_isTranscribing)
+          if ((_recording?.transcript.isEmpty ??
+                  _transcriptController.text.isEmpty) &&
+              !_isTranscribing)
             Text(
               'No transcript yet. Tap "Transcribe" to generate.',
               style: TextStyle(

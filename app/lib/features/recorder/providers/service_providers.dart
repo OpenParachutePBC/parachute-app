@@ -6,6 +6,7 @@ import 'package:app/features/recorder/services/whisper_service.dart';
 import 'package:app/features/recorder/services/whisper_local_service.dart';
 import 'package:app/features/recorder/services/whisper_model_manager.dart';
 import 'package:app/features/recorder/services/live_transcription_service_v2.dart';
+import 'package:app/features/recorder/services/live_transcription_service_v3.dart';
 import 'package:app/features/recorder/models/whisper_models.dart';
 
 /// Provider for AudioService
@@ -125,4 +126,82 @@ final simpleTranscriptionServiceProvider =
       });
 
       return service;
+    });
+
+/// State notifier for managing active recording session
+///
+/// This holds the current recording state and transcription service,
+/// allowing it to persist across navigation (recording screen → detail screen).
+class ActiveRecordingState {
+  final AutoPauseTranscriptionService? service;
+  final String? audioFilePath;
+  final DateTime? startTime;
+  final bool isTranscribing;
+
+  ActiveRecordingState({
+    this.service,
+    this.audioFilePath,
+    this.startTime,
+    this.isTranscribing = false,
+  });
+
+  ActiveRecordingState copyWith({
+    AutoPauseTranscriptionService? service,
+    String? audioFilePath,
+    DateTime? startTime,
+    bool? isTranscribing,
+  }) {
+    return ActiveRecordingState(
+      service: service ?? this.service,
+      audioFilePath: audioFilePath ?? this.audioFilePath,
+      startTime: startTime ?? this.startTime,
+      isTranscribing: isTranscribing ?? this.isTranscribing,
+    );
+  }
+}
+
+class ActiveRecordingNotifier extends StateNotifier<ActiveRecordingState> {
+  ActiveRecordingNotifier() : super(ActiveRecordingState());
+
+  /// Start a new recording session
+  void startSession(AutoPauseTranscriptionService service, DateTime startTime) {
+    state = ActiveRecordingState(
+      service: service,
+      startTime: startTime,
+      isTranscribing: false,
+    );
+  }
+
+  /// Stop recording and get audio file path
+  Future<String?> stopRecording() async {
+    if (state.service == null) return null;
+
+    final audioPath = await state.service!.stopRecording();
+    state = state.copyWith(audioFilePath: audioPath, isTranscribing: true);
+
+    return audioPath;
+  }
+
+  /// Mark transcription as complete
+  void completeTranscription() {
+    state = state.copyWith(isTranscribing: false);
+  }
+
+  /// Clear the session (called after save is complete)
+  void clearSession() {
+    final oldService = state.service;
+    state = ActiveRecordingState();
+
+    // Dispose old service
+    oldService?.dispose();
+  }
+}
+
+/// Provider for active recording session
+///
+/// This keeps the transcription service alive across navigation,
+/// allowing recording → detail screen transition while transcription continues.
+final activeRecordingProvider =
+    StateNotifierProvider<ActiveRecordingNotifier, ActiveRecordingState>((ref) {
+      return ActiveRecordingNotifier();
     });

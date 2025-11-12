@@ -106,6 +106,7 @@ class AutoPauseTranscriptionService {
   // Processing queue
   final List<_QueuedSegment> _processingQueue = [];
   bool _isProcessingQueue = false;
+  int _activeTranscriptions = 0; // Track number of transcriptions in progress
 
   // Progress streaming
   final _segmentStreamController =
@@ -114,7 +115,8 @@ class AutoPauseTranscriptionService {
   final _vadActivityController = StreamController<bool>.broadcast();
   final _debugMetricsController =
       StreamController<AudioDebugMetrics>.broadcast();
-  final _streamHealthController = StreamController<bool>.broadcast(); // true = healthy, false = broken
+  final _streamHealthController =
+      StreamController<bool>.broadcast(); // true = healthy, false = broken
 
   Stream<TranscriptionSegment> get segmentStream =>
       _segmentStreamController.stream;
@@ -209,7 +211,9 @@ class AutoPauseTranscriptionService {
         ),
       );
 
-      debugPrint('[AutoPauseTranscription] Audio config: autoGain=true, echoCancel=false, noiseSuppress=false');
+      debugPrint(
+        '[AutoPauseTranscription] Audio config: autoGain=true, echoCancel=false, noiseSuppress=false',
+      );
 
       _isRecording = true;
       _segments.clear();
@@ -228,12 +232,18 @@ class AutoPauseTranscriptionService {
         onError: (error, stackTrace) {
           debugPrint('[AutoPauseTranscription] ❌ STREAM ERROR: $error');
           debugPrint('[AutoPauseTranscription] Stack trace: $stackTrace');
-          debugPrint('[AutoPauseTranscription] Chunks received before error: $_audioChunkCount');
-          debugPrint('[AutoPauseTranscription] Time since last chunk: ${DateTime.now().difference(_lastAudioChunkTime ?? DateTime.now())}');
+          debugPrint(
+            '[AutoPauseTranscription] Chunks received before error: $_audioChunkCount',
+          );
+          debugPrint(
+            '[AutoPauseTranscription] Time since last chunk: ${DateTime.now().difference(_lastAudioChunkTime ?? DateTime.now())}',
+          );
         },
         onDone: () {
           debugPrint('[AutoPauseTranscription] ⚠️ STREAM COMPLETED/CLOSED');
-          debugPrint('[AutoPauseTranscription] Total chunks received: $_audioChunkCount');
+          debugPrint(
+            '[AutoPauseTranscription] Total chunks received: $_audioChunkCount',
+          );
           debugPrint('[AutoPauseTranscription] Recording state: $_isRecording');
         },
         cancelOnError: false, // Keep stream alive on errors
@@ -243,7 +253,9 @@ class AutoPauseTranscriptionService {
       _startStreamHealthCheck();
 
       debugPrint('[AutoPauseTranscription] ✅ Recording started with VAD');
-      debugPrint('[AutoPauseTranscription] Microphone permission: $hasPermission');
+      debugPrint(
+        '[AutoPauseTranscription] Microphone permission: $hasPermission',
+      );
       return true;
     } catch (e) {
       debugPrint('[AutoPauseTranscription] Failed to start: $e');
@@ -259,11 +271,15 @@ class AutoPauseTranscriptionService {
 
     // Log first chunk to confirm streaming is working
     if (_audioChunkCount == 1) {
-      debugPrint('[AutoPauseTranscription] ✅ First audio chunk received! (${audioBytes.length} bytes)');
+      debugPrint(
+        '[AutoPauseTranscription] ✅ First audio chunk received! (${audioBytes.length} bytes)',
+      );
     }
 
     if (!_isRecording || _chunker == null || _noiseFilter == null) {
-      debugPrint('[AutoPauseTranscription] ⚠️ Received audio chunk but not ready: isRecording=$_isRecording, chunker=${_chunker != null}, filter=${_noiseFilter != null}');
+      debugPrint(
+        '[AutoPauseTranscription] ⚠️ Received audio chunk but not ready: isRecording=$_isRecording, chunker=${_chunker != null}, filter=${_noiseFilter != null}',
+      );
       return;
     }
 
@@ -272,7 +288,9 @@ class AutoPauseTranscriptionService {
 
     // Validate we got samples
     if (rawSamples.isEmpty) {
-      debugPrint('[AutoPauseTranscription] ⚠️ Received empty sample array from ${audioBytes.length} bytes');
+      debugPrint(
+        '[AutoPauseTranscription] ⚠️ Received empty sample array from ${audioBytes.length} bytes',
+      );
       return;
     }
 
@@ -288,7 +306,9 @@ class AutoPauseTranscriptionService {
 
     // Log audio levels periodically to help diagnose low volume issues
     if (_audioChunkCount % 100 == 1) {
-      debugPrint('[AutoPauseTranscription] Audio levels - Raw: ${rawEnergy.toStringAsFixed(1)}, Clean: ${cleanEnergy.toStringAsFixed(1)}, Samples: ${rawSamples.length}');
+      debugPrint(
+        '[AutoPauseTranscription] Audio levels - Raw: ${rawEnergy.toStringAsFixed(1)}, Clean: ${cleanEnergy.toStringAsFixed(1)}, Samples: ${rawSamples.length}',
+      );
     }
 
     if (!_debugMetricsController.isClosed) {
@@ -332,7 +352,9 @@ class AutoPauseTranscriptionService {
       _streamHealthController.add(true);
     }
 
-    _streamHealthCheckTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
+    _streamHealthCheckTimer = Timer.periodic(const Duration(seconds: 2), (
+      timer,
+    ) {
       if (!_isRecording) {
         timer.cancel();
         return;
@@ -343,20 +365,32 @@ class AutoPauseTranscriptionService {
           ? now.difference(_lastAudioChunkTime!)
           : null;
 
-      if (timeSinceLastChunk != null && timeSinceLastChunk > const Duration(seconds: 5)) {
+      if (timeSinceLastChunk != null &&
+          timeSinceLastChunk > const Duration(seconds: 5)) {
         // Stream is broken - notify UI
         if (!_streamHealthController.isClosed) {
           _streamHealthController.add(false);
         }
-        debugPrint('[AutoPauseTranscription] ⚠️ Audio stream broken (${timeSinceLastChunk.inSeconds}s since last chunk, $_audioChunkCount total chunks)');
+        debugPrint(
+          '[AutoPauseTranscription] ⚠️ Audio stream broken (${timeSinceLastChunk.inSeconds}s since last chunk, $_audioChunkCount total chunks)',
+        );
 
         // Log diagnostic info once when stream breaks
-        if (timeSinceLastChunk.inSeconds == 5 || timeSinceLastChunk.inSeconds == 6) {
+        if (timeSinceLastChunk.inSeconds == 5 ||
+            timeSinceLastChunk.inSeconds == 6) {
           debugPrint('[AutoPauseTranscription] Possible causes:');
-          debugPrint('[AutoPauseTranscription]   - System audio service issue (try: sudo killall coreaudiod)');
-          debugPrint('[AutoPauseTranscription]   - Microphone permission revoked');
-          debugPrint('[AutoPauseTranscription]   - Another app captured audio input');
-          debugPrint('[AutoPauseTranscription]   - macOS audio driver issue (reboot may help)');
+          debugPrint(
+            '[AutoPauseTranscription]   - System audio service issue (try: sudo killall coreaudiod)',
+          );
+          debugPrint(
+            '[AutoPauseTranscription]   - Microphone permission revoked',
+          );
+          debugPrint(
+            '[AutoPauseTranscription]   - Another app captured audio input',
+          );
+          debugPrint(
+            '[AutoPauseTranscription]   - macOS audio driver issue (reboot may help)',
+          );
         }
       } else {
         // Stream is healthy
@@ -417,7 +451,9 @@ class AutoPauseTranscriptionService {
 
     try {
       debugPrint('[AutoPauseTranscription] 🛑 Stopping recording...');
-      debugPrint('[AutoPauseTranscription] Total audio chunks received: $_audioChunkCount');
+      debugPrint(
+        '[AutoPauseTranscription] Total audio chunks received: $_audioChunkCount',
+      );
 
       // Stop health check
       _stopStreamHealthCheck();
@@ -426,9 +462,23 @@ class AutoPauseTranscriptionService {
       await _recorder.stop();
       _isRecording = false;
 
+      // Wait a moment for any final audio chunks to be processed by the stream
+      // The audio stream may still have buffered data that hasn't been delivered yet
+      debugPrint('[AutoPauseTranscription] Waiting for stream to settle...');
+      await Future.delayed(const Duration(milliseconds: 300));
+      debugPrint(
+        '[AutoPauseTranscription] Stream settled, flushing final chunk...',
+      );
+
       // Flush final chunk from SmartChunker
       if (_chunker != null) {
         _chunker!.flush();
+        // CRITICAL: flush() wraps callback in Future.microtask(), so we must
+        // wait for the microtask queue to run before returning
+        await Future.delayed(const Duration(milliseconds: 50));
+        debugPrint(
+          '[AutoPauseTranscription] Chunker flushed and callback queued',
+        );
         _chunker = null;
       }
 
@@ -438,10 +488,12 @@ class AutoPauseTranscriptionService {
         _noiseFilter = null;
       }
 
-      // Wait for all queued segments to finish processing
-      while (_isProcessingQueue || _processingQueue.isNotEmpty) {
-        await Future.delayed(const Duration(milliseconds: 100));
-      }
+      debugPrint(
+        '[AutoPauseTranscription] Recording stopped, transcription continuing in background...',
+      );
+      debugPrint(
+        '[AutoPauseTranscription] Queue: ${_processingQueue.length}, Active: $_activeTranscriptions',
+      );
 
       // Merge all audio into final WAV file
       if (_allAudioSamples.isNotEmpty && _audioFilePath != null) {
@@ -462,7 +514,9 @@ class AutoPauseTranscriptionService {
 
     try {
       debugPrint('[AutoPauseTranscription] ❌ Cancelling recording...');
-      debugPrint('[AutoPauseTranscription] Audio chunks received: $_audioChunkCount');
+      debugPrint(
+        '[AutoPauseTranscription] Audio chunks received: $_audioChunkCount',
+      );
 
       // Stop health check
       _stopStreamHealthCheck();
@@ -578,58 +632,73 @@ class AutoPauseTranscriptionService {
         '[AutoPauseTranscription] ✅ Temp WAV created: ${await file.length()} bytes',
       );
 
-      // Transcribe
-      final text = await _whisperService.transcribeAudio(tempWavPath);
+      // Transcribe (track active transcriptions to prevent premature file cleanup)
+      _activeTranscriptions++;
+      debugPrint(
+        '[AutoPauseTranscription] Active transcriptions: $_activeTranscriptions',
+      );
 
-      // Clean up temp WAV file after successful transcription
       try {
-        await file.delete();
+        final text = await _whisperService.transcribeAudio(tempWavPath);
+
+        // Clean up temp WAV file after successful transcription
+        try {
+          await file.delete();
+          debugPrint(
+            '[AutoPauseTranscription] Cleaned up temp WAV: $tempWavPath',
+          );
+        } catch (e) {
+          debugPrint('[AutoPauseTranscription] Failed to delete temp WAV: $e');
+        }
+
+        // Check if text is empty (Whisper sometimes returns empty for noise)
+        if (text.trim().isEmpty) {
+          throw Exception('Transcription returned empty text');
+        }
+
+        // Update with result
+        _segments[segmentIndex] = _segments[segmentIndex].copyWith(
+          text: text.trim(),
+          status: TranscriptionSegmentStatus.completed,
+        );
+        if (!_segmentStreamController.isClosed) {
+          _segmentStreamController.add(_segments[segmentIndex]);
+        }
+
         debugPrint(
-          '[AutoPauseTranscription] Cleaned up temp WAV: $tempWavPath',
+          '[AutoPauseTranscription] Segment ${segment.index} done: "$text"',
         );
       } catch (e) {
-        debugPrint('[AutoPauseTranscription] Failed to delete temp WAV: $e');
-      }
+        debugPrint('[AutoPauseTranscription] Transcription failed: $e');
 
-      // Check if text is empty (Whisper sometimes returns empty for noise)
-      if (text.trim().isEmpty) {
-        throw Exception('Transcription returned empty text');
-      }
-
-      // Update with result
-      _segments[segmentIndex] = _segments[segmentIndex].copyWith(
-        text: text.trim(),
-        status: TranscriptionSegmentStatus.completed,
-      );
-      if (!_segmentStreamController.isClosed) {
-        _segmentStreamController.add(_segments[segmentIndex]);
-      }
-
-      debugPrint(
-        '[AutoPauseTranscription] Segment ${segment.index} done: "$text"',
-      );
-    } catch (e) {
-      debugPrint('[AutoPauseTranscription] Transcription failed: $e');
-
-      // Clean up temp WAV file on error too
-      try {
-        final errorFile = File(
-          path.join(_tempDirectory!, 'temp_segment_${segment.index}.wav'),
-        );
-        if (await errorFile.exists()) {
-          await errorFile.delete();
+        // Clean up temp WAV file on error too
+        try {
+          final errorFile = File(
+            path.join(_tempDirectory!, 'temp_segment_${segment.index}.wav'),
+          );
+          if (await errorFile.exists()) {
+            await errorFile.delete();
+          }
+        } catch (_) {
+          // Ignore cleanup errors
         }
-      } catch (_) {
-        // Ignore cleanup errors
-      }
 
-      _segments[segmentIndex] = _segments[segmentIndex].copyWith(
-        text: '[Transcription failed]',
-        status: TranscriptionSegmentStatus.failed,
-      );
-      if (!_segmentStreamController.isClosed) {
-        _segmentStreamController.add(_segments[segmentIndex]);
+        _segments[segmentIndex] = _segments[segmentIndex].copyWith(
+          text: '[Transcription failed]',
+          status: TranscriptionSegmentStatus.failed,
+        );
+        if (!_segmentStreamController.isClosed) {
+          _segmentStreamController.add(_segments[segmentIndex]);
+        }
+      } finally {
+        // Always decrement counter, even on error
+        _activeTranscriptions--;
+        debugPrint(
+          '[AutoPauseTranscription] Active transcriptions: $_activeTranscriptions',
+        );
       }
+    } catch (e) {
+      debugPrint('[AutoPauseTranscription] Failed to process segment: $e');
     }
   }
 
@@ -761,7 +830,9 @@ class AutoPauseTranscriptionService {
       try {
         await _recorder.stop();
         _isRecording = false;
-        debugPrint('[AutoPauseTranscription] Stopped active recording during dispose');
+        debugPrint(
+          '[AutoPauseTranscription] Stopped active recording during dispose',
+        );
       } catch (e) {
         debugPrint('[AutoPauseTranscription] Error stopping recorder: $e');
       }

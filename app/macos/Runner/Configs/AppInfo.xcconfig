@@ -8,7 +8,7 @@
 PRODUCT_NAME = Parachute
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.parachute.app
+PRODUCT_BUNDLE_IDENTIFIER = place.parachute
 
 // The copyright displayed in application information
-PRODUCT_COPYRIGHT = Copyright © 2025 com.parachute. All rights reserved.
+PRODUCT_COPYRIGHT = Copyright © 2025 Parachute Labs. All rights reserved.

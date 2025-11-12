@@ -546,8 +546,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       builder: (context) => AlertDialog(
         title: const Text('Change Parachute Folder'),
         content: const Text(
-          'Changing the folder location will move all your recordings, transcripts, '
-          'and AI spaces to the new location. This may take a while.\n\n'
+          'This will copy all your recordings, transcripts, and AI spaces to the new location. '
+          'This may take a while depending on how much data you have.\n\n'
+          'Your original files will remain in the old location until you manually delete them.\n\n'
           'Make sure you have enough space in the new location.',
         ),
         actions: [
@@ -568,17 +569,71 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     String? selectedDirectory = await FilePicker.platform.getDirectoryPath();
 
     if (selectedDirectory != null) {
+      // Show loading indicator
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                ),
+                SizedBox(width: 16),
+                Text('Migrating files to new location...'),
+              ],
+            ),
+            duration: Duration(minutes: 5), // Long duration for migration
+          ),
+        );
+      }
+
       final fileSystemService = FileSystemService();
+      final oldPath = await fileSystemService.getRootPathDisplay();
       final success = await fileSystemService.setRootPath(selectedDirectory);
+
+      // Clear the loading snackbar
+      if (mounted) {
+        ScaffoldMessenger.of(context).clearSnackBars();
+      }
 
       if (success) {
         final displayPath = await fileSystemService.getRootPathDisplay();
         setState(() => _syncFolderPath = displayPath);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Parachute folder updated successfully!'),
+            SnackBar(
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Files copied successfully!',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'New location: $displayPath',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Old files remain at: $oldPath',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ],
+              ),
               backgroundColor: Colors.green,
+              duration: const Duration(seconds: 10),
+              action: SnackBarAction(
+                label: 'Got it',
+                textColor: Colors.white,
+                onPressed: () {},
+              ),
             ),
           );
         }
@@ -586,8 +641,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Failed to update Parachute folder'),
+              content: Text('Failed to migrate files to new location'),
               backgroundColor: Colors.red,
+              duration: Duration(seconds: 5),
             ),
           );
         }
@@ -1510,6 +1566,57 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             color: Colors.grey[700],
                           ),
                         ),
+                        // Show helper notice if using app container instead of ~/Parachute on macOS
+                        if (_syncFolderPath.contains(
+                          '/Library/Containers/',
+                        )) ...[
+                          const SizedBox(height: 12),
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: Colors.orange.withValues(alpha: 0.3),
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.info_outline,
+                                      color: Colors.orange[700],
+                                      size: 16,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        'Want to use ~/Parachute instead?',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.orange[900],
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'To sync with iCloud, Obsidian, or other apps, tap "Change Location" '
+                                  'below and select your home folder. Create a "Parachute" folder there '
+                                  'and select it. This grants the app permission to access it.',
+                                  style: TextStyle(
+                                    color: Colors.grey[700],
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 12),
                         Row(
                           children: [

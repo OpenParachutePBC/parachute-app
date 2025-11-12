@@ -8,6 +8,7 @@ import 'package:app/features/recorder/services/live_transcription_service_v3.dar
     as v3;
 import 'package:app/features/recorder/providers/service_providers.dart';
 import 'package:app/features/recorder/widgets/audio_debug_overlay.dart';
+import 'package:app/features/recorder/screens/recording_detail_screen.dart';
 import 'package:app/core/services/file_system_service.dart';
 import 'package:app/features/files/providers/local_file_browser_provider.dart';
 import 'package:app/core/providers/git_sync_provider.dart';
@@ -30,9 +31,7 @@ class LiveRecordingScreen extends ConsumerStatefulWidget {
 }
 
 class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
-  dynamic
-  _transcriptionService; // SimpleTranscriptionService OR AutoPauseTranscriptionService
-  bool _useAutoPause = false; // Determined at init time
+  v3.AutoPauseTranscriptionService? _transcriptionService; // Always V3 for now
   bool _showDebugOverlay = false; // Determined at init time
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
@@ -49,8 +48,8 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
   DateTime? _startTime;
   int _wordCount = 0;
 
-  // Segments (using dynamic type to support both v2 and v3)
-  final List<dynamic> _segments = [];
+  // Segments (from transcription service)
+  final List<v3.TranscriptionSegment> _segments = [];
 
   @override
   void initState() {
@@ -63,7 +62,7 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
   @override
   void dispose() {
     _durationTimer?.cancel();
-    _transcriptionService.dispose();
+    // Don't dispose service here - it's managed by the provider now
     _textController.dispose();
     _scrollController.dispose();
     _textFocusNode.dispose();
@@ -75,30 +74,20 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
       final whisperService = ref.read(whisperLocalServiceProvider);
       final storageService = ref.read(storageServiceProvider);
 
-      // Check if auto-pause is enabled
-      _useAutoPause = await storageService.getAutoPauseRecording();
-
       // Check if debug overlay is enabled
       _showDebugOverlay = await storageService.getAudioDebugOverlay();
 
-      // Initialize appropriate service
-      if (_useAutoPause) {
-        debugPrint('[LiveRecordingScreen] Using AUTO-PAUSE mode (V3)');
-        _transcriptionService = v3.AutoPauseTranscriptionService(
-          whisperService,
-        );
-      } else {
-        debugPrint('[LiveRecordingScreen] Using MANUAL mode (V2)');
-        _transcriptionService = v2.SimpleTranscriptionService(whisperService);
-      }
+      // Always use auto-pause (V3) for now
+      debugPrint('[LiveRecordingScreen] Using AUTO-PAUSE mode (V3)');
+      _transcriptionService = v3.AutoPauseTranscriptionService(whisperService);
 
-      await _transcriptionService.initialize();
+      await _transcriptionService!.initialize();
 
       // Listen to segment updates
-      _transcriptionService.segmentStream.listen(_handleSegmentUpdate);
+      _transcriptionService!.segmentStream.listen(_handleSegmentUpdate);
 
       // Listen to processing state
-      _transcriptionService.isProcessingStream.listen((isProcessing) {
+      _transcriptionService!.isProcessingStream.listen((isProcessing) {
         if (mounted) {
           setState(() {
             _isProcessing = isProcessing;
@@ -106,16 +95,14 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
         }
       });
 
-      // Listen to stream health (only for V3/auto-pause)
-      if (_useAutoPause) {
-        _transcriptionService.streamHealthStream.listen((isHealthy) {
-          if (mounted) {
-            setState(() {
-              _streamHealthy = isHealthy;
-            });
-          }
-        });
-      }
+      // Listen to stream health
+      _transcriptionService!.streamHealthStream.listen((isHealthy) {
+        if (mounted) {
+          setState(() {
+            _streamHealthy = isHealthy;
+          });
+        }
+      });
 
       if (mounted) {
         setState(() {
@@ -139,7 +126,7 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
     }
   }
 
-  void _handleSegmentUpdate(dynamic segment) {
+  void _handleSegmentUpdate(v3.TranscriptionSegment segment) {
     if (!mounted) return;
 
     setState(() {
@@ -156,14 +143,14 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
     });
 
     // Auto-scroll when new text appears
-    if (segment.status.toString().contains('completed')) {
+    if (segment.status == v3.TranscriptionSegmentStatus.completed) {
       Future.delayed(const Duration(milliseconds: 100), _scrollToBottom);
     }
   }
 
   void _updateTextController() {
     final completedText = _segments
-        .where((s) => s.status.toString().contains('completed'))
+        .where((s) => s.status == v3.TranscriptionSegmentStatus.completed)
         .map((s) => s.text)
         .join('\n\n');
 
@@ -188,7 +175,12 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
   }
 
   Future<void> _startRecording() async {
-    final success = await _transcriptionService.startRecording();
+    if (_transcriptionService == null) return;
+
+    debugPrint('[LiveRecordingScreen] 🎙️ Attempting to start recording...');
+    final success = await _transcriptionService!.startRecording();
+    debugPrint('[LiveRecordingScreen] Recording start result: $success');
+
     if (success) {
       setState(() {
         _isRecording = true;
@@ -196,7 +188,9 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
         _startTime = DateTime.now();
       });
       _startDurationTimer();
+      debugPrint('[LiveRecordingScreen] ✅ Recording started successfully');
     } else {
+      debugPrint('[LiveRecordingScreen] ❌ Failed to start recording');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -209,15 +203,17 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
   }
 
   Future<void> _togglePause() async {
+    if (_transcriptionService == null) return;
+
     if (_isPaused) {
-      await _transcriptionService.resumeRecording();
+      await _transcriptionService!.resumeRecording();
       setState(() {
         _isPaused = false;
       });
       _startDurationTimer();
     } else {
       _durationTimer?.cancel();
-      await _transcriptionService.pauseRecording();
+      await _transcriptionService!.pauseRecording();
       setState(() {
         _isPaused = true;
       });
@@ -225,48 +221,70 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
   }
 
   Future<void> _stopAndSave() async {
+    if (_transcriptionService == null || _startTime == null) return;
+
     _durationTimer?.cancel();
 
     setState(() {
       _isRecording = false;
     });
 
-    // Show "Finishing transcription..." feedback
+    // Register service with provider BEFORE stopping
+    final activeRecording = ref.read(activeRecordingProvider.notifier);
+    activeRecording.startSession(_transcriptionService!, _startTime!);
+
+    // Stop recording (triggers final chunk, returns immediately)
+    final audioPath = await activeRecording.stopRecording();
+
+    // Get current transcript (partial, may not include final segment yet)
+    final partialTranscript = _transcriptionService!.getCombinedText();
+
+    // Save WAV file immediately
+    await _saveWavFile(audioPath);
+
+    // Navigate to detail screen with partial transcript
+    // Transcription continues in background via provider
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Row(
-            children: [
-              SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                ),
-              ),
-              SizedBox(width: 12),
-              Text('Finishing transcription and saving...'),
-            ],
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (context) => RecordingDetailScreen.transcribing(
+            timestamp: FileSystemService.formatTimestampForFilename(
+              _startTime!,
+            ),
+            audioPath: audioPath,
+            initialTranscript: partialTranscript,
+            duration: _recordingDuration,
           ),
-          duration: Duration(seconds: 30), // Long duration for processing
         ),
       );
     }
-
-    // Stop recording (this will process any remaining audio and wait for completion)
-    final audioPath = await _transcriptionService.stopRecording();
-
-    // Dismiss the processing snackbar
-    if (mounted) {
-      ScaffoldMessenger.of(context).clearSnackBars();
-    }
-
-    // Save recording
-    await _saveRecording(audioPath);
   }
 
-  Future<void> _saveRecording(String? audioPath) async {
+  Future<void> _saveWavFile(String? audioPath) async {
+    if (audioPath == null) return;
+
+    try {
+      final fileSystem = ref.read(fileSystemServiceProvider);
+      final timestamp = FileSystemService.formatTimestampForFilename(
+        _startTime!,
+      );
+      final capturesPath = await fileSystem.getCapturesPath();
+
+      if (await File(audioPath).exists()) {
+        final audioDestPath = path.join(capturesPath, '$timestamp.wav');
+        await File(audioPath).copy(audioDestPath);
+        debugPrint('[LiveRecording] ✅ WAV file saved: $audioDestPath');
+      }
+    } catch (e) {
+      debugPrint('[LiveRecording] ❌ Error saving WAV: $e');
+    }
+  }
+
+  // Old method - can be removed later
+  Future<void> _saveRecording(
+    String? audioPath, {
+    bool waitForTranscription = false,
+  }) async {
     try {
       // Get file system service
       final fileSystem = ref.read(fileSystemServiceProvider);
@@ -274,13 +292,61 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
       // Generate timestamp and filenames
       final now = DateTime.now();
       final timestamp = FileSystemService.formatTimestampForFilename(now);
-
-      final fullTranscript = _transcriptionService.getCombinedText();
-
-      // Get captures folder path
       final capturesPath = await fileSystem.getCapturesPath();
 
-      // Create markdown file
+      // Step 1: Save WAV file immediately
+      if (audioPath != null && await File(audioPath).exists()) {
+        final audioDestPath = path.join(capturesPath, '$timestamp.wav');
+        await File(audioPath).copy(audioDestPath);
+        debugPrint('[LiveRecording] ✅ WAV file saved: $audioDestPath');
+      }
+
+      // Step 2: Wait for transcription to complete BEFORE navigating (if needed)
+      if (waitForTranscription) {
+        debugPrint(
+          '[LiveRecording] ⏳ Waiting for transcription to complete...',
+        );
+
+        // Show progress snackbar
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Row(
+                children: [
+                  SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  ),
+                  SizedBox(width: 12),
+                  Text('Finishing transcription...'),
+                ],
+              ),
+              duration: Duration(seconds: 30),
+            ),
+          );
+        }
+
+        // Wait for all transcriptions to finish
+        while (_transcriptionService!.isProcessing ||
+            _transcriptionService!.segments.any(
+              (s) =>
+                  s.status == v3.TranscriptionSegmentStatus.pending ||
+                  s.status == v3.TranscriptionSegmentStatus.processing,
+            )) {
+          await Future.delayed(const Duration(milliseconds: 500));
+        }
+
+        debugPrint(
+          '[LiveRecording] ✅ Transcription complete, saving markdown...',
+        );
+      }
+
+      // Step 3: Save markdown file with complete transcript
+      final fullTranscript = _transcriptionService!.getCombinedText();
       final markdownPath = path.join(capturesPath, '$timestamp.md');
       final markdownFile = File(markdownPath);
 
@@ -289,49 +355,36 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
       metadata.writeln('---');
       metadata.writeln('created: ${now.toIso8601String()}');
       metadata.writeln('duration: $_formattedDuration');
-      metadata.writeln('words: $_wordCount');
+      metadata.writeln(
+        'words: ${fullTranscript.trim().isEmpty ? 0 : fullTranscript.trim().split(RegExp(r'\\s+')).length}',
+      );
       metadata.writeln('source: live_recording');
       metadata.writeln('---');
       metadata.writeln();
 
       // Write markdown file
       await markdownFile.writeAsString('${metadata.toString()}$fullTranscript');
+      debugPrint('[LiveRecording] ✅ Markdown file saved: $markdownPath');
 
-      // Copy audio file to captures folder if it exists
-      if (audioPath != null && await File(audioPath).exists()) {
-        final audioDestPath = path.join(capturesPath, '$timestamp.wav');
-        await File(audioPath).copy(audioDestPath);
-      }
-
-      // Trigger Git sync if enabled (async, don't wait for it)
+      // Step 4: Trigger Git sync if enabled (async, don't wait for it)
       debugPrint('[LiveRecording] 🔄 Attempting to trigger auto-sync...');
       _triggerAutoSync();
 
+      // Step 5: Navigate away and show success
       if (mounted) {
-        // Navigate immediately - don't wait for transcription
+        ScaffoldMessenger.of(context).clearSnackBars();
         Navigator.of(context).pop();
 
-        // Show subtle notification that note is saved
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              'Note saved!\n$timestamp${_isProcessing ? ' (transcribing in background...)' : '\n$_wordCount words'}',
-            ),
+            content: Text('Note saved!\n$timestamp'),
             duration: const Duration(seconds: 2),
             backgroundColor: Colors.green,
           ),
         );
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to save note: $e'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
+      debugPrint('[LiveRecording] ❌ Save error: $e');
     }
   }
 
@@ -468,7 +521,9 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
 
             if (shouldExit == true) {
               // Cancel immediately without processing
-              await _transcriptionService.cancelRecording();
+              if (_transcriptionService != null) {
+                await _transcriptionService!.cancelRecording();
+              }
               if (mounted) {
                 Navigator.of(context).pop();
               }
@@ -487,7 +542,7 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
 
   Widget _buildSyncStatusIndicator() {
     // Show stream health warning if broken (overrides other indicators)
-    if (_useAutoPause && !_streamHealthy && _isRecording) {
+    if (!_streamHealthy && _isRecording) {
       return Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -495,7 +550,11 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
           const SizedBox(width: 6),
           Text(
             'Microphone issue',
-            style: TextStyle(fontSize: 14, color: Colors.red, fontWeight: FontWeight.w600),
+            style: TextStyle(
+              fontSize: 14,
+              color: Colors.red,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ],
       );
@@ -504,16 +563,11 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Show auto-pause indicator if enabled
-        if (_useAutoPause) ...[
-          Icon(Icons.auto_awesome, size: 16, color: Colors.blue),
-          const SizedBox(width: 4),
-          Text(
-            'Auto-pause',
-            style: TextStyle(fontSize: 14, color: Colors.blue),
-          ),
-          const SizedBox(width: 12),
-        ],
+        // Show auto-pause indicator (always enabled now)
+        Icon(Icons.auto_awesome, size: 16, color: Colors.blue),
+        const SizedBox(width: 4),
+        Text('Auto-pause', style: TextStyle(fontSize: 14, color: Colors.blue)),
+        const SizedBox(width: 12),
         // Git sync status
         Icon(Icons.cloud_done, size: 16, color: Colors.green),
         const SizedBox(width: 4),
@@ -523,19 +577,15 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
   }
 
   Widget _buildBodyWithDebugOverlay() {
-    // Wrap body with debug overlay if enabled and using auto-pause (V3)
-    if (_showDebugOverlay &&
-        _useAutoPause &&
-        _transcriptionService is v3.AutoPauseTranscriptionService) {
+    // Wrap body with debug overlay if enabled
+    if (_showDebugOverlay && _transcriptionService != null) {
       return Stack(
         children: [
           _buildBody(),
           // Only show overlay while recording
           if (_isRecording)
             AudioDebugOverlay(
-              metricsStream:
-                  (_transcriptionService as v3.AutoPauseTranscriptionService)
-                      .debugMetricsStream,
+              metricsStream: _transcriptionService!.debugMetricsStream,
             ),
         ],
       );
@@ -621,7 +671,7 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
           final segment = _segments[index];
 
           // Show completed segments as text
-          if (segment.status.toString().contains('completed')) {
+          if (segment.status == v3.TranscriptionSegmentStatus.completed) {
             return Padding(
               padding: const EdgeInsets.only(bottom: 16.0),
               child: Text(
@@ -632,7 +682,7 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
           }
 
           // Show processing segments with indicator
-          if (segment.status.toString().contains('processing')) {
+          if (segment.status == v3.TranscriptionSegmentStatus.processing) {
             return Padding(
               padding: const EdgeInsets.only(bottom: 16.0),
               child: _buildProcessingIndicator(segmentNumber: segment.index),
@@ -640,7 +690,7 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
           }
 
           // Show pending (queued) segments with indicator
-          if (segment.status.toString().contains('pending')) {
+          if (segment.status == v3.TranscriptionSegmentStatus.pending) {
             return Padding(
               padding: const EdgeInsets.only(bottom: 16.0),
               child: _buildQueuedIndicator(segmentNumber: segment.index),
@@ -648,7 +698,7 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
           }
 
           // Show failed segments with indicator
-          if (segment.status.toString().contains('failed')) {
+          if (segment.status == v3.TranscriptionSegmentStatus.failed) {
             return Padding(
               padding: const EdgeInsets.only(bottom: 16.0),
               child: _buildFailedIndicator(segmentNumber: segment.index),

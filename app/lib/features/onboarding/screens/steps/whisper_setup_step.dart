@@ -93,43 +93,44 @@ class _WhisperSetupStepState extends ConsumerState<WhisperSetupStep> {
             ),
           ),
 
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
 
-          // Mode selection
-          Row(
-            children: [
-              Expanded(
-                child: _buildModeCard(
-                  context,
-                  mode: TranscriptionMode.local,
-                  title: 'Local',
-                  subtitle: 'Private & Offline',
-                  icon: Icons.download,
-                  recommended: true,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildModeCard(
-                  context,
-                  mode: TranscriptionMode.api,
-                  title: 'Cloud',
-                  subtitle: 'OpenAI API',
-                  icon: Icons.cloud,
-                ),
-              ),
-            ],
-          ),
+          // Everything below header should be scrollable
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Mode selection (compact)
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildModeCard(
+                          context,
+                          mode: TranscriptionMode.local,
+                          title: 'Local',
+                          subtitle: 'Private & Offline',
+                          icon: Icons.download,
+                          recommended: true,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _buildModeCard(
+                          context,
+                          mode: TranscriptionMode.api,
+                          title: 'Cloud',
+                          subtitle: 'OpenAI API',
+                          icon: Icons.cloud,
+                        ),
+                      ),
+                    ],
+                  ),
 
-          const SizedBox(height: 24),
+                  const SizedBox(height: 24),
 
-          // Model selection (if local mode)
-          if (_selectedMode == TranscriptionMode.local) ...[
-            Expanded(
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+                  // Model selection (if local mode)
+                  if (_selectedMode == TranscriptionMode.local) ...[
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
@@ -174,42 +175,40 @@ class _WhisperSetupStepState extends ConsumerState<WhisperSetupStep> {
                         ),
                       ),
                     ),
-                  ],
-                ),
-              ),
-            ),
-          ] else ...[
-            Expanded(
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.cloud_outlined,
-                      size: 64,
-                      color: Colors.grey[400],
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'You\'ll need an OpenAI API key',
-                      style: Theme.of(context).textTheme.titleMedium,
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'You can add it later in Settings',
-                      style: TextStyle(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.onSurface.withValues(alpha: 0.6),
+                  ] else ...[
+                    const SizedBox(height: 32),
+                    Center(
+                      child: Column(
+                        children: [
+                          Icon(
+                            Icons.cloud_outlined,
+                            size: 64,
+                            color: Colors.grey[400],
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'You\'ll need an OpenAI API key',
+                            style: Theme.of(context).textTheme.titleMedium,
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'You can add it later in Settings',
+                            style: TextStyle(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withValues(alpha: 0.6),
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
                       ),
-                      textAlign: TextAlign.center,
                     ),
                   ],
-                ),
+                ],
               ),
             ),
-          ],
+          ),
 
           const SizedBox(height: 16),
 
