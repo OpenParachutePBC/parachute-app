@@ -75,6 +75,10 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
   double _transcriptionProgress = 0.0;
   String _transcriptionStatus = '';
 
+  // Voice input for context
+  bool _isRecordingContext = false;
+  bool _isTranscribingContext = false;
+
   @override
   void initState() {
     super.initState();
@@ -173,10 +177,11 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
       // Create metadata
       final metadata = StringBuffer();
       metadata.writeln('---');
-      metadata.writeln('created: ${DateTime.now().toIso8601String()}');
       metadata.writeln(
-        'duration: ${_formatDuration(widget.duration ?? Duration.zero)}',
+        'title: ${_titleController.text.trim().isNotEmpty ? _titleController.text.trim() : "Untitled Recording"}',
       );
+      metadata.writeln('created: ${DateTime.now().toIso8601String()}');
+      metadata.writeln('duration: ${widget.duration?.inSeconds ?? 0}');
       metadata.writeln(
         'words: ${_transcriptController.text.trim().isEmpty ? 0 : _transcriptController.text.trim().split(RegExp(r'\\s+')).length}',
       );
@@ -184,11 +189,30 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
       metadata.writeln('---');
       metadata.writeln();
 
+      // Add title
+      metadata.writeln(
+        '# ${_titleController.text.trim().isNotEmpty ? _titleController.text.trim() : "Untitled Recording"}',
+      );
+      metadata.writeln();
+
+      // Add context if provided
+      if (_contextController.text.trim().isNotEmpty) {
+        metadata.writeln('## Context');
+        metadata.writeln();
+        metadata.writeln(_contextController.text.trim());
+        metadata.writeln();
+      }
+
+      // Add transcription
+      if (_transcriptController.text.trim().isNotEmpty) {
+        metadata.writeln('## Transcription');
+        metadata.writeln();
+        metadata.writeln(_transcriptController.text.trim());
+      }
+
       // Save markdown file
       final markdownPath = path.join(capturesPath, '$timestamp.md');
-      await File(
-        markdownPath,
-      ).writeAsString('${metadata.toString()}${_transcriptController.text}');
+      await File(markdownPath).writeAsString(metadata.toString());
 
       debugPrint('[RecordingDetail] ✅ Markdown saved: $markdownPath');
 
@@ -245,8 +269,26 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
   }
 
   Future<void> _saveChanges() async {
-    if (_recording == null) return; // Only for saved recordings
+    // For transcribing mode, save context to temporary state (will be included in final save)
+    if (_recording == null) {
+      setState(() {
+        _isContextEditing = false;
+        _isTitleEditing = false;
+        _isTranscriptEditing = false;
+      });
 
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Context saved (will be included when recording finishes)',
+          ),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    // For saved recordings, update the file
     final updatedRecording = _recording!.copyWith(
       title: _titleController.text.trim().isNotEmpty
           ? _titleController.text.trim()
@@ -542,6 +584,144 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('Recording deleted')));
+      }
+    }
+  }
+
+  /// Start recording voice input for context field
+  Future<void> _startContextVoiceInput() async {
+    final audioService = ref.read(audioServiceProvider);
+
+    // Request permissions first
+    final hasPermission = await audioService.requestPermissions();
+    if (!hasPermission) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Microphone permission required'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
+    setState(() => _isRecordingContext = true);
+
+    // Start recording
+    final success = await audioService.startRecording();
+    if (!success && mounted) {
+      setState(() => _isRecordingContext = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to start recording'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  /// Stop recording and transcribe voice input for context
+  Future<void> _stopContextVoiceInput() async {
+    final audioService = ref.read(audioServiceProvider);
+
+    setState(() => _isRecordingContext = false);
+
+    // Stop recording and get the file path
+    final recordingPath = await audioService.stopRecording();
+    if (recordingPath == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to save recording'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
+    // Transcribe the audio
+    setState(() => _isTranscribingContext = true);
+
+    try {
+      final storageService = ref.read(storageServiceProvider);
+      final modeString = await storageService.getTranscriptionMode();
+      final mode =
+          TranscriptionMode.fromString(modeString) ?? TranscriptionMode.api;
+
+      String transcript;
+
+      if (mode == TranscriptionMode.local) {
+        final localService = ref.read(whisperLocalServiceProvider);
+        final isReady = await localService.isReady();
+
+        if (!isReady) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Please download a Whisper model in Settings first',
+                ),
+                backgroundColor: Colors.orange,
+              ),
+            );
+          }
+          setState(() => _isTranscribingContext = false);
+          return;
+        }
+
+        transcript = await localService.transcribeAudio(recordingPath);
+      } else {
+        final whisperService = ref.read(whisperServiceProvider);
+        final isConfigured = await whisperService.isConfigured();
+
+        if (!isConfigured) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Please configure OpenAI API key in Settings'),
+                backgroundColor: Colors.orange,
+              ),
+            );
+          }
+          setState(() => _isTranscribingContext = false);
+          return;
+        }
+
+        transcript = await whisperService.transcribeAudio(recordingPath);
+      }
+
+      // Append to context field (with a space if context already has content)
+      if (mounted) {
+        final currentContext = _contextController.text.trim();
+        final newContext = currentContext.isEmpty
+            ? transcript
+            : '$currentContext ${transcript}';
+
+        setState(() {
+          _contextController.text = newContext;
+        });
+      }
+
+      // Delete the temporary audio file
+      try {
+        await File(recordingPath).delete();
+      } catch (e) {
+        debugPrint('[RecordingDetail] Error deleting temp audio: $e');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Transcription failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isTranscribingContext = false);
       }
     }
   }
@@ -920,13 +1100,33 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Context',
-          style: Theme.of(
-            context,
-          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Context',
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+            ),
+            // Voice input button
+            if (!_isRecordingContext && !_isTranscribingContext)
+              IconButton(
+                icon: Icon(
+                  Icons.mic,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                onPressed: _startContextVoiceInput,
+                tooltip: 'Add context by voice',
+              ),
+          ],
         ),
         const SizedBox(height: 8),
+
+        // Show recording/transcribing indicator
+        if (_isRecordingContext) _buildRecordingContextIndicator(),
+        if (_isTranscribingContext) _buildTranscribingContextIndicator(),
+
         Container(
           width: double.infinity,
           padding: const EdgeInsets.all(16),
@@ -972,6 +1172,84 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
                 ),
         ),
       ],
+    );
+  }
+
+  Widget _buildRecordingContextIndicator() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.red.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: Colors.red.shade700.withValues(alpha: 0.3),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.mic, color: Colors.red.shade700, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Recording context...',
+              style: TextStyle(
+                color: Colors.red.shade700,
+                fontWeight: FontWeight.w600,
+                fontSize: 14,
+              ),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: _stopContextVoiceInput,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red.shade700,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            ),
+            child: const Text('Stop'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTranscribingContextIndicator() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.orange.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: Colors.orange.shade700.withValues(alpha: 0.3),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              valueColor: AlwaysStoppedAnimation(Colors.orange.shade700),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Transcribing voice input...',
+              style: TextStyle(
+                color: Colors.orange.shade700,
+                fontWeight: FontWeight.w600,
+                fontSize: 14,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
