@@ -1,15 +1,16 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart' as p;
 import 'package:uuid/uuid.dart';
 import '../../../core/services/file_system_service.dart';
 
 /// Service for managing knowledge links between captures and spaces
 ///
-/// Each space has its own space.sqlite database with:
-/// - relevant_notes: Links captures to this space with context and metadata
-/// - Tags, context, and space-specific interpretation
+/// Each space has its own space_links.jsonl file with:
+/// - One JSON object per line
+/// - Links captures to this space with context and metadata
+/// - Git-friendly: line-by-line diffs, easy merges
 ///
 /// Philosophy: Captures are canonical (in ~/Parachute/captures/), spaces
 /// just reference them with their own context and organization.
@@ -17,87 +18,80 @@ class SpaceKnowledgeService {
   final FileSystemService _fileSystemService;
   final Uuid _uuid = const Uuid();
 
-  // Cache of open databases (space_id -> Database)
-  final Map<String, Database> _databaseCache = {};
+  // In-memory cache of links per space (space_path -> List<LinkedCapture>)
+  final Map<String, List<LinkedCapture>> _linkCache = {};
 
   SpaceKnowledgeService({FileSystemService? fileSystemService})
     : _fileSystemService = fileSystemService ?? FileSystemService();
 
-  /// Get or open the database for a specific space
-  Future<Database> _getDatabase(String spacePath) async {
-    // Check cache first
-    if (_databaseCache.containsKey(spacePath)) {
-      return _databaseCache[spacePath]!;
+  /// Get the JSONL file path for a space
+  String _getJsonlPath(String spacePath) {
+    return p.join(spacePath, 'space_links.jsonl');
+  }
+
+  /// Load links from JSONL file into cache
+  Future<List<LinkedCapture>> _loadLinks(String spacePath) async {
+    // Return cached if available
+    if (_linkCache.containsKey(spacePath)) {
+      return _linkCache[spacePath]!;
     }
 
-    final dbPath = p.join(spacePath, 'space.sqlite');
+    final jsonlPath = _getJsonlPath(spacePath);
+    final file = File(jsonlPath);
 
-    final db = await openDatabase(
-      dbPath,
-      version: 1,
-      onCreate: _createDatabase,
-      onUpgrade: _upgradeDatabase,
-    );
+    if (!await file.exists()) {
+      debugPrint('[SpaceKnowledge] No links file yet for $spacePath');
+      _linkCache[spacePath] = [];
+      return [];
+    }
 
-    _databaseCache[spacePath] = db;
-    return db;
+    try {
+      final lines = await file.readAsLines();
+      final links = <LinkedCapture>[];
+
+      for (final line in lines) {
+        if (line.trim().isEmpty) continue;
+        try {
+          final json = jsonDecode(line) as Map<String, dynamic>;
+          links.add(LinkedCapture.fromJson(json));
+        } catch (e) {
+          debugPrint('[SpaceKnowledge] Error parsing line: $e');
+        }
+      }
+
+      _linkCache[spacePath] = links;
+      debugPrint(
+        '[SpaceKnowledge] Loaded ${links.length} links from $spacePath',
+      );
+      return links;
+    } catch (e) {
+      debugPrint('[SpaceKnowledge] Error loading links: $e');
+      _linkCache[spacePath] = [];
+      return [];
+    }
   }
 
-  /// Create database schema
-  Future<void> _createDatabase(Database db, int version) async {
-    debugPrint('[SpaceKnowledge] Creating database schema v$version');
+  /// Write links to JSONL file
+  Future<void> _writeLinks(String spacePath, List<LinkedCapture> links) async {
+    final jsonlPath = _getJsonlPath(spacePath);
+    final file = File(jsonlPath);
 
-    // Metadata table
-    await db.execute('''
-      CREATE TABLE space_metadata (
-        key TEXT PRIMARY KEY,
-        value TEXT NOT NULL
-      )
-    ''');
+    // Ensure directory exists
+    await file.parent.create(recursive: true);
 
-    // Insert initial metadata
-    await db.insert('space_metadata', {'key': 'schema_version', 'value': '1'});
-    await db.insert('space_metadata', {
-      'key': 'created_at',
-      'value': DateTime.now().millisecondsSinceEpoch.toString(),
-    });
+    try {
+      // Write one JSON object per line
+      final lines = links.map((link) => jsonEncode(link.toJson())).join('\n');
+      await file.writeAsString(lines + (links.isNotEmpty ? '\n' : ''));
 
-    // Core table: Links captures to this space
-    await db.execute('''
-      CREATE TABLE relevant_notes (
-        id TEXT PRIMARY KEY,
-        capture_id TEXT NOT NULL,
-        note_path TEXT NOT NULL,
-        linked_at INTEGER NOT NULL,
-        context TEXT,
-        tags TEXT,
-        last_referenced INTEGER,
-        metadata TEXT,
-        UNIQUE(capture_id)
-      )
-    ''');
+      // Update cache
+      _linkCache[spacePath] = links;
 
-    // Indexes for performance
-    await db.execute('''
-      CREATE INDEX idx_linked_at ON relevant_notes(linked_at DESC)
-    ''');
-    await db.execute('''
-      CREATE INDEX idx_last_referenced ON relevant_notes(last_referenced DESC)
-    ''');
-
-    debugPrint('[SpaceKnowledge] Database schema created');
-  }
-
-  /// Handle database upgrades
-  Future<void> _upgradeDatabase(
-    Database db,
-    int oldVersion,
-    int newVersion,
-  ) async {
-    debugPrint(
-      '[SpaceKnowledge] Upgrading database from v$oldVersion to v$newVersion',
-    );
-    // Future schema migrations go here
+      debugPrint('[SpaceKnowledge] Wrote ${links.length} links to $spacePath');
+    } catch (e) {
+      debugPrint('[SpaceKnowledge] Error writing links: $e');
+      rethrow;
+    }
   }
 
   /// Link a capture to a space
@@ -111,19 +105,32 @@ class SpaceKnowledgeService {
     Map<String, dynamic>? metadata,
   }) async {
     try {
-      final db = await _getDatabase(spacePath);
-      final now = DateTime.now().millisecondsSinceEpoch;
+      final links = await _loadLinks(spacePath);
+      final now = DateTime.now();
 
-      await db.insert('relevant_notes', {
-        'id': _uuid.v4(),
-        'capture_id': captureId,
-        'note_path': notePath,
-        'linked_at': now,
-        'context': context,
-        'tags': tags != null ? jsonEncode(tags) : null,
-        'last_referenced': now,
-        'metadata': metadata != null ? jsonEncode(metadata) : null,
-      }, conflictAlgorithm: ConflictAlgorithm.replace);
+      // Check if already linked (replace if so)
+      final existingIndex = links.indexWhere(
+        (link) => link.captureId == captureId,
+      );
+
+      final newLink = LinkedCapture(
+        id: existingIndex >= 0 ? links[existingIndex].id : _uuid.v4(),
+        captureId: captureId,
+        notePath: notePath,
+        linkedAt: existingIndex >= 0 ? links[existingIndex].linkedAt : now,
+        context: context,
+        tags: tags,
+        lastReferenced: now,
+        metadata: metadata,
+      );
+
+      if (existingIndex >= 0) {
+        links[existingIndex] = newLink;
+      } else {
+        links.add(newLink);
+      }
+
+      await _writeLinks(spacePath, links);
 
       debugPrint(
         '[SpaceKnowledge] Linked capture $captureId to space $spaceId',
@@ -140,12 +147,9 @@ class SpaceKnowledgeService {
     required String captureId,
   }) async {
     try {
-      final db = await _getDatabase(spacePath);
-      await db.delete(
-        'relevant_notes',
-        where: 'capture_id = ?',
-        whereArgs: [captureId],
-      );
+      final links = await _loadLinks(spacePath);
+      links.removeWhere((link) => link.captureId == captureId);
+      await _writeLinks(spacePath, links);
 
       debugPrint('[SpaceKnowledge] Unlinked capture $captureId');
     } catch (e) {
@@ -162,24 +166,27 @@ class SpaceKnowledgeService {
     List<String>? tags,
   }) async {
     try {
-      final db = await _getDatabase(spacePath);
-      final updates = <String, dynamic>{
-        'last_referenced': DateTime.now().millisecondsSinceEpoch,
-      };
+      final links = await _loadLinks(spacePath);
+      final index = links.indexWhere((link) => link.captureId == captureId);
 
-      if (context != null) {
-        updates['context'] = context;
-      }
-      if (tags != null) {
-        updates['tags'] = jsonEncode(tags);
+      if (index < 0) {
+        debugPrint('[SpaceKnowledge] Capture not linked: $captureId');
+        return;
       }
 
-      await db.update(
-        'relevant_notes',
-        updates,
-        where: 'capture_id = ?',
-        whereArgs: [captureId],
+      final link = links[index];
+      links[index] = LinkedCapture(
+        id: link.id,
+        captureId: link.captureId,
+        notePath: link.notePath,
+        linkedAt: link.linkedAt,
+        context: context ?? link.context,
+        tags: tags ?? link.tags,
+        lastReferenced: DateTime.now(),
+        metadata: link.metadata,
       );
+
+      await _writeLinks(spacePath, links);
 
       debugPrint('[SpaceKnowledge] Updated capture $captureId context');
     } catch (e) {
@@ -195,16 +202,19 @@ class SpaceKnowledgeService {
     int? offset,
   }) async {
     try {
-      final db = await _getDatabase(spacePath);
+      final links = await _loadLinks(spacePath);
 
-      final results = await db.query(
-        'relevant_notes',
-        orderBy: 'linked_at DESC',
-        limit: limit,
-        offset: offset,
+      // Sort by linkedAt descending
+      links.sort((a, b) => b.linkedAt.compareTo(a.linkedAt));
+
+      // Apply pagination
+      final start = offset ?? 0;
+      final end = limit != null ? start + limit : links.length;
+
+      return links.sublist(
+        start.clamp(0, links.length),
+        end.clamp(0, links.length),
       );
-
-      return results.map((row) => LinkedCapture.fromMap(row)).toList();
     } catch (e) {
       debugPrint('[SpaceKnowledge] Error getting linked captures: $e');
       return [];
@@ -217,16 +227,8 @@ class SpaceKnowledgeService {
     required String captureId,
   }) async {
     try {
-      final db = await _getDatabase(spacePath);
-
-      final results = await db.query(
-        'relevant_notes',
-        where: 'capture_id = ?',
-        whereArgs: [captureId],
-        limit: 1,
-      );
-
-      return results.isNotEmpty;
+      final links = await _loadLinks(spacePath);
+      return links.any((link) => link.captureId == captureId);
     } catch (e) {
       debugPrint('[SpaceKnowledge] Error checking if capture linked: $e');
       return false;
@@ -239,19 +241,12 @@ class SpaceKnowledgeService {
     required String captureId,
   }) async {
     try {
-      final db = await _getDatabase(spacePath);
-
-      final results = await db.query(
-        'relevant_notes',
-        where: 'capture_id = ?',
-        whereArgs: [captureId],
-        limit: 1,
+      final links = await _loadLinks(spacePath);
+      return links.firstWhere(
+        (link) => link.captureId == captureId,
+        orElse: () => throw StateError('Not found'),
       );
-
-      if (results.isEmpty) return null;
-      return LinkedCapture.fromMap(results.first);
     } catch (e) {
-      debugPrint('[SpaceKnowledge] Error getting linked capture: $e');
       return null;
     }
   }
@@ -259,29 +254,27 @@ class SpaceKnowledgeService {
   /// Get statistics for a space
   Future<SpaceStats> getSpaceStats({required String spacePath}) async {
     try {
-      final db = await _getDatabase(spacePath);
+      final links = await _loadLinks(spacePath);
 
-      final countResult = await db.rawQuery(
-        'SELECT COUNT(*) as count FROM relevant_notes',
-      );
-      final count = Sqflite.firstIntValue(countResult) ?? 0;
+      if (links.isEmpty) {
+        return SpaceStats(noteCount: 0);
+      }
 
-      final lastReferencedResult = await db.query(
-        'relevant_notes',
-        columns: ['last_referenced'],
-        orderBy: 'last_referenced DESC',
-        limit: 1,
-      );
-
+      // Find most recent lastReferenced
       DateTime? lastReferenced;
-      if (lastReferencedResult.isNotEmpty) {
-        final timestamp = lastReferencedResult.first['last_referenced'] as int?;
-        if (timestamp != null) {
-          lastReferenced = DateTime.fromMillisecondsSinceEpoch(timestamp);
+      for (final link in links) {
+        if (link.lastReferenced != null) {
+          if (lastReferenced == null ||
+              link.lastReferenced!.isAfter(lastReferenced)) {
+            lastReferenced = link.lastReferenced;
+          }
         }
       }
 
-      return SpaceStats(noteCount: count, lastReferenced: lastReferenced);
+      return SpaceStats(
+        noteCount: links.length,
+        lastReferenced: lastReferenced,
+      );
     } catch (e) {
       debugPrint('[SpaceKnowledge] Error getting space stats: $e');
       return SpaceStats(noteCount: 0);
@@ -294,42 +287,34 @@ class SpaceKnowledgeService {
     required List<String> tags,
   }) async {
     try {
-      final db = await _getDatabase(spacePath);
+      final links = await _loadLinks(spacePath);
 
-      // Build WHERE clause for tag matching
-      final conditions = tags
-          .map((tag) => "tags LIKE '%\"$tag\"%'")
-          .join(' OR ');
+      // Filter by tags (match any)
+      final filtered = links.where((link) {
+        if (link.tags == null || link.tags!.isEmpty) return false;
+        return tags.any((tag) => link.tags!.contains(tag));
+      }).toList();
 
-      final results = await db.query(
-        'relevant_notes',
-        where: conditions,
-        orderBy: 'linked_at DESC',
-      );
+      // Sort by linkedAt descending
+      filtered.sort((a, b) => b.linkedAt.compareTo(a.linkedAt));
 
-      return results.map((row) => LinkedCapture.fromMap(row)).toList();
+      return filtered;
     } catch (e) {
       debugPrint('[SpaceKnowledge] Error searching by tags: $e');
       return [];
     }
   }
 
-  /// Close database for a space (cleanup)
-  Future<void> closeDatabaseForSpace(String spacePath) async {
-    if (_databaseCache.containsKey(spacePath)) {
-      await _databaseCache[spacePath]!.close();
-      _databaseCache.remove(spacePath);
-      debugPrint('[SpaceKnowledge] Closed database for $spacePath');
-    }
+  /// Clear cache for a space (force reload)
+  void clearCacheForSpace(String spacePath) {
+    _linkCache.remove(spacePath);
+    debugPrint('[SpaceKnowledge] Cleared cache for $spacePath');
   }
 
-  /// Close all databases
-  Future<void> closeAll() async {
-    for (final db in _databaseCache.values) {
-      await db.close();
-    }
-    _databaseCache.clear();
-    debugPrint('[SpaceKnowledge] Closed all databases');
+  /// Clear all caches
+  void clearAllCaches() {
+    _linkCache.clear();
+    debugPrint('[SpaceKnowledge] Cleared all caches');
   }
 }
 
@@ -355,35 +340,34 @@ class LinkedCapture {
     this.metadata,
   });
 
-  factory LinkedCapture.fromMap(Map<String, dynamic> map) {
+  factory LinkedCapture.fromJson(Map<String, dynamic> json) {
     return LinkedCapture(
-      id: map['id'] as String,
-      captureId: map['capture_id'] as String,
-      notePath: map['note_path'] as String,
-      linkedAt: DateTime.fromMillisecondsSinceEpoch(map['linked_at'] as int),
-      context: map['context'] as String?,
-      tags: map['tags'] != null
-          ? List<String>.from(jsonDecode(map['tags'] as String) as List)
+      id: json['id'] as String,
+      captureId: json['captureId'] as String,
+      notePath: json['notePath'] as String,
+      linkedAt: DateTime.parse(json['linkedAt'] as String),
+      context: json['context'] as String?,
+      tags: json['tags'] != null
+          ? List<String>.from(json['tags'] as List)
           : null,
-      lastReferenced: map['last_referenced'] != null
-          ? DateTime.fromMillisecondsSinceEpoch(map['last_referenced'] as int)
+      lastReferenced: json['lastReferenced'] != null
+          ? DateTime.parse(json['lastReferenced'] as String)
           : null,
-      metadata: map['metadata'] != null
-          ? jsonDecode(map['metadata'] as String) as Map<String, dynamic>
-          : null,
+      metadata: json['metadata'] as Map<String, dynamic>?,
     );
   }
 
-  Map<String, dynamic> toMap() {
+  Map<String, dynamic> toJson() {
     return {
       'id': id,
-      'capture_id': captureId,
-      'note_path': notePath,
-      'linked_at': linkedAt.millisecondsSinceEpoch,
-      'context': context,
-      'tags': tags != null ? jsonEncode(tags) : null,
-      'last_referenced': lastReferenced?.millisecondsSinceEpoch,
-      'metadata': metadata != null ? jsonEncode(metadata) : null,
+      'captureId': captureId,
+      'notePath': notePath,
+      'linkedAt': linkedAt.toIso8601String(),
+      if (context != null) 'context': context,
+      if (tags != null && tags!.isNotEmpty) 'tags': tags,
+      if (lastReferenced != null)
+        'lastReferenced': lastReferenced!.toIso8601String(),
+      if (metadata != null && metadata!.isNotEmpty) 'metadata': metadata,
     };
   }
 }

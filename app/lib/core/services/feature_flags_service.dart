@@ -18,7 +18,8 @@ class FeatureFlagsService {
 
   // Default values
   static const bool _defaultOmiEnabled = false;
-  static const bool _defaultAiChatEnabled = false;
+  static const bool _defaultAiChatEnabled =
+      true; // Now local-first, always available
   static const String _defaultAiServerUrl = 'http://localhost:8080';
 
   // Cache for quick access

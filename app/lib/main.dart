@@ -181,15 +181,15 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
         int recorderIndex = 0;
         int filesIndex = 1;
 
-        // Add AI Chat tab if enabled
+        // Add Spaces tab if enabled (local-first knowledge management)
         if (aiChatEnabled) {
           screens.add(const SpaceListScreen());
           navItems.add(
             const BottomNavigationBarItem(
-              icon: Icon(Icons.chat_bubble_outline),
-              activeIcon: Icon(Icons.chat_bubble),
-              label: 'AI Chat',
-              tooltip: 'AI Chat with Claude',
+              icon: Icon(Icons.space_dashboard_outlined),
+              activeIcon: Icon(Icons.space_dashboard),
+              label: 'Spaces',
+              tooltip: 'Knowledge Spaces',
             ),
           );
           recorderIndex = 1;
