@@ -242,15 +242,31 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
     // Save WAV file immediately
     await _saveWavFile(audioPath);
 
+    // Start background monitoring so transcription continues even if screen is closed
+    final fileSystem = ref.read(fileSystemServiceProvider);
+    final capturesPath = await fileSystem.getCapturesPath();
+    final timestamp = FileSystemService.formatTimestampForFilename(_startTime!);
+
+    final backgroundService = ref.read(backgroundTranscriptionProvider);
+    backgroundService.startMonitoring(
+      service: _transcriptionService!,
+      timestamp: timestamp,
+      audioPath: audioPath ?? '',
+      duration: _recordingDuration,
+      capturesPath: capturesPath,
+    );
+
+    debugPrint(
+      '[LiveRecording] 🔄 Background transcription monitoring started',
+    );
+
     // Navigate to detail screen with partial transcript
     // Transcription continues in background via provider
     if (mounted) {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
           builder: (context) => RecordingDetailScreen.transcribing(
-            timestamp: FileSystemService.formatTimestampForFilename(
-              _startTime!,
-            ),
+            timestamp: timestamp,
             audioPath: audioPath,
             initialTranscript: partialTranscript,
             duration: _recordingDuration,

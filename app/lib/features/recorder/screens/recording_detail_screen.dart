@@ -106,6 +106,12 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
   void dispose() {
     _refreshTimer?.cancel();
     _transcriptionSubscription?.cancel();
+
+    // Remove listeners from background service
+    final backgroundService = ref.read(backgroundTranscriptionProvider);
+    backgroundService.removeSegmentListener(_handleSegmentUpdate);
+    backgroundService.removeCompletionListener(_handleTranscriptionComplete);
+
     _titleController.dispose();
     _transcriptController.dispose();
     _contextController.dispose();
@@ -113,8 +119,25 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
     super.dispose();
   }
 
-  /// Listen to transcription updates from the active recording provider
+  /// Listen to transcription updates from the background service
   void _listenToTranscriptionUpdates() {
+    final backgroundService = ref.read(backgroundTranscriptionProvider);
+
+    // Check if background service is already monitoring this recording
+    if (backgroundService.isMonitoring &&
+        backgroundService.currentTimestamp == widget.timestamp) {
+      debugPrint(
+        '[RecordingDetail] Listening to background transcription updates',
+      );
+
+      // Add listeners to the background service
+      backgroundService.addSegmentListener(_handleSegmentUpdate);
+      backgroundService.addCompletionListener(_handleTranscriptionComplete);
+
+      return;
+    }
+
+    // Fallback: Listen to active recording provider (for immediate transitions)
     final activeRecording = ref.read(activeRecordingProvider);
     final service = activeRecording.service;
 
@@ -123,46 +146,98 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
       return;
     }
 
-    debugPrint('[RecordingDetail] Listening to transcription updates');
+    debugPrint(
+      '[RecordingDetail] Listening to active service transcription updates',
+    );
 
-    // Listen to segment updates
+    // Listen to segment updates from active service
     _transcriptionSubscription = service.segmentStream.listen((segment) {
       if (!mounted) return;
-
-      debugPrint(
-        '[RecordingDetail] Segment update: ${segment.index} - ${segment.status}',
-      );
-
-      // Update transcript with all completed segments
-      final allSegments = service.segments;
-      final completedText = allSegments
-          .where((s) => s.status == TranscriptionSegmentStatus.completed)
-          .map((s) => s.text)
-          .join('\n\n');
-
-      if (!_isTranscriptEditing && mounted) {
-        setState(() {
-          _transcriptController.text = completedText;
-        });
-      }
-
-      // Check if transcription is complete
-      final hasIncomplete = allSegments.any(
-        (s) =>
-            s.status == TranscriptionSegmentStatus.pending ||
-            s.status == TranscriptionSegmentStatus.processing,
-      );
-
-      if (!hasIncomplete && _isTranscribing) {
-        debugPrint('[RecordingDetail] Transcription complete!');
-        setState(() {
-          _isTranscribing = false;
-        });
-
-        // Save the markdown file now that transcription is complete
-        _saveCompletedRecording();
-      }
+      _handleSegmentUpdate(segment);
     });
+  }
+
+  void _handleSegmentUpdate(TranscriptionSegment segment) {
+    if (!mounted) return;
+
+    debugPrint(
+      '[RecordingDetail] Segment update: ${segment.index} - ${segment.status}',
+    );
+
+    // Get segments from background service if available, otherwise from active service
+    final backgroundService = ref.read(backgroundTranscriptionProvider);
+    final List<TranscriptionSegment> allSegments;
+
+    if (backgroundService.isMonitoring &&
+        backgroundService.currentTimestamp == widget.timestamp) {
+      allSegments = backgroundService.segments;
+    } else {
+      final activeRecording = ref.read(activeRecordingProvider);
+      allSegments = activeRecording.service?.segments ?? [];
+    }
+
+    // Update transcript with all completed segments
+    final completedText = allSegments
+        .where((s) => s.status == TranscriptionSegmentStatus.completed)
+        .map((s) => s.text)
+        .join('\n\n');
+
+    if (!_isTranscriptEditing && mounted) {
+      setState(() {
+        _transcriptController.text = completedText;
+      });
+    }
+
+    // Check if transcription is complete
+    final hasIncomplete = allSegments.any(
+      (s) =>
+          s.status == TranscriptionSegmentStatus.pending ||
+          s.status == TranscriptionSegmentStatus.processing,
+    );
+
+    if (!hasIncomplete && _isTranscribing && allSegments.isNotEmpty) {
+      debugPrint('[RecordingDetail] Transcription complete in UI!');
+      setState(() {
+        _isTranscribing = false;
+      });
+
+      // Save the markdown file now that transcription is complete
+      _saveCompletedRecording();
+    }
+  }
+
+  void _handleTranscriptionComplete(bool success) {
+    if (!mounted) return;
+
+    debugPrint(
+      '[RecordingDetail] Background transcription completed: $success',
+    );
+
+    if (success) {
+      setState(() {
+        _isTranscribing = false;
+      });
+
+      // Refresh the recording to show updated content
+      _refreshRecording();
+    }
+  }
+
+  Future<void> _refreshRecording() async {
+    if (_recording == null) return;
+
+    final updated = await ref
+        .read(storageServiceProvider)
+        .getRecording(_recording!.id);
+    if (updated != null && mounted) {
+      setState(() {
+        _recording = updated;
+        if (!_isTitleEditing) _titleController.text = _recording!.title;
+        if (!_isTranscriptEditing)
+          _transcriptController.text = _recording!.transcript;
+        if (!_isContextEditing) _contextController.text = _recording!.context;
+      });
+    }
   }
 
   /// Save the completed recording (called when transcription finishes)
@@ -241,6 +316,15 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
       debugPrint(
         '[RecordingDetail] ✅ Markdown updated with complete transcription: $markdownPath',
       );
+
+      // Stop background monitoring since we've saved the transcription
+      final backgroundService = ref.read(backgroundTranscriptionProvider);
+      if (backgroundService.currentTimestamp == timestamp) {
+        backgroundService.stopMonitoring();
+        debugPrint(
+          '[RecordingDetail] Stopped background monitoring after save',
+        );
+      }
 
       // Clean up the provider session
       ref.read(activeRecordingProvider.notifier).clearSession();

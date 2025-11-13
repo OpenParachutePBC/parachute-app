@@ -7,6 +7,7 @@ import 'package:app/features/recorder/services/whisper_local_service.dart';
 import 'package:app/features/recorder/services/whisper_model_manager.dart';
 import 'package:app/features/recorder/services/live_transcription_service_v2.dart';
 import 'package:app/features/recorder/services/live_transcription_service_v3.dart';
+import 'package:app/features/recorder/services/background_transcription_service.dart';
 import 'package:app/features/recorder/models/whisper_models.dart';
 
 /// Provider for AudioService
@@ -204,4 +205,19 @@ class ActiveRecordingNotifier extends StateNotifier<ActiveRecordingState> {
 final activeRecordingProvider =
     StateNotifierProvider<ActiveRecordingNotifier, ActiveRecordingState>((ref) {
       return ActiveRecordingNotifier();
+    });
+
+/// Provider for background transcription service
+///
+/// This keeps transcription running even when screens are disposed,
+/// automatically saving results when transcription completes.
+final backgroundTranscriptionProvider =
+    Provider<BackgroundTranscriptionService>((ref) {
+      final service = BackgroundTranscriptionService();
+
+      ref.onDispose(() {
+        service.dispose();
+      });
+
+      return service;
     });
