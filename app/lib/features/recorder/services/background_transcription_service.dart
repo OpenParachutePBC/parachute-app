@@ -48,21 +48,33 @@ class BackgroundTranscriptionService {
       '[BackgroundTranscription] Segment update: ${segment.index} - ${segment.status}',
     );
 
-    // Notify all listeners
+    // Notify all listeners (even if empty - service is still working!)
+    debugPrint(
+      '[BackgroundTranscription] Active listeners: ${_segmentListeners.length}',
+    );
     for (final listener in _segmentListeners) {
       listener(segment);
     }
 
     // Check if transcription is complete
     final allSegments = _activeService?.segments ?? [];
+    final completedCount = allSegments
+        .where((s) => s.status == TranscriptionSegmentStatus.completed)
+        .length;
     final hasIncomplete = allSegments.any(
       (s) =>
           s.status == TranscriptionSegmentStatus.pending ||
           s.status == TranscriptionSegmentStatus.processing,
     );
 
+    debugPrint(
+      '[BackgroundTranscription] Progress: $completedCount/${allSegments.length} segments complete',
+    );
+
     if (!hasIncomplete && allSegments.isNotEmpty) {
-      debugPrint('[BackgroundTranscription] Transcription complete! Saving...');
+      debugPrint(
+        '[BackgroundTranscription] ✅ All segments complete! Saving file...',
+      );
       _saveCompletedTranscription();
     }
   }

@@ -211,13 +211,17 @@ final activeRecordingProvider =
 ///
 /// This keeps transcription running even when screens are disposed,
 /// automatically saving results when transcription completes.
+///
+/// IMPORTANT: Uses keepAlive to prevent disposal when screens navigate away.
+/// This ensures background transcription continues and completes even when
+/// the UI is not actively watching the provider.
 final backgroundTranscriptionProvider =
     Provider<BackgroundTranscriptionService>((ref) {
       final service = BackgroundTranscriptionService();
 
-      ref.onDispose(() {
-        service.dispose();
-      });
+      // Keep this provider alive even when no widgets are listening
+      // This is critical for background transcription to complete
+      ref.keepAlive();
 
       return service;
     });
