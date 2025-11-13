@@ -321,6 +321,10 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
           : 'Untitled Recording',
       transcript: _transcriptController.text.trim(),
       context: _contextController.text.trim(),
+      // Mark transcription as completed if transcript has content
+      liveTranscriptionStatus: _transcriptController.text.trim().isNotEmpty
+          ? 'completed'
+          : _recording!.liveTranscriptionStatus,
     );
 
     final success = await ref
@@ -918,6 +922,9 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
   }
 
   Widget _buildMainContentContainer() {
+    // Check if transcription is incomplete
+    final isIncomplete = _recording?.isTranscriptionIncomplete ?? false;
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
@@ -976,12 +983,57 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
                         foregroundColor: Colors.white,
                       ),
                     ),
+                  // Show "Complete Transcription" button for incomplete transcriptions
+                  if (isIncomplete && !_isTranscribing)
+                    ElevatedButton.icon(
+                      onPressed: _transcribeRecording,
+                      icon: const Icon(Icons.refresh, size: 18),
+                      label: const Text('Complete Transcription'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.orange,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
                 ],
               ),
             ],
           ),
 
           const SizedBox(height: 12),
+
+          // Warning for incomplete transcriptions
+          if (isIncomplete && !_isTranscribing)
+            Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: Colors.orange.shade700.withValues(alpha: 0.3),
+                  width: 1,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.warning_amber,
+                    color: Colors.orange.shade700,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Transcription was interrupted. Tap "Complete Transcription" to finish.',
+                      style: TextStyle(
+                        color: Colors.orange.shade700,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
 
           // Inline status indicators (like LiveRecordingScreen)
           if (_isGeneratingTitle) _buildTitleGeneratingIndicator(),

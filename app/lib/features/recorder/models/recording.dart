@@ -79,6 +79,9 @@ class Recording {
   final ProcessingStatus titleGenerationStatus;
   final ProcessingStatus summaryStatus;
 
+  // Live transcription status (for detecting incomplete transcriptions)
+  final String? liveTranscriptionStatus; // 'in_progress', 'completed', null
+
   Recording({
     required this.id,
     required this.title,
@@ -95,6 +98,7 @@ class Recording {
     this.transcriptionStatus = ProcessingStatus.pending,
     this.titleGenerationStatus = ProcessingStatus.pending,
     this.summaryStatus = ProcessingStatus.pending,
+    this.liveTranscriptionStatus,
   }) : assert(id.isNotEmpty, 'Recording ID cannot be empty'),
        assert(title.isNotEmpty, 'Recording title cannot be empty'),
        assert(filePath.isNotEmpty, 'Recording file path cannot be empty'),
@@ -126,6 +130,7 @@ class Recording {
     'transcriptionStatus': transcriptionStatus.toString(),
     'titleGenerationStatus': titleGenerationStatus.toString(),
     'summaryStatus': summaryStatus.toString(),
+    'liveTranscriptionStatus': liveTranscriptionStatus,
   };
 
   factory Recording.fromJson(Map<String, dynamic> json) => Recording(
@@ -153,6 +158,7 @@ class Recording {
     summaryStatus: json['summaryStatus'] != null
         ? ProcessingStatus.fromString(json['summaryStatus'] as String)
         : ProcessingStatus.pending,
+    liveTranscriptionStatus: json['liveTranscriptionStatus'] as String?,
   );
 
   String get durationString {
@@ -183,6 +189,11 @@ class Recording {
     }
   }
 
+  /// Helper method to check if transcription is incomplete
+  bool get isTranscriptionIncomplete {
+    return liveTranscriptionStatus == 'in_progress';
+  }
+
   /// Create a copy with updated fields
   Recording copyWith({
     String? id,
@@ -200,6 +211,7 @@ class Recording {
     ProcessingStatus? transcriptionStatus,
     ProcessingStatus? titleGenerationStatus,
     ProcessingStatus? summaryStatus,
+    String? liveTranscriptionStatus,
   }) {
     return Recording(
       id: id ?? this.id,
@@ -218,6 +230,8 @@ class Recording {
       titleGenerationStatus:
           titleGenerationStatus ?? this.titleGenerationStatus,
       summaryStatus: summaryStatus ?? this.summaryStatus,
+      liveTranscriptionStatus:
+          liveTranscriptionStatus ?? this.liveTranscriptionStatus,
     );
   }
 }

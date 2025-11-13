@@ -198,6 +198,7 @@ class StorageService {
       String? durationStr;
       String? source;
       String? title;
+      String? transcriptionStatus;
 
       final lines = content.split('\n');
       if (lines.isNotEmpty && lines[0] == '---') {
@@ -222,6 +223,7 @@ class StorageService {
               if (key == 'duration') durationStr = value;
               if (key == 'source') source = value;
               if (key == 'title') title = value;
+              if (key == 'transcription_status') transcriptionStatus = value;
             }
           }
         }
@@ -333,6 +335,7 @@ class StorageService {
             ? 'unknown'
             : null,
         buttonTapCount: null,
+        liveTranscriptionStatus: transcriptionStatus,
       );
     } catch (e) {
       debugPrint('[StorageService] Error loading recording from markdown: $e');
@@ -492,6 +495,12 @@ class StorageService {
       for (final tag in recording.tags) {
         buffer.writeln('  - $tag');
       }
+    }
+
+    if (recording.liveTranscriptionStatus != null) {
+      buffer.writeln(
+        'transcription_status: ${recording.liveTranscriptionStatus}',
+      );
     }
 
     buffer.writeln('---');
