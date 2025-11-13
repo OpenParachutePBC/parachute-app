@@ -110,10 +110,19 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
     _refreshTimer?.cancel();
     _transcriptionSubscription?.cancel();
 
-    // Remove listeners from background service
-    final backgroundService = ref.read(backgroundTranscriptionProvider);
-    backgroundService.removeSegmentListener(_handleSegmentUpdate);
-    backgroundService.removeCompletionListener(_handleTranscriptionComplete);
+    // Remove listeners from background service (only if widget is still mounted)
+    if (mounted) {
+      try {
+        final backgroundService = ref.read(backgroundTranscriptionProvider);
+        backgroundService.removeSegmentListener(_handleSegmentUpdate);
+        backgroundService.removeCompletionListener(
+          _handleTranscriptionComplete,
+        );
+      } catch (e) {
+        // Ignore errors during disposal
+        debugPrint('[RecordingDetail] Error during dispose: $e');
+      }
+    }
 
     _titleController.dispose();
     _transcriptController.dispose();
@@ -168,15 +177,20 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
     );
 
     // Get segments from background service if available, otherwise from active service
-    final backgroundService = ref.read(backgroundTranscriptionProvider);
+    // Wrap in try-catch to handle disposal edge cases
     final List<TranscriptionSegment> allSegments;
-
-    if (backgroundService.isMonitoring &&
-        backgroundService.currentTimestamp == widget.timestamp) {
-      allSegments = backgroundService.segments;
-    } else {
-      final activeRecording = ref.read(activeRecordingProvider);
-      allSegments = activeRecording.service?.segments ?? [];
+    try {
+      final backgroundService = ref.read(backgroundTranscriptionProvider);
+      if (backgroundService.isMonitoring &&
+          backgroundService.currentTimestamp == widget.timestamp) {
+        allSegments = backgroundService.segments;
+      } else {
+        final activeRecording = ref.read(activeRecordingProvider);
+        allSegments = activeRecording.service?.segments ?? [];
+      }
+    } catch (e) {
+      debugPrint('[RecordingDetail] Error reading segments after dispose: $e');
+      return;
     }
 
     // Update transcript with all completed segments
