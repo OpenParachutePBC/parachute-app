@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:app/core/models/space.dart';
-import 'package:app/core/models/relevant_note.dart';
 import 'package:app/features/spaces/providers/space_provider.dart';
-import 'package:app/core/providers/api_provider.dart';
+import 'package:app/features/spaces/providers/space_knowledge_provider.dart';
+import 'package:app/core/services/file_system_service.dart';
 
 class LinkCaptureToSpaceScreen extends ConsumerStatefulWidget {
   final String captureId;
@@ -73,20 +73,30 @@ class _LinkCaptureToSpaceScreenState
     setState(() => _isLoading = true);
 
     try {
-      final apiClient = ref.read(apiClientProvider);
+      final knowledgeService = ref.read(spaceKnowledgeServiceProvider);
+      final fileSystemService = FileSystemService();
+      final spacesPath = await fileSystemService.getSpacesPath();
+
+      // Get all spaces to find paths
+      final spacesAsync = await ref.read(spaceListProvider.future);
 
       for (final spaceId in selectedSpaceIds) {
+        // Find space by ID
+        final space = spacesAsync.where((s) => s.id == spaceId).firstOrNull;
+        if (space == null) continue;
+
+        final spacePath = '$spacesPath/${space.path}';
         final context = _contextControllers[spaceId]?.text ?? '';
         final tags = _spaceTags[spaceId] ?? [];
 
-        final request = LinkNoteRequest(
+        await knowledgeService.linkCaptureToSpace(
+          spaceId: spaceId,
+          spacePath: spacePath,
           captureId: widget.captureId,
           notePath: widget.notePath,
-          context: context,
-          tags: tags,
+          context: context.isNotEmpty ? context : null,
+          tags: tags.isNotEmpty ? tags : null,
         );
-
-        await apiClient.linkNoteToSpace(spaceId, request);
       }
 
       if (mounted) {
