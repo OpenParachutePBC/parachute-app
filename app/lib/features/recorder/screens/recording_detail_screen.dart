@@ -95,6 +95,24 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
       _titleController.text = _recording!.title;
       _transcriptController.text = _recording!.transcript;
       _contextController.text = _recording!.context;
+
+      // Check if background transcription is active for this recording
+      final backgroundService = ref.read(backgroundTranscriptionProvider);
+      _backgroundServiceRef = backgroundService;
+
+      final recordingTimestamp = _recording!.id; // ID is the timestamp
+      if (backgroundService.isMonitoring &&
+          backgroundService.currentTimestamp == recordingTimestamp) {
+        debugPrint(
+          '[RecordingDetail] Background transcription active for this recording',
+        );
+        _isTranscribing = true;
+
+        // Attach listeners to get updates
+        backgroundService.addSegmentListener(_handleSegmentUpdate);
+        backgroundService.addCompletionListener(_handleTranscriptionComplete);
+      }
+
       _startPeriodicRefresh();
     } else {
       // Mode 2: Viewing recording being transcribed
