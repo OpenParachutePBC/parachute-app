@@ -100,13 +100,13 @@ flutter:
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: "assets/icon/parachute_icon.svg"
+  image_path: "assets/icon/parachute_icon.png"
 
   # Android adaptive icon
   adaptive_icon_background: "#F4E96D"
-  adaptive_icon_foreground: "assets/icon/parachute_icon.svg"
+  adaptive_icon_foreground: "assets/icon/parachute_icon.png"
 
   # macOS
   macos:
     generate: true
-    image_path: "assets/icon/parachute_icon.svg"
+    image_path: "assets/icon/parachute_icon.png"
