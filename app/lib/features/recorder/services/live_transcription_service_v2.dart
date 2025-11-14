@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:record/record.dart';
 import 'package:path/path.dart' as path;
-import 'package:app/features/recorder/services/whisper_local_service.dart';
+import 'package:app/features/recorder/services/transcription_service_adapter.dart';
 
 /// Represents a transcribed segment (paragraph)
 class TranscriptionSegment {
@@ -50,7 +50,7 @@ enum TranscriptionSegmentStatus {
 /// 4. Repeat pause/resume for each "paragraph"
 /// 5. User stops → Returns complete audio file + all segments
 class SimpleTranscriptionService {
-  final WhisperLocalService _whisperService;
+  final TranscriptionServiceAdapter _transcriptionService;
 
   // Recording state
   final AudioRecorder _recorder = AudioRecorder();
@@ -87,7 +87,7 @@ class SimpleTranscriptionService {
   List<TranscriptionSegment> get segments => List.unmodifiable(_segments);
   String? get audioFilePath => _audioFilePath;
 
-  SimpleTranscriptionService(this._whisperService);
+  SimpleTranscriptionService(this._transcriptionService);
 
   /// Initialize temp directory
   Future<void> initialize() async {
@@ -381,7 +381,7 @@ class SimpleTranscriptionService {
         );
 
         // Transcribe this segment file
-        final segmentText = await _whisperService.transcribeAudio(
+        final segmentText = await _transcriptionService.transcribeAudio(
           queuedSegment.filePath,
         );
 

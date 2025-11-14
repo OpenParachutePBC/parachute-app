@@ -5,7 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:record/record.dart';
 import 'package:path/path.dart' as path;
-import 'package:app/features/recorder/services/whisper_local_service.dart';
+import 'package:app/features/recorder/services/transcription_service_adapter.dart';
 import 'package:app/features/recorder/services/vad/smart_chunker.dart';
 import 'package:app/features/recorder/services/audio_processing/simple_noise_filter.dart';
 
@@ -76,10 +76,11 @@ enum TranscriptionSegmentStatus {
 /// 3. On 1s silence → Auto-chunks → Transcribes
 /// 4. User stops → Transcribes final segment
 ///
-/// Future (Phase 2 - Full RNNoise):
-/// Audio → RNNoise (full noise suppression) → SmartChunker → Transcription
+/// Platform-adaptive transcription:
+/// - iOS/macOS: Uses Parakeet v3 (fast, high-quality)
+/// - Android: Uses Whisper (fallback)
 class AutoPauseTranscriptionService {
-  final WhisperLocalService _whisperService;
+  final TranscriptionServiceAdapter _transcriptionService;
 
   // Recording state
   final AudioRecorder _recorder = AudioRecorder();
@@ -131,7 +132,7 @@ class AutoPauseTranscriptionService {
   bool get isProcessing => _isProcessingQueue;
   List<TranscriptionSegment> get segments => List.unmodifiable(_segments);
 
-  AutoPauseTranscriptionService(this._whisperService);
+  AutoPauseTranscriptionService(this._transcriptionService);
 
   /// Initialize service and create temp directory
   Future<void> initialize() async {
@@ -639,7 +640,7 @@ class AutoPauseTranscriptionService {
       );
 
       try {
-        final text = await _whisperService.transcribeAudio(tempWavPath);
+        final text = await _transcriptionService.transcribeAudio(tempWavPath);
 
         // Clean up temp WAV file after successful transcription
         try {

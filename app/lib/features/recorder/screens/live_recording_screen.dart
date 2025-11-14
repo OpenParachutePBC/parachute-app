@@ -72,7 +72,9 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
 
   Future<void> _initializeService() async {
     try {
-      final whisperService = ref.read(whisperLocalServiceProvider);
+      final transcriptionService = ref.read(
+        transcriptionServiceAdapterProvider,
+      );
       final storageService = ref.read(storageServiceProvider);
 
       // Check if debug overlay is enabled
@@ -80,7 +82,9 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
 
       // Always use auto-pause (V3) for now
       debugPrint('[LiveRecordingScreen] Using AUTO-PAUSE mode (V3)');
-      _transcriptionService = v3.AutoPauseTranscriptionService(whisperService);
+      _transcriptionService = v3.AutoPauseTranscriptionService(
+        transcriptionService,
+      );
 
       await _transcriptionService!.initialize();
 

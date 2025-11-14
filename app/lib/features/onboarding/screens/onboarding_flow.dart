@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'steps/welcome_step.dart';
-import 'steps/whisper_setup_step.dart';
+import 'steps/transcription_setup_step.dart';
 import 'steps/gemma_setup_step.dart';
 import 'steps/advanced_features_step.dart';
 
@@ -79,7 +79,7 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
                 index: _currentStep,
                 children: [
                   WelcomeStep(onNext: _nextStep, onSkip: _skipToEnd),
-                  WhisperSetupStep(
+                  TranscriptionSetupStep(
                     onNext: _nextStep,
                     onBack: _previousStep,
                     onSkip: _skipToEnd,

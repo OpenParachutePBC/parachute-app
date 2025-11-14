@@ -5,6 +5,7 @@ import 'package:app/features/recorder/services/storage_service.dart';
 import 'package:app/features/recorder/services/whisper_service.dart';
 import 'package:app/features/recorder/services/whisper_local_service.dart';
 import 'package:app/features/recorder/services/whisper_model_manager.dart';
+import 'package:app/features/recorder/services/transcription_service_adapter.dart';
 import 'package:app/features/recorder/services/live_transcription_service_v2.dart';
 import 'package:app/features/recorder/services/live_transcription_service_v3.dart';
 import 'package:app/features/recorder/services/background_transcription_service.dart';
@@ -88,6 +89,26 @@ final whisperLocalServiceProvider = Provider<WhisperLocalService>((ref) {
   return service;
 });
 
+/// Provider for TranscriptionServiceAdapter
+///
+/// Platform-adaptive transcription:
+/// - iOS/macOS: Uses Parakeet v3 (fast, high-quality)
+/// - Android: Uses Whisper (fallback)
+final transcriptionServiceAdapterProvider =
+    Provider<TranscriptionServiceAdapter>((ref) {
+      final whisperService = ref.watch(whisperLocalServiceProvider);
+
+      final service = TranscriptionServiceAdapter(
+        whisperService: whisperService,
+      );
+
+      ref.onDispose(() {
+        service.dispose();
+      });
+
+      return service;
+    });
+
 /// Provider for transcription mode
 ///
 /// Returns the current transcription mode (API or Local)
@@ -119,8 +140,10 @@ final recordingsRefreshTriggerProvider = StateProvider<int>((ref) => 0);
 /// Creates a new instance each time it's requested (not kept alive).
 final simpleTranscriptionServiceProvider =
     Provider.autoDispose<SimpleTranscriptionService>((ref) {
-      final whisperService = ref.watch(whisperLocalServiceProvider);
-      final service = SimpleTranscriptionService(whisperService);
+      final transcriptionService = ref.watch(
+        transcriptionServiceAdapterProvider,
+      );
+      final service = SimpleTranscriptionService(transcriptionService);
 
       ref.onDispose(() {
         service.dispose();

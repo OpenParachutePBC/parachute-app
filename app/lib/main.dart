@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ffi';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -10,6 +11,7 @@ import 'core/theme/app_theme.dart';
 import 'core/providers/feature_flags_provider.dart';
 import 'features/spaces/screens/space_list_screen.dart';
 import 'features/recorder/screens/home_screen.dart' as recorder;
+import 'features/recorder/providers/service_providers.dart';
 import 'features/files/screens/file_browser_screen.dart';
 import 'features/onboarding/screens/onboarding_flow.dart';
 
@@ -140,6 +142,31 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
   void initState() {
     super.initState();
     _checkWelcomeScreen();
+    _initializeTranscriptionService();
+  }
+
+  /// Initialize transcription service in background
+  /// This downloads Parakeet models (iOS/macOS) on first run
+  Future<void> _initializeTranscriptionService() async {
+    try {
+      final transcriptionService = ref.read(
+        transcriptionServiceAdapterProvider,
+      );
+
+      // Initialize in background (non-blocking)
+      unawaited(
+        transcriptionService
+            .initialize()
+            .then((_) {
+              debugPrint('[Main] ✅ Transcription service initialized');
+            })
+            .catchError((e) {
+              debugPrint('[Main] ⚠️ Transcription service init failed: $e');
+            }),
+      );
+    } catch (e) {
+      debugPrint('[Main] ⚠️ Could not initialize transcription service: $e');
+    }
   }
 
   Future<void> _checkWelcomeScreen() async {
