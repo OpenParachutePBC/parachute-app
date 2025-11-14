@@ -125,8 +125,8 @@ class AudioService {
       final dateStr =
           '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
 
-      // Use M4A format for better compatibility (works with Whisper API)
-      final path = '$syncFolder/$dateStr-$recordingId.m4a';
+      // Use WAV format for Parakeet compatibility (16kHz mono)
+      final path = '$syncFolder/$dateStr-$recordingId.wav';
       debugPrint('Generated recording path: $path');
       return path;
     } catch (e) {
@@ -182,13 +182,13 @@ class AudioService {
       _currentRecordingPath = await _getRecordingPath(recordingId);
       debugPrint('Will record to: $_currentRecordingPath');
 
-      // Start recording with M4A AAC format (compatible with Whisper API)
+      // Start recording with WAV format (compatible with Parakeet)
       debugPrint('Starting recorder...');
       await _recorder.start(
         const RecordConfig(
-          encoder: AudioEncoder.aacLc,
-          bitRate: 128000,
-          sampleRate: 44100,
+          encoder: AudioEncoder.wav,
+          sampleRate: 16000, // 16kHz for Parakeet/Whisper
+          numChannels: 1, // Mono
         ),
         path: _currentRecordingPath!,
       );

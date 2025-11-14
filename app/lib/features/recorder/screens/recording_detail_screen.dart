@@ -802,52 +802,15 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
     setState(() => _isTranscribingContext = true);
 
     try {
-      final storageService = ref.read(storageServiceProvider);
-      final modeString = await storageService.getTranscriptionMode();
-      final mode =
-          TranscriptionMode.fromString(modeString) ?? TranscriptionMode.api;
+      // Use the transcription adapter which handles Parakeet/Whisper automatically
+      final transcriptionService = ref.read(
+        transcriptionServiceAdapterProvider,
+      );
 
-      String transcript;
-
-      if (mode == TranscriptionMode.local) {
-        final localService = ref.read(whisperLocalServiceProvider);
-        final isReady = await localService.isReady();
-
-        if (!isReady) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text(
-                  'Please download a Whisper model in Settings first',
-                ),
-                backgroundColor: Colors.orange,
-              ),
-            );
-          }
-          setState(() => _isTranscribingContext = false);
-          return;
-        }
-
-        transcript = await localService.transcribeAudio(recordingPath);
-      } else {
-        final whisperService = ref.read(whisperServiceProvider);
-        final isConfigured = await whisperService.isConfigured();
-
-        if (!isConfigured) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Please configure OpenAI API key in Settings'),
-                backgroundColor: Colors.orange,
-              ),
-            );
-          }
-          setState(() => _isTranscribingContext = false);
-          return;
-        }
-
-        transcript = await whisperService.transcribeAudio(recordingPath);
-      }
+      final transcript = await transcriptionService.transcribeAudio(
+        recordingPath,
+        language: 'auto',
+      );
 
       // Append to context field (with a space if context already has content)
       if (mounted) {
