@@ -2,10 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:app/features/recorder/models/recording.dart';
 import 'package:app/features/recorder/providers/service_providers.dart';
-import 'package:app/features/settings/screens/settings_screen.dart';
-import 'package:app/features/recorder/services/whisper_service.dart';
-import 'package:app/features/recorder/services/whisper_local_service.dart';
-import 'package:app/features/recorder/models/whisper_models.dart';
 import 'package:app/core/providers/title_generation_provider.dart';
 
 class PostRecordingScreen extends ConsumerStatefulWidget {
@@ -111,18 +107,10 @@ class _PostRecordingScreenState extends ConsumerState<PostRecordingScreen> {
     try {
       debugPrint('[PostRecording] 🔄 Starting background transcription...');
 
-      // Get transcription mode
       final storageService = ref.read(storageServiceProvider);
-      final modeString = await storageService.getTranscriptionMode();
-      final mode =
-          TranscriptionMode.fromString(modeString) ?? TranscriptionMode.api;
 
-      String transcript;
-      if (mode == TranscriptionMode.local) {
-        transcript = await _transcribeWithLocal();
-      } else {
-        transcript = await _transcribeWithAPI();
-      }
+      // Use Parakeet transcription
+      final transcript = await _transcribeWithParakeet();
 
       debugPrint(
         '[PostRecording] ✅ Transcription complete: ${transcript.length} chars',
@@ -201,12 +189,6 @@ class _PostRecordingScreenState extends ConsumerState<PostRecordingScreen> {
   Future<void> _transcribeRecording() async {
     if (_isTranscribing) return;
 
-    // Get transcription mode
-    final storageService = ref.read(storageServiceProvider);
-    final modeString = await storageService.getTranscriptionMode();
-    final mode =
-        TranscriptionMode.fromString(modeString) ?? TranscriptionMode.api;
-
     setState(() {
       _isTranscribing = true;
       _transcriptionProgress = 0.0;
@@ -214,15 +196,8 @@ class _PostRecordingScreenState extends ConsumerState<PostRecordingScreen> {
     });
 
     try {
-      String transcript;
-
-      if (mode == TranscriptionMode.local) {
-        // Use local Whisper
-        transcript = await _transcribeWithLocal();
-      } else {
-        // Use OpenAI API
-        transcript = await _transcribeWithAPI();
-      }
+      // Use Parakeet transcription
+      final transcript = await _transcribeWithParakeet();
 
       if (mounted) {
         _transcriptController.text = transcript;
@@ -307,48 +282,13 @@ class _PostRecordingScreenState extends ConsumerState<PostRecordingScreen> {
     }
   }
 
-  Future<String> _transcribeWithLocal() async {
-    final localService = ref.read(whisperLocalServiceProvider);
+  Future<String> _transcribeWithParakeet() async {
+    final transcriptionService = ref.read(transcriptionServiceAdapterProvider);
 
-    // Check if ready
-    final isReady = await localService.isReady();
-    if (!isReady) {
-      if (!mounted) throw WhisperLocalException('Not mounted');
-
-      // Show dialog to navigate to settings
-      final goToSettings = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Model Required'),
-          content: const Text(
-            'To use local transcription, you need to download a Whisper model in Settings.\n\n'
-            'Would you like to go to Settings now?',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Go to Settings'),
-            ),
-          ],
-        ),
-      );
-
-      if (goToSettings == true && mounted) {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const SettingsScreen()),
-        );
-      }
-      throw WhisperLocalException('Model not downloaded');
-    }
-
-    // Transcribe with progress updates
-    return await localService.transcribeAudio(
+    // Transcribe with progress updates using Parakeet
+    return await transcriptionService.transcribeAudio(
       widget.recordingPath,
+      language: 'auto',
       onProgress: (progress) {
         if (mounted) {
           setState(() {
@@ -358,50 +298,6 @@ class _PostRecordingScreenState extends ConsumerState<PostRecordingScreen> {
         }
       },
     );
-  }
-
-  Future<String> _transcribeWithAPI() async {
-    // Check if API key is configured
-    final isConfigured = await ref.read(whisperServiceProvider).isConfigured();
-    if (!isConfigured) {
-      if (!mounted) throw WhisperException('Not mounted');
-
-      // Show dialog to navigate to settings
-      final goToSettings = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('API Key Required'),
-          content: const Text(
-            'To use transcription, you need to configure your OpenAI API key in Settings.\n\n'
-            'Would you like to go to Settings now?',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Go to Settings'),
-            ),
-          ],
-        ),
-      );
-
-      if (goToSettings == true && mounted) {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const SettingsScreen()),
-        );
-      }
-      throw WhisperException('API key not configured');
-    }
-
-    setState(() => _transcriptionStatus = 'Uploading to OpenAI...');
-
-    return await ref
-        .read(whisperServiceProvider)
-        .transcribeAudio(widget.recordingPath);
   }
 
   Future<void> _saveRecording() async {

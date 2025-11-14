@@ -6,11 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as path;
 import 'package:app/features/recorder/models/recording.dart';
 import 'package:app/features/recorder/providers/service_providers.dart';
-import 'package:app/features/recorder/services/whisper_service.dart';
-import 'package:app/features/recorder/services/whisper_local_service.dart';
 import 'package:app/features/recorder/services/live_transcription_service_v3.dart';
 import 'package:app/features/recorder/services/background_transcription_service.dart';
-import 'package:app/features/recorder/models/whisper_models.dart';
 import 'package:app/core/providers/title_generation_provider.dart';
 import 'package:app/core/services/file_system_service.dart';
 import 'package:app/features/files/providers/local_file_browser_provider.dart';
@@ -503,11 +500,6 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
   Future<void> _transcribeRecording() async {
     if (_isTranscribing || _recording == null) return;
 
-    final storageService = ref.read(storageServiceProvider);
-    final modeString = await storageService.getTranscriptionMode();
-    final mode =
-        TranscriptionMode.fromString(modeString) ?? TranscriptionMode.api;
-
     setState(() {
       _isTranscribing = true;
       _transcriptionProgress = 0.0;
@@ -515,13 +507,22 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
     });
 
     try {
-      String transcript;
-
-      if (mode == TranscriptionMode.local) {
-        transcript = await _transcribeWithLocal();
-      } else {
-        transcript = await _transcribeWithAPI();
-      }
+      // Use Parakeet transcription
+      final transcriptionService = ref.read(
+        transcriptionServiceAdapterProvider,
+      );
+      final transcript = await transcriptionService.transcribeAudio(
+        _recording!.filePath,
+        language: 'auto',
+        onProgress: (progress) {
+          if (mounted) {
+            setState(() {
+              _transcriptionProgress = progress.progress;
+              _transcriptionStatus = progress.status;
+            });
+          }
+        },
+      );
 
       if (mounted) {
         _transcriptController.text = transcript;
@@ -581,98 +582,6 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
         });
       }
     }
-  }
-
-  Future<String> _transcribeWithLocal() async {
-    final localService = ref.read(whisperLocalServiceProvider);
-
-    final isReady = await localService.isReady();
-    if (!isReady) {
-      if (!mounted) throw WhisperLocalException('Not mounted');
-
-      final goToSettings = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Model Required'),
-          content: const Text(
-            'To use local transcription, you need to download a Whisper model in Settings.\n\n'
-            'Would you like to go to Settings now?',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Go to Settings'),
-            ),
-          ],
-        ),
-      );
-
-      if (goToSettings == true && mounted) {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const SettingsScreen()),
-        );
-      }
-      throw WhisperLocalException('Model not downloaded');
-    }
-
-    return await localService.transcribeAudio(
-      _recording!.filePath,
-      onProgress: (progress) {
-        if (mounted) {
-          setState(() {
-            _transcriptionProgress = progress.progress;
-            _transcriptionStatus = progress.status;
-          });
-        }
-      },
-    );
-  }
-
-  Future<String> _transcribeWithAPI() async {
-    final isConfigured = await ref.read(whisperServiceProvider).isConfigured();
-    if (!isConfigured) {
-      if (!mounted) throw WhisperException('Not mounted');
-
-      final goToSettings = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('API Key Required'),
-          content: const Text(
-            'To use transcription, you need to configure your OpenAI API key in Settings.\n\n'
-            'Would you like to go to Settings now?',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Go to Settings'),
-            ),
-          ],
-        ),
-      );
-
-      if (goToSettings == true && mounted) {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const SettingsScreen()),
-        );
-      }
-      throw WhisperException('API key not configured');
-    }
-
-    setState(() => _transcriptionStatus = 'Uploading to OpenAI...');
-
-    return await ref
-        .read(whisperServiceProvider)
-        .transcribeAudio(_recording!.filePath);
   }
 
   void _linkToSpaces() async {

@@ -2,12 +2,10 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:app/features/recorder/models/recording.dart';
-import 'package:app/features/recorder/models/whisper_models.dart';
 import 'package:app/features/recorder/services/omi/models.dart';
 import 'package:app/features/recorder/services/omi/omi_bluetooth_service.dart';
 import 'package:app/features/recorder/services/storage_service.dart';
-import 'package:app/features/recorder/services/whisper_service.dart';
-import 'package:app/features/recorder/services/whisper_local_service.dart';
+import 'package:app/features/recorder/services/transcription_service_adapter.dart';
 import 'package:app/features/recorder/utils/audio/wav_bytes_util.dart';
 
 /// Service for capturing audio recordings from Omi device
@@ -21,8 +19,7 @@ import 'package:app/features/recorder/utils/audio/wav_bytes_util.dart';
 class OmiCaptureService {
   final OmiBluetoothService bluetoothService;
   final StorageService storageService;
-  final WhisperService? whisperService;
-  final WhisperLocalService? whisperLocalService;
+  final TranscriptionServiceAdapter transcriptionService;
 
   WavBytesUtil? _wavBytesUtil;
   StreamSubscription? _audioSubscription;
@@ -41,8 +38,7 @@ class OmiCaptureService {
   OmiCaptureService({
     required this.bluetoothService,
     required this.storageService,
-    this.whisperService,
-    this.whisperLocalService,
+    required this.transcriptionService,
   });
 
   /// Check if currently recording
@@ -387,51 +383,14 @@ class OmiCaptureService {
       debugPrint('[OmiCaptureService] Auto-transcribe enabled, starting...');
       onStatusMessage?.call('Transcribing...');
 
-      // Get transcription mode
-      final modeString = await storageService.getTranscriptionMode();
-      final mode =
-          TranscriptionMode.fromString(modeString) ?? TranscriptionMode.api;
-
-      String transcript;
-
-      if (mode == TranscriptionMode.local) {
-        // Use local Whisper
-        if (whisperLocalService == null) {
-          debugPrint('[OmiCaptureService] Local Whisper service not available');
-          onStatusMessage?.call('Transcription failed: service not available');
-          return;
-        }
-
-        final isReady = await whisperLocalService!.isReady();
-        if (!isReady) {
-          debugPrint('[OmiCaptureService] Local Whisper model not ready');
-          onStatusMessage?.call('Transcription skipped: model not downloaded');
-          return;
-        }
-
-        transcript = await whisperLocalService!.transcribeAudio(
-          recording.filePath,
-          onProgress: (progress) {
-            onStatusMessage?.call('Transcribing: ${progress.status}');
-          },
-        );
-      } else {
-        // Use OpenAI API
-        if (whisperService == null) {
-          debugPrint('[OmiCaptureService] Whisper API service not available');
-          onStatusMessage?.call('Transcription failed: service not available');
-          return;
-        }
-
-        final isConfigured = await whisperService!.isConfigured();
-        if (!isConfigured) {
-          debugPrint('[OmiCaptureService] OpenAI API key not configured');
-          onStatusMessage?.call('Transcription skipped: API key not set');
-          return;
-        }
-
-        transcript = await whisperService!.transcribeAudio(recording.filePath);
-      }
+      // Use Parakeet transcription service
+      final transcript = await transcriptionService.transcribeAudio(
+        recording.filePath,
+        language: 'auto',
+        onProgress: (progress) {
+          onStatusMessage?.call('Transcribing: ${progress.status}');
+        },
+      );
 
       // Update recording with transcript
       final updatedRecording = Recording(

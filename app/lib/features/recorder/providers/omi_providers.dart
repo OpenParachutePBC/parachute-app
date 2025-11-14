@@ -68,21 +68,19 @@ final connectedOmiDeviceProvider = StreamProvider<OmiDevice?>((ref) {
 /// Provider for OmiCaptureService
 ///
 /// This service handles audio recording from the Omi device.
-/// It depends on OmiBluetoothService, StorageService, and Whisper services.
+/// It depends on OmiBluetoothService, StorageService, and TranscriptionServiceAdapter.
 ///
 /// This provider automatically sets up a callback to trigger recordings list refresh
 /// when new recordings are saved from the Omi device.
 final omiCaptureServiceProvider = Provider<OmiCaptureService>((ref) {
   final bluetoothService = ref.watch(omiBluetoothServiceProvider);
   final storageService = ref.watch(storageServiceProvider);
-  final whisperService = ref.watch(whisperServiceProvider);
-  final whisperLocalService = ref.watch(whisperLocalServiceProvider);
+  final transcriptionService = ref.watch(transcriptionServiceAdapterProvider);
 
   final service = OmiCaptureService(
     bluetoothService: bluetoothService,
     storageService: storageService,
-    whisperService: whisperService,
-    whisperLocalService: whisperLocalService,
+    transcriptionService: transcriptionService,
   );
 
   // Set up callback to trigger recordings list refresh when new recordings are saved
