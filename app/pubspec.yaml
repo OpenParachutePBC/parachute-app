@@ -64,6 +64,9 @@ dependencies:
   # Local Whisper Transcription
   whisper_ggml: ^1.7.0
 
+  # Sherpa-ONNX for cross-platform ASR (Parakeet on Android)
+  sherpa_onnx: ^1.12.12
+
   # Local LLM for Title Generation
   flutter_gemma: ^0.11.8
 
@@ -95,6 +98,7 @@ flutter:
   assets:
     - assets/firmware/
     - assets/models/
+    - assets/models/parakeet-v3/
     - assets/icon/
 
 flutter_launcher_icons:

@@ -3,18 +3,22 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:app/services/parakeet_service.dart';
+import 'package:app/services/sherpa_onnx_service.dart';
 import 'package:app/features/recorder/services/whisper_local_service.dart';
 import 'package:app/features/recorder/models/whisper_models.dart'
     show WhisperModelType, TranscriptionProgress;
 
 /// Platform-adaptive transcription service
 ///
-/// Uses Parakeet (FluidAudio) on iOS/macOS for fast, high-quality transcription
-/// Falls back to Whisper on Android and other platforms
+/// Uses Parakeet via different implementations:
+/// - iOS/macOS: FluidAudio (CoreML-based, Apple Neural Engine)
+/// - Android: Sherpa-ONNX (ONNX Runtime-based)
+/// - Fallback: Whisper (for legacy/testing)
 ///
 /// This is a drop-in replacement for WhisperLocalService with the same interface.
 class TranscriptionServiceAdapter {
   final ParakeetService _parakeetService = ParakeetService();
+  final SherpaOnnxService _sherpaService = SherpaOnnxService();
   final WhisperLocalService? _whisperService;
 
   // Progress tracking
@@ -24,23 +28,36 @@ class TranscriptionServiceAdapter {
   Stream<TranscriptionProgress> get transcriptionProgressStream =>
       _transcriptionProgressController.stream;
 
-  bool get isUsingParakeet => _parakeetService.isSupported;
-  String get engineName => isUsingParakeet ? 'Parakeet v3' : 'Whisper';
+  bool get isUsingParakeet =>
+      _parakeetService.isSupported || _sherpaService.isSupported;
+  String get engineName {
+    if (_parakeetService.isSupported && _parakeetService.isInitialized) {
+      return 'Parakeet v3 (FluidAudio)';
+    } else if (_sherpaService.isInitialized) {
+      return 'Parakeet v3 (Sherpa-ONNX)';
+    } else {
+      return 'Whisper';
+    }
+  }
 
   TranscriptionServiceAdapter({WhisperLocalService? whisperService})
     : _whisperService = whisperService;
 
   /// Initialize the transcription service
   ///
-  /// For iOS/macOS: Initializes Parakeet (downloads models if needed)
-  /// For Android: Ensures Whisper model is downloaded
+  /// Platform-specific initialization:
+  /// - iOS/macOS: Parakeet via FluidAudio (CoreML)
+  /// - Android: Parakeet via Sherpa-ONNX
+  /// - Fallback: Whisper (if Parakeet fails)
   Future<void> initialize() async {
     if (_parakeetService.isSupported) {
-      // iOS/macOS: Initialize Parakeet
-      debugPrint('[TranscriptionAdapter] Initializing Parakeet...');
+      // iOS/macOS: Initialize Parakeet via FluidAudio
+      debugPrint(
+        '[TranscriptionAdapter] Initializing Parakeet (FluidAudio)...',
+      );
       try {
         await _parakeetService.initialize(version: 'v3');
-        debugPrint('[TranscriptionAdapter] ✅ Parakeet ready');
+        debugPrint('[TranscriptionAdapter] ✅ Parakeet (FluidAudio) ready');
       } catch (e) {
         debugPrint('[TranscriptionAdapter] ⚠️ Parakeet init failed: $e');
         throw TranscriptionException(
@@ -48,19 +65,30 @@ class TranscriptionServiceAdapter {
         );
       }
     } else {
-      // Android: Check Whisper is ready
-      debugPrint('[TranscriptionAdapter] Using Whisper on Android');
-      if (_whisperService == null) {
-        throw TranscriptionException(
-          'Whisper service not available for Android platform',
-        );
-      }
+      // Android/other: Initialize Parakeet via Sherpa-ONNX
+      debugPrint(
+        '[TranscriptionAdapter] Initializing Parakeet (Sherpa-ONNX)...',
+      );
+      try {
+        await _sherpaService.initialize();
+        debugPrint('[TranscriptionAdapter] ✅ Parakeet (Sherpa-ONNX) ready');
+      } catch (e) {
+        debugPrint('[TranscriptionAdapter] ⚠️ Sherpa-ONNX init failed: $e');
+        debugPrint('[TranscriptionAdapter] Falling back to Whisper');
 
-      final isReady = await _whisperService!.isReady();
-      if (!isReady) {
-        throw TranscriptionException(
-          'Whisper not ready. Please download a model in Settings.',
-        );
+        // Fallback to Whisper if Sherpa-ONNX fails
+        if (_whisperService == null) {
+          throw TranscriptionException(
+            'Sherpa-ONNX init failed and Whisper not available: ${e.toString()}',
+          );
+        }
+
+        final isReady = await _whisperService!.isReady();
+        if (!isReady) {
+          throw TranscriptionException(
+            'Sherpa-ONNX init failed and Whisper not ready. Please download a Whisper model in Settings.',
+          );
+        }
       }
     }
   }
@@ -68,7 +96,7 @@ class TranscriptionServiceAdapter {
   /// Transcribe audio file
   ///
   /// [audioPath] - Absolute path to audio file (WAV, 16kHz mono)
-  /// [modelType] - Only used for Whisper (Android). Ignored on iOS/macOS.
+  /// [modelType] - Only used for Whisper fallback. Ignored for Parakeet.
   /// [language] - Optional language hint. Parakeet auto-detects, Whisper uses this.
   /// [onProgress] - Progress callback
   ///
@@ -80,31 +108,40 @@ class TranscriptionServiceAdapter {
     Function(TranscriptionProgress)? onProgress,
   }) async {
     // Lazy initialization - initialize on first use if not already done
-    if (_parakeetService.isSupported && !_parakeetService.isInitialized) {
-      debugPrint('[TranscriptionAdapter] Lazy-initializing Parakeet...');
+    final needsInit =
+        (_parakeetService.isSupported && !_parakeetService.isInitialized) ||
+        (!_parakeetService.isSupported && !_sherpaService.isInitialized);
+
+    if (needsInit) {
+      debugPrint('[TranscriptionAdapter] Lazy-initializing...');
       try {
         await initialize();
       } catch (e) {
-        debugPrint(
-          '[TranscriptionAdapter] ⚠️ Lazy init failed, falling back to Whisper: $e',
-        );
-        // Fall through to Whisper if initialization fails
+        debugPrint('[TranscriptionAdapter] ⚠️ Lazy init failed: $e');
+        // Will fall through to Whisper if initialization fails
       }
     }
 
+    // Try Parakeet (FluidAudio on iOS/macOS)
     if (_parakeetService.isSupported && _parakeetService.isInitialized) {
       return await _transcribeWithParakeet(audioPath, onProgress: onProgress);
-    } else {
-      return await _transcribeWithWhisper(
-        audioPath,
-        modelType: modelType,
-        language: language,
-        onProgress: onProgress,
-      );
     }
+
+    // Try Parakeet (Sherpa-ONNX on Android)
+    if (_sherpaService.isInitialized) {
+      return await _transcribeWithSherpa(audioPath, onProgress: onProgress);
+    }
+
+    // Fallback to Whisper
+    return await _transcribeWithWhisper(
+      audioPath,
+      modelType: modelType,
+      language: language,
+      onProgress: onProgress,
+    );
   }
 
-  /// Transcribe using Parakeet (iOS/macOS)
+  /// Transcribe using Parakeet via FluidAudio (iOS/macOS)
   Future<String> _transcribeWithParakeet(
     String audioPath, {
     Function(TranscriptionProgress)? onProgress,
@@ -125,7 +162,7 @@ class TranscriptionServiceAdapter {
       );
 
       debugPrint(
-        '[TranscriptionAdapter] ✅ Parakeet transcribed in ${result.duration.inMilliseconds}ms',
+        '[TranscriptionAdapter] ✅ Parakeet (FluidAudio) transcribed in ${result.duration.inMilliseconds}ms',
       );
 
       return result.text;
@@ -133,6 +170,38 @@ class TranscriptionServiceAdapter {
       throw TranscriptionException('Parakeet failed: ${e.message}');
     } catch (e) {
       throw TranscriptionException('Parakeet failed: ${e.toString()}');
+    }
+  }
+
+  /// Transcribe using Parakeet via Sherpa-ONNX (Android)
+  Future<String> _transcribeWithSherpa(
+    String audioPath, {
+    Function(TranscriptionProgress)? onProgress,
+  }) async {
+    try {
+      // Start progress
+      _updateProgress(0.1, 'Transcribing with Parakeet...', onProgress);
+
+      // Transcribe
+      final result = await _sherpaService.transcribeAudio(audioPath);
+
+      // Complete
+      _updateProgress(
+        1.0,
+        'Transcription complete!',
+        onProgress,
+        isComplete: true,
+      );
+
+      debugPrint(
+        '[TranscriptionAdapter] ✅ Parakeet (Sherpa-ONNX) transcribed in ${result.duration.inMilliseconds}ms',
+      );
+
+      return result.text;
+    } catch (e) {
+      throw TranscriptionException(
+        'Parakeet (Sherpa-ONNX) failed: ${e.toString()}',
+      );
     }
   }
 
@@ -178,11 +247,18 @@ class TranscriptionServiceAdapter {
 
   /// Check if transcription service is ready
   Future<bool> isReady() async {
+    // Check FluidAudio (iOS/macOS)
     if (_parakeetService.isSupported) {
       return await _parakeetService.isReady();
-    } else {
-      return _whisperService?.isReady() ?? false;
     }
+
+    // Check Sherpa-ONNX (Android)
+    if (await _sherpaService.isReady()) {
+      return true;
+    }
+
+    // Check Whisper (fallback)
+    return _whisperService?.isReady() ?? false;
   }
 
   /// Get preferred model (Whisper only, returns base for Parakeet)
