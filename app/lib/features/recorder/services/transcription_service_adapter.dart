@@ -15,12 +15,25 @@ class TranscriptionServiceAdapter {
   final ParakeetService _parakeetService = ParakeetService();
   final SherpaOnnxService _sherpaService = SherpaOnnxService();
 
+  // Global progress callbacks (set by main.dart)
+  static Function(double)? _globalOnProgress;
+  static Function(String)? _globalOnStatus;
+
   // Progress tracking
   final _transcriptionProgressController =
       StreamController<TranscriptionProgress>.broadcast();
 
   Stream<TranscriptionProgress> get transcriptionProgressStream =>
       _transcriptionProgressController.stream;
+
+  /// Set global progress callbacks for initialization
+  static void setGlobalProgressCallbacks({
+    Function(double)? onProgress,
+    Function(String)? onStatus,
+  }) {
+    _globalOnProgress = onProgress;
+    _globalOnStatus = onStatus;
+  }
 
   bool get isUsingParakeet =>
       _sherpaService.isSupported || _parakeetService.isSupported;
@@ -108,7 +121,11 @@ class TranscriptionServiceAdapter {
 
     if (needsInit) {
       debugPrint('[TranscriptionAdapter] Lazy-initializing...');
-      await initialize();
+      // Use global callbacks if available (set by main.dart for UI updates)
+      await initialize(
+        onProgress: _globalOnProgress,
+        onStatus: _globalOnStatus,
+      );
     }
 
     // iOS/macOS: Prefer FluidAudio (faster, CoreML-optimized)

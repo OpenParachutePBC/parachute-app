@@ -143,56 +143,41 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
   void initState() {
     super.initState();
     _checkWelcomeScreen();
-    _initializeTranscriptionService();
+    _setupTranscriptionCallbacks();
   }
 
-  /// Initialize transcription service in background
-  /// This downloads Parakeet models (iOS/macOS) on first run
-  Future<void> _initializeTranscriptionService() async {
-    try {
-      final transcriptionService = ref.read(
-        transcriptionServiceAdapterProvider,
-      );
-      final downloadNotifier = ref.read(modelDownloadProvider.notifier);
+  /// Set up global callbacks for lazy transcription initialization
+  /// Models will download when first transcription is attempted
+  void _setupTranscriptionCallbacks() {
+    final downloadNotifier = ref.read(modelDownloadProvider.notifier);
 
-      // Initialize in background (non-blocking)
-      unawaited(
-        transcriptionService
-            .initialize(
-              onProgress: (progress) {
-                // Update UI with progress
-                downloadNotifier.updateProgress(
-                  progress,
-                  downloadNotifier.state.status,
-                );
-              },
-              onStatus: (status) {
-                // Update UI with status
-                debugPrint('[Main] $status');
-                downloadNotifier.updateProgress(
-                  downloadNotifier.state.progress,
-                  status,
-                );
+    TranscriptionServiceAdapter.setGlobalProgressCallbacks(
+      onProgress: (progress) {
+        // Update UI with progress
+        downloadNotifier.updateProgress(
+          progress,
+          downloadNotifier.state.status,
+        );
+      },
+      onStatus: (status) {
+        // Update UI with status
+        debugPrint('[Main] $status');
+        downloadNotifier.updateProgress(
+          downloadNotifier.state.progress,
+          status,
+        );
 
-                // Start download indicator on first meaningful status
-                if (status.contains('Downloading') ||
-                    status.contains('Initializing')) {
-                  downloadNotifier.startDownload();
-                }
-              },
-            )
-            .then((_) {
-              debugPrint('[Main] ✅ Transcription service initialized');
-              downloadNotifier.complete();
-            })
-            .catchError((e) {
-              debugPrint('[Main] ⚠️ Transcription service init failed: $e');
-              downloadNotifier.complete();
-            }),
-      );
-    } catch (e) {
-      debugPrint('[Main] ⚠️ Could not initialize transcription service: $e');
-    }
+        // Start download indicator on first meaningful status
+        if (status.contains('Downloading') || status.contains('Initializing')) {
+          downloadNotifier.startDownload();
+        }
+
+        // Complete when done
+        if (status == 'Ready') {
+          downloadNotifier.complete();
+        }
+      },
+    );
   }
 
   Future<void> _checkWelcomeScreen() async {
