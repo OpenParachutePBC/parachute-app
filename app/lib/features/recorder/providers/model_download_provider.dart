@@ -29,6 +29,9 @@ class ModelDownloadState {
 class ModelDownloadNotifier extends StateNotifier<ModelDownloadState> {
   ModelDownloadNotifier() : super(const ModelDownloadState());
 
+  // Callback to notify when models are ready
+  Function()? onModelsReady;
+
   void startDownload() {
     state = state.copyWith(isDownloading: true, progress: 0.0);
   }
@@ -39,6 +42,11 @@ class ModelDownloadNotifier extends StateNotifier<ModelDownloadState> {
 
   void complete() {
     state = const ModelDownloadState();
+
+    // Notify that models are ready
+    if (onModelsReady != null) {
+      onModelsReady!();
+    }
   }
 }
 

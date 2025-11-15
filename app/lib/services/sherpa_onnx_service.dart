@@ -230,16 +230,19 @@ class SherpaOnnxService {
         );
       }
 
-      onStatus?.call('Extracting models...');
-      onProgress?.call(0.75);
-
       // Extract tar.bz2 archive in compute isolate to avoid UI freeze
       debugPrint('[SherpaOnnxService] Extracting archive...');
+      onStatus?.call('Extracting models (this may take 1-2 minutes)...');
+      onProgress?.call(0.75);
+
       await compute(_extractArchive, {
         'archivePath': archivePath,
         'modelDir': modelDir,
       });
 
+      // Extraction complete
+      debugPrint('[SherpaOnnxService] ✅ Extraction complete');
+      onStatus?.call('Finalizing models...');
       onProgress?.call(0.85);
 
       // Clean up archive file
@@ -264,23 +267,32 @@ class SherpaOnnxService {
     final archivePath = params['archivePath']!;
     final modelDir = params['modelDir']!;
 
+    // Read archive file
+    print('[SherpaOnnxService] Reading archive...');
     final archiveBytes = await File(archivePath).readAsBytes();
 
-    // Decompress bz2
+    // Decompress bz2 (this takes most of the time)
+    print('[SherpaOnnxService] Decompressing BZip2...');
     final decompressed = BZip2Decoder().decodeBytes(archiveBytes);
 
     // Extract tar
+    print('[SherpaOnnxService] Extracting TAR archive...');
     final archive = TarDecoder().decodeBytes(decompressed);
+
+    int extractedCount = 0;
+    const targetFiles = [
+      'encoder.int8.onnx',
+      'decoder.int8.onnx',
+      'joiner.int8.onnx',
+      'tokens.txt',
+    ];
 
     for (final file in archive) {
       final filename = file.name;
       if (file.isFile) {
         // Extract files from sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/ directory
         final basename = path.basename(filename);
-        if (basename == 'encoder.int8.onnx' ||
-            basename == 'decoder.int8.onnx' ||
-            basename == 'joiner.int8.onnx' ||
-            basename == 'tokens.txt') {
+        if (targetFiles.contains(basename)) {
           final outputPath = path.join(modelDir, basename);
           final outputFile = File(outputPath);
           await outputFile.create(recursive: true);
@@ -288,10 +300,15 @@ class SherpaOnnxService {
           final sizeMB = (file.content.length / (1024 * 1024)).toStringAsFixed(
             1,
           );
-          print('[SherpaOnnxService] ✅ Extracted $basename ($sizeMB MB)');
+          extractedCount++;
+          print(
+            '[SherpaOnnxService] ✅ Extracted $basename ($sizeMB MB) [$extractedCount/${targetFiles.length}]',
+          );
         }
       }
     }
+
+    print('[SherpaOnnxService] ✅ Extraction complete: $extractedCount files');
   }
 
   /// Transcribe audio file

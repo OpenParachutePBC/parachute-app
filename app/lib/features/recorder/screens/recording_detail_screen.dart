@@ -85,9 +85,15 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
   bool _isRecordingContext = false;
   bool _isTranscribingContext = false;
 
+  // Auto-retry flag
+  bool _shouldAutoRetry = false;
+
   @override
   void initState() {
     super.initState();
+
+    // Set up auto-retry for incomplete transcriptions
+    _setupAutoRetry();
 
     if (widget.recording != null) {
       // Mode 1: Viewing saved recording
@@ -147,11 +153,55 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
       }
     }
 
+    // Clear auto-retry callback
+    try {
+      final downloadNotifier = ref.read(modelDownloadProvider.notifier);
+      downloadNotifier.onModelsReady = null;
+    } catch (e) {
+      debugPrint('[RecordingDetail] Error clearing auto-retry callback: $e');
+    }
+
     _titleController.dispose();
     _transcriptController.dispose();
     _contextController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  /// Set up auto-retry for incomplete transcriptions when models finish downloading
+  void _setupAutoRetry() {
+    // Check if this recording needs transcription
+    final isIncomplete = _recording?.isTranscriptionIncomplete ?? false;
+    final isProcessing =
+        _recording?.transcriptionStatus == ProcessingStatus.processing;
+
+    if (isIncomplete && !isProcessing) {
+      debugPrint(
+        '[RecordingDetail] Setting up auto-retry for incomplete transcription',
+      );
+      _shouldAutoRetry = true;
+
+      // Register callback for when models are ready
+      final downloadNotifier = ref.read(modelDownloadProvider.notifier);
+      downloadNotifier.onModelsReady = _handleModelsReady;
+    }
+  }
+
+  /// Called when models finish downloading - auto-retry transcription
+  void _handleModelsReady() {
+    if (!mounted || !_shouldAutoRetry) return;
+
+    debugPrint(
+      '[RecordingDetail] Models ready! Auto-retrying transcription...',
+    );
+    _shouldAutoRetry = false; // Only retry once
+
+    // Wait a brief moment for UI to settle
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (mounted && _recording != null) {
+        _transcribeRecording();
+      }
+    });
   }
 
   /// Listen to transcription updates from the background service
