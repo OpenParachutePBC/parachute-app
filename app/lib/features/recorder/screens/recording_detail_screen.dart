@@ -194,13 +194,15 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
     debugPrint(
       '[RecordingDetail] Models ready! Auto-retrying transcription...',
     );
-    _shouldAutoRetry = false; // Only retry once
 
-    // Wait a brief moment for UI to settle
-    Future.delayed(const Duration(milliseconds: 500), () {
-      if (mounted && _recording != null) {
-        _transcribeRecording();
-      }
+    // Immediately start transcription
+    if (_recording != null) {
+      _transcribeRecording();
+    }
+
+    // Clear flag after starting
+    setState(() {
+      _shouldAutoRetry = false;
     });
   }
 
@@ -1234,43 +1236,68 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
               builder: (context, ref, child) {
                 final downloadState = ref.watch(modelDownloadProvider);
                 final isDownloadingModels = downloadState.isDownloading;
+                final isAutoRetrying = _shouldAutoRetry;
 
+                // Don't show "interrupted" message if auto-retry is pending or models are downloading
+                if (isDownloadingModels || isAutoRetrying) {
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: Colors.blue.shade700.withValues(alpha: 0.3),
+                        width: 1,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.download,
+                          color: Colors.blue.shade700,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'Downloading transcription models... Transcription will start automatically when ready.',
+                            style: TextStyle(
+                              color: Colors.blue.shade700,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                // Show interrupted message with manual retry button
                 return Container(
                   margin: const EdgeInsets.only(bottom: 12),
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: isDownloadingModels
-                        ? Colors.blue.shade50
-                        : Colors.orange.shade50,
+                    color: Colors.orange.shade50,
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
-                      color: isDownloadingModels
-                          ? Colors.blue.shade700.withValues(alpha: 0.3)
-                          : Colors.orange.shade700.withValues(alpha: 0.3),
+                      color: Colors.orange.shade700.withValues(alpha: 0.3),
                       width: 1,
                     ),
                   ),
                   child: Row(
                     children: [
                       Icon(
-                        isDownloadingModels
-                            ? Icons.download
-                            : Icons.warning_amber,
-                        color: isDownloadingModels
-                            ? Colors.blue.shade700
-                            : Colors.orange.shade700,
+                        Icons.warning_amber,
+                        color: Colors.orange.shade700,
                         size: 20,
                       ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
-                          isDownloadingModels
-                              ? 'Downloading transcription models... Transcription will start automatically when ready.'
-                              : 'Transcription was interrupted. Tap "Complete Transcription" to finish.',
+                          'Transcription was interrupted. Tap "Complete Transcription" to finish.',
                           style: TextStyle(
-                            color: isDownloadingModels
-                                ? Colors.blue.shade700
-                                : Colors.orange.shade700,
+                            color: Colors.orange.shade700,
                             fontSize: 14,
                           ),
                         ),
