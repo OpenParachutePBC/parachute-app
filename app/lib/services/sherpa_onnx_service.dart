@@ -81,11 +81,20 @@ class SherpaOnnxService {
         joiner: path.join(modelDir, 'joiner.int8.onnx'),
       );
 
+      // Optimize thread count based on device capabilities
+      // Most modern Android devices have 6-8 cores, use more threads for faster transcription
+      final numThreads = Platform.numberOfProcessors;
+      final optimalThreads = (numThreads * 0.75).ceil().clamp(4, 8);
+
+      debugPrint(
+        '[SherpaOnnxService] Device has $numThreads cores, using $optimalThreads threads',
+      );
+
       final config = sherpa.OfflineRecognizerConfig(
         model: sherpa.OfflineModelConfig(
           transducer: modelConfig,
           tokens: path.join(modelDir, 'tokens.txt'),
-          numThreads: 4, // Adjust based on device
+          numThreads: optimalThreads,
           debug: kDebugMode,
           modelType:
               'nemo_transducer', // Use NeMo-specific type for Parakeet models
