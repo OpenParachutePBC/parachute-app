@@ -13,6 +13,7 @@ import 'features/spaces/screens/space_list_screen.dart';
 import 'features/recorder/screens/home_screen.dart' as recorder;
 import 'features/recorder/providers/service_providers.dart';
 import 'features/recorder/providers/model_download_provider.dart';
+import 'features/recorder/services/transcription_service_adapter.dart';
 import 'features/files/screens/file_browser_screen.dart';
 import 'features/onboarding/screens/onboarding_flow.dart';
 
