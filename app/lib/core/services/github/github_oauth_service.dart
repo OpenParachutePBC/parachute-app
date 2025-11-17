@@ -113,10 +113,12 @@ class GitHubOAuthService {
       _setupDeepLinkListener();
 
       // Open browser for authorization
-      if (await canLaunchUrl(authUrl)) {
+      // Note: Don't use canLaunchUrl on Android - it returns false for HTTPS URLs
+      // Just try to launch directly and catch errors
+      try {
         await launchUrl(authUrl, mode: LaunchMode.externalApplication);
-      } else {
-        debugPrint('[GitHubOAuth] ❌ Could not launch authorization URL');
+      } catch (e) {
+        debugPrint('[GitHubOAuth] ❌ Could not launch authorization URL: $e');
         _cleanup();
         return null;
       }
@@ -298,10 +300,10 @@ class GitHubOAuthService {
     );
     debugPrint('[GitHubOAuth] Opening installation page: $installUrl');
 
-    if (await canLaunchUrl(installUrl)) {
+    try {
       await launchUrl(installUrl, mode: LaunchMode.externalApplication);
-    } else {
-      debugPrint('[GitHubOAuth] ❌ Could not launch installation URL');
+    } catch (e) {
+      debugPrint('[GitHubOAuth] ❌ Could not launch installation URL: $e');
     }
   }
 

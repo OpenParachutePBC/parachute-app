@@ -38,6 +38,15 @@ class GitService {
   /// Initialize a new Git repository
   Future<Repository?> initRepository(String path) async {
     try {
+      // Check platform support
+      if (Platform.isAndroid || Platform.isIOS) {
+        throw UnsupportedError(
+          'Git sync is not yet supported on mobile platforms. '
+          'Git operations require libgit2 which is not available on Android/iOS. '
+          'Mobile sync support coming soon!',
+        );
+      }
+
       debugPrint('[GitService] Initializing Git repository at: $path');
 
       // Ensure directory exists
