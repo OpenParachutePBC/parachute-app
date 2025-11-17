@@ -60,13 +60,21 @@ post_install do |installer|
       phase = runner_target.new_shell_script_build_phase('Fix libssh2 OpenSSL Path')
       phase.shell_script = <<~SCRIPT
 #!/bin/bash
-# Fix libssh2 OpenSSL path to use system OpenSSL instead of Homebrew
-LIBSSH2_PATH="${BUILT_PRODUCTS_DIR}/${EXECUTABLE_FOLDER_PATH}/libssh2.1.dylib"
+# Bundle OpenSSL 3.x and fix libssh2 to use it
+APP_MACOS="${BUILT_PRODUCTS_DIR}/${EXECUTABLE_FOLDER_PATH}"
+LIBSSH2_PATH="$APP_MACOS/libssh2.1.dylib"
+OPENSSL_SOURCE="/opt/homebrew/opt/openssl@3/lib/libcrypto.3.dylib"
 
-if [ -f "$LIBSSH2_PATH" ]; then
-    echo "Fixing libssh2 OpenSSL path: $LIBSSH2_PATH"
-    install_name_tool -change /opt/homebrew/opt/openssl@3/lib/libcrypto.3.dylib /usr/lib/libcrypto.dylib "$LIBSSH2_PATH" 2>/dev/null || true
-    echo "✅ libssh2 OpenSSL path fixed"
+if [ -f "$LIBSSH2_PATH" ] && [ -f "$OPENSSL_SOURCE" ]; then
+    echo "Bundling OpenSSL 3.x with app..."
+    cp "$OPENSSL_SOURCE" "$APP_MACOS/libcrypto.3.dylib"
+    install_name_tool -id @executable_path/libcrypto.3.dylib "$APP_MACOS/libcrypto.3.dylib" 2>/dev/null || true
+
+    echo "Fixing libssh2 to use bundled OpenSSL..."
+    install_name_tool -change /opt/homebrew/opt/openssl@3/lib/libcrypto.3.dylib @executable_path/libcrypto.3.dylib "$LIBSSH2_PATH" 2>/dev/null || true
+    install_name_tool -change /usr/lib/libcrypto.dylib @executable_path/libcrypto.3.dylib "$LIBSSH2_PATH" 2>/dev/null || true
+
+    echo "✅ Git libraries fixed and OpenSSL bundled"
 fi
       SCRIPT
       # Run after embedding frameworks

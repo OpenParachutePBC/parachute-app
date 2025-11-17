@@ -68,32 +68,54 @@ class GitHubAuthNotifier extends StateNotifier<GitHubAuthState> {
         // Set token in API service
         _apiService.setAccessToken(token);
 
-        // Fetch user info to verify token is still valid
-        final user = await _apiService.getAuthenticatedUser();
+        // Try to fetch user info to verify token is still valid
+        // If this fails due to network issues, we'll still restore the token (optimistic auth)
+        try {
+          final user = await _apiService.getAuthenticatedUser();
 
-        if (user != null) {
-          // Get installation ID (for GitHub Apps)
-          final installationId = await _oauthService.getUserInstallationId(
-            token,
+          if (user != null) {
+            // Get installation ID (for GitHub Apps)
+            final installationId = await _oauthService.getUserInstallationId(
+              token,
+            );
+
+            state = state.copyWith(
+              isAuthenticated: true,
+              accessToken: token,
+              installationToken: token,
+              installationId: installationId,
+              user: user,
+            );
+            debugPrint('[GitHubAuth] ✅ Authenticated as ${user.login}');
+            if (installationId != null) {
+              debugPrint(
+                '[GitHubAuth] ✅ Installation ID restored: $installationId',
+              );
+            }
+          } else {
+            // Token returned null - might be invalid, but could also be network issue
+            // Use optimistic auth - keep the token
+            debugPrint(
+              '[GitHubAuth] ⚠️  Could not verify token, using optimistic auth',
+            );
+            state = state.copyWith(
+              isAuthenticated: true,
+              accessToken: token,
+              installationToken: token,
+            );
+          }
+        } catch (e) {
+          // Network error or API issue - use optimistic authentication
+          debugPrint(
+            '[GitHubAuth] ⚠️  Error verifying token (network issue: $e), using optimistic auth',
           );
 
+          // Still mark as authenticated so Git sync works
           state = state.copyWith(
             isAuthenticated: true,
             accessToken: token,
             installationToken: token,
-            installationId: installationId,
-            user: user,
           );
-          debugPrint('[GitHubAuth] ✅ Authenticated as ${user.login}');
-          if (installationId != null) {
-            debugPrint(
-              '[GitHubAuth] ✅ Installation ID restored: $installationId',
-            );
-          }
-        } else {
-          // Token invalid, clear it
-          debugPrint('[GitHubAuth] ⚠️  Saved token is invalid, clearing');
-          await signOut();
         }
       }
     } catch (e) {
