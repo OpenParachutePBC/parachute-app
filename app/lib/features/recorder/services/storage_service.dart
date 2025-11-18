@@ -318,7 +318,10 @@ class StorageService {
             ? 'unknown'
             : null,
         buttonTapCount: null,
-        liveTranscriptionStatus: transcriptionStatus,
+        transcriptionStatus: transcriptionStatus != null
+            ? ProcessingStatus.fromString(transcriptionStatus)
+            : ProcessingStatus.pending,
+        liveTranscriptionStatus: null,
       );
     } catch (e) {
       debugPrint('[StorageService] Error loading recording from markdown: $e');
