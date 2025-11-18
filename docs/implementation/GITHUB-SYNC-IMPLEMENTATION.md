@@ -267,7 +267,7 @@ sync() method:
    └─ Stage all: git add .
    └─ Commit: "Auto-sync: <timestamp>"
 
-3. Get current branch (main/master)
+3. Get current branch (main)
 
 4. Pull from remote
    └─ Fetch: refs/heads/main

@@ -597,7 +597,7 @@ packages:
     description:
       path: "."
       ref: android-binaries-support
-      resolved-ref: "4a883ccab5aab544d29a6d9200d36f4d13c2d29a"
+      resolved-ref: "8e2af76d64922ea286bef1cf9099d3907906cfca"
       url: "https://github.com/unforced/git2dart.git"
     source: git
     version: "0.3.0"
@@ -606,7 +606,7 @@ packages:
     description:
       path: "."
       ref: android-openssl-support
-      resolved-ref: "60ec6d47b52faa6220db52a54930afef52002425"
+      resolved-ref: a7fcc3ad9d592d7521d2d400f4612b3c5c666850
       url: "https://github.com/unforced/git2dart_binaries.git"
     source: git
     version: "1.9.16"

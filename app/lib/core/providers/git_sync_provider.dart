@@ -299,9 +299,7 @@ class GitSyncNotifier extends StateNotifier<GitSyncState> {
     }
 
     try {
-      debugPrint('[GitSync] Setting isSyncing=true...');
       state = state.copyWith(isSyncing: true, lastError: null);
-      debugPrint('[GitSync] State updated: isSyncing=${state.isSyncing}');
 
       // Check if we have any commits locally
       final hasCommits = await _gitService.hasCommits(repo: _repository!);

@@ -231,6 +231,7 @@ class GitService {
     try {
       // Try to get HEAD reference
       final head = repo.head;
+      debugPrint('[GitService] Repository has commits');
       return true;
     } catch (e) {
       // If HEAD doesn't exist, there are no commits
@@ -243,7 +244,7 @@ class GitService {
   String? getCurrentBranch({required Repository repo}) {
     try {
       final head = repo.head;
-      // head.name returns something like "refs/heads/main" or "refs/heads/master"
+      // head.name returns something like "refs/heads/main"
       // Extract just the branch name
       final branchName = head.name.replaceFirst('refs/heads/', '');
       debugPrint('[GitService] Current branch: $branchName');
@@ -472,7 +473,7 @@ class GitService {
     String username = 'git',
   }) async {
     try {
-      debugPrint('[GitService] Pushing to $remoteName/$branchName');
+      debugPrint('[GitService] 🔼 Pushing to $remoteName/$branchName');
 
       if (_githubToken == null) {
         debugPrint('[GitService] ❌ No GitHub token set');
@@ -514,7 +515,7 @@ class GitService {
     String username = 'git',
   }) async {
     try {
-      debugPrint('[GitService] Pulling from $remoteName/$branchName');
+      debugPrint('[GitService] 🔽 Pulling from $remoteName/$branchName');
 
       if (_githubToken == null) {
         debugPrint('[GitService] ❌ No GitHub token set');
