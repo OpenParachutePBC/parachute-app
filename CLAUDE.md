@@ -159,16 +159,20 @@ Backend tries `ANTHROPIC_API_KEY` env var, then falls back to `~/.claude/.creden
 
 ## Git Workflow
 
-**DO NOT commit before user testing!**
+**🚨 CRITICAL: DO NOT commit or push without user approval! 🚨**
 
 1. Make code change
 2. Tell user what changed
 3. Ask user to test
 4. Wait for confirmation
-5. Ask permission to commit
+5. **Ask permission to commit**
 6. Commit only after approval
+7. **Ask permission to push**
+8. Push only after approval
 
 **Why:** Avoids messy history with reverts and bug-filled commits.
+
+**⚠️ WARNING**: Never auto-commit or auto-push. Always wait for explicit user approval for BOTH actions.
 
 **Important:** Always use `git --no-pager` when running git commands in bash (prevents pager from blocking output).
 
