@@ -1173,6 +1173,20 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
                         foregroundColor: Colors.white,
                       ),
                     ),
+                  // Show retry button for failed transcriptions
+                  if ((_recording?.transcriptionStatus ==
+                          ProcessingStatus.failed) &&
+                      !_isTranscribing &&
+                      _recording != null)
+                    ElevatedButton.icon(
+                      onPressed: _transcribeRecording,
+                      icon: const Icon(Icons.refresh, size: 18),
+                      label: const Text('Retry Transcription'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
                   // Show "Complete Transcription" button only for interrupted (not processing)
                   if (isIncomplete && !isProcessing && !_isTranscribing)
                     ElevatedButton.icon(
