@@ -25,6 +25,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   List<Recording> _recordings = [];
   bool _isLoading = true;
   bool _isGridView = true; // Toggle between grid and list view
+  bool _showOrphaned = false; // Toggle to show orphaned WAV files
 
   @override
   void initState() {
@@ -115,7 +116,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
   Future<void> _loadRecordings() async {
     final storageService = ref.read(storageServiceProvider);
-    final recordings = await storageService.getRecordings();
+    final recordings = await storageService.getRecordings(
+      includeOrphaned: _showOrphaned,
+    );
     if (mounted) {
       setState(() {
         _recordings = recordings;
@@ -202,6 +205,35 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               });
             },
             tooltip: _isGridView ? 'List view' : 'Grid view',
+          ),
+          // More options menu
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert),
+            onSelected: (value) {
+              if (value == 'toggle_orphaned') {
+                setState(() {
+                  _showOrphaned = !_showOrphaned;
+                });
+                _refreshRecordings();
+              }
+            },
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'toggle_orphaned',
+                child: Row(
+                  children: [
+                    Icon(
+                      _showOrphaned
+                          ? Icons.check_box
+                          : Icons.check_box_outline_blank,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 12),
+                    const Text('Show failed transcriptions'),
+                  ],
+                ),
+              ),
+            ],
           ),
           // Git sync status indicator
           const GitSyncStatusIndicator(),

@@ -134,7 +134,9 @@ class StorageService {
   }
 
   /// Load all recordings from local filesystem (LOCAL-FIRST)
-  Future<List<Recording>> getRecordings() async {
+  ///
+  /// If [includeOrphaned] is true, also includes WAV files without markdown
+  Future<List<Recording>> getRecordings({bool includeOrphaned = false}) async {
     await initialize();
 
     try {
@@ -151,17 +153,44 @@ class StorageService {
 
       // Find all markdown files (each represents a recording)
       final recordings = <Recording>[];
+      final processedIds = <String>{};
+
       await for (final entity in capturesDir.list()) {
         if (entity is File && entity.path.endsWith('.md')) {
           try {
             final recording = await _loadRecordingFromMarkdown(entity);
             if (recording != null) {
               recordings.add(recording);
+              processedIds.add(recording.id);
             }
           } catch (e) {
             debugPrint(
               '[StorageService] Error loading recording from ${entity.path}: $e',
             );
+          }
+        }
+      }
+
+      // If requested, also load orphaned WAV files
+      if (includeOrphaned) {
+        await for (final entity in capturesDir.list()) {
+          if (entity is File && entity.path.endsWith('.wav')) {
+            final filename = p.basename(entity.path);
+            final id = filename.replaceAll('.wav', '');
+
+            // Skip if we already have a markdown file for this recording
+            if (processedIds.contains(id)) continue;
+
+            try {
+              final orphanedRecording = await _loadOrphanedWavFile(entity);
+              if (orphanedRecording != null) {
+                recordings.add(orphanedRecording);
+              }
+            } catch (e) {
+              debugPrint(
+                '[StorageService] Error loading orphaned WAV from ${entity.path}: $e',
+              );
+            }
           }
         }
       }
@@ -176,6 +205,45 @@ class StorageService {
     } catch (e) {
       debugPrint('[StorageService] Error loading recordings: $e');
       return [];
+    }
+  }
+
+  /// Load an orphaned WAV file (one without a corresponding markdown file)
+  Future<Recording?> _loadOrphanedWavFile(File wavFile) async {
+    try {
+      final filename = p.basename(wavFile.path);
+
+      // Extract timestamp from filename
+      final timestamp = FileSystemService.parseTimestampFromFilename(filename);
+      if (timestamp == null) {
+        debugPrint(
+          '[StorageService] Could not parse timestamp from: $filename',
+        );
+        return null;
+      }
+
+      // Get file stats
+      final stat = await wavFile.stat();
+      final fileSizeKB = stat.size / 1024;
+
+      // Create a recording object with placeholder data
+      return Recording(
+        id: filename.replaceAll('.wav', ''),
+        title: 'Untranscribed Recording',
+        filePath: wavFile.path,
+        timestamp: timestamp,
+        duration: Duration.zero, // Unknown duration
+        tags: [],
+        transcript: '',
+        context: '',
+        fileSizeKB: fileSizeKB,
+        source: RecordingSource.phone,
+        transcriptionStatus: ProcessingStatus
+            .failed, // Mark as failed since no transcript exists
+      );
+    } catch (e) {
+      debugPrint('[StorageService] Error loading orphaned WAV file: $e');
+      return null;
     }
   }
 
@@ -198,7 +266,7 @@ class StorageService {
       String? durationStr;
       String? source;
       String? title;
-      String? transcriptionStatus;
+      String? liveTranscriptionStatusStr;
       String? contextFromFrontmatter;
 
       final lines = content.split('\n');
@@ -224,7 +292,8 @@ class StorageService {
               if (key == 'duration') durationStr = value;
               if (key == 'source') source = value;
               if (key == 'title') title = value;
-              if (key == 'transcription_status') transcriptionStatus = value;
+              if (key == 'transcription_status')
+                liveTranscriptionStatusStr = value;
               if (key == 'context') {
                 // Unescape the context value (remove quotes and unescape)
                 String unescapedContext = value;
@@ -303,6 +372,21 @@ class StorageService {
           ? RecordingSource.omiDevice
           : RecordingSource.phone;
 
+      // Determine transcriptionStatus based on liveTranscriptionStatus
+      ProcessingStatus finalTranscriptionStatus;
+      if (liveTranscriptionStatusStr == 'in_progress') {
+        // Mark as processing if live transcription was in progress
+        finalTranscriptionStatus = ProcessingStatus.processing;
+      } else if (liveTranscriptionStatusStr == 'completed') {
+        finalTranscriptionStatus = ProcessingStatus.completed;
+      } else if (transcript.isEmpty) {
+        // No transcript and no status = failed/pending
+        finalTranscriptionStatus = ProcessingStatus.pending;
+      } else {
+        // Has transcript = completed
+        finalTranscriptionStatus = ProcessingStatus.completed;
+      }
+
       return Recording(
         id: filename.replaceAll('.md', ''), // Use timestamp as ID
         title: recordingTitle,
@@ -318,10 +402,8 @@ class StorageService {
             ? 'unknown'
             : null,
         buttonTapCount: null,
-        transcriptionStatus: transcriptionStatus != null
-            ? ProcessingStatus.fromString(transcriptionStatus)
-            : ProcessingStatus.pending,
-        liveTranscriptionStatus: null,
+        transcriptionStatus: finalTranscriptionStatus,
+        liveTranscriptionStatus: liveTranscriptionStatusStr,
       );
     } catch (e) {
       debugPrint('[StorageService] Error loading recording from markdown: $e');

@@ -552,6 +552,37 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
     }
   }
 
+  /// Reset a stuck transcription and retry
+  Future<void> _resetAndRetryTranscription() async {
+    if (_recording == null) return;
+
+    // Reset the transcription status to pending
+    final updatedRecording = _recording!.copyWith(
+      transcriptionStatus: ProcessingStatus.pending,
+      liveTranscriptionStatus: null,
+    );
+
+    // Save the updated status
+    final storageService = ref.read(storageServiceProvider);
+    final success = await storageService.updateRecording(updatedRecording);
+
+    if (success && mounted) {
+      setState(() {
+        _recording = updatedRecording;
+      });
+
+      // Now start transcription
+      await _transcribeRecording();
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to reset transcription status'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   Future<void> _transcribeRecording() async {
     if (_isTranscribing || _recording == null) return;
 
@@ -1205,39 +1236,50 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
 
           const SizedBox(height: 12),
 
-          // Show processing indicator for background transcription
+          // Show warning for stuck processing state (not actually transcribing)
           if (isProcessing && !_isTranscribing)
             Container(
               margin: const EdgeInsets.only(bottom: 12),
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.blue.shade50,
+                color: Colors.orange.shade50,
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
-                  color: Colors.blue.shade700.withValues(alpha: 0.3),
+                  color: Colors.orange.shade700.withValues(alpha: 0.3),
                   width: 1,
                 ),
               ),
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        Colors.blue.shade700,
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.warning_amber_rounded,
+                        color: Colors.orange.shade700,
+                        size: 20,
                       ),
-                    ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Transcription appears stuck. The background process may have been interrupted.',
+                          style: TextStyle(
+                            color: Colors.orange.shade700,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      'Transcribing in background...',
-                      style: TextStyle(
-                        color: Colors.blue.shade700,
-                        fontSize: 14,
-                      ),
+                  const SizedBox(height: 12),
+                  ElevatedButton.icon(
+                    onPressed: _resetAndRetryTranscription,
+                    icon: const Icon(Icons.refresh, size: 18),
+                    label: const Text('Reset & Retry Transcription'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange,
+                      foregroundColor: Colors.white,
                     ),
                   ),
                 ],

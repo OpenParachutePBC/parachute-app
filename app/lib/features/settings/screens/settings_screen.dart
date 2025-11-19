@@ -1091,7 +1091,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final isReady = _parakeetModelInfo?.isInitialized ?? false;
     final version = _parakeetModelInfo?.version ?? 'v3';
     final languageCount = _parakeetModelInfo?.languageCount ?? 600;
-    final modelPath = _parakeetModelInfo?.modelPath ?? 'Unknown';
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1179,28 +1178,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
             ],
           ),
-          if (isReady && modelPath.isNotEmpty && modelPath != 'Unknown') ...[
-            const SizedBox(height: 8),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(Icons.folder_outlined, size: 16, color: Colors.grey[600]),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    modelPath,
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontFamily: 'monospace',
-                      color: Colors.grey[600],
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-          ],
           if (!isReady) ...[
             const SizedBox(height: 12),
             if (_isDownloadingParakeet) ...[

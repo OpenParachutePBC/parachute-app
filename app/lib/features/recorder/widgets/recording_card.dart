@@ -91,6 +91,9 @@ class RecordingCard extends ConsumerWidget {
     final isProcessing =
         recording.transcriptionStatus == ProcessingStatus.processing ||
         recording.titleGenerationStatus == ProcessingStatus.processing;
+    final isOrphaned =
+        recording.transcriptionStatus == ProcessingStatus.failed &&
+        recording.transcript.isEmpty;
 
     return Card(
       elevation: 1,
@@ -99,6 +102,8 @@ class RecordingCard extends ConsumerWidget {
         borderRadius: BorderRadius.circular(12),
         side: isProcessing
             ? BorderSide(color: Colors.orange.shade300, width: 1.5)
+            : isOrphaned
+            ? BorderSide(color: Colors.red.shade300, width: 1.5)
             : BorderSide.none,
       ),
       child: InkWell(
@@ -186,7 +191,7 @@ class RecordingCard extends ConsumerWidget {
               ),
 
               // Transcript preview (if available and not processing)
-              if (hasTranscript && !isProcessing) ...[
+              if (hasTranscript && !isProcessing && !isOrphaned) ...[
                 const SizedBox(height: 8),
                 Text(
                   recording.transcript,
@@ -204,6 +209,12 @@ class RecordingCard extends ConsumerWidget {
               if (isProcessing) ...[
                 const SizedBox(height: 8),
                 _buildProcessingIndicator(context),
+              ],
+
+              // Orphaned file warning
+              if (isOrphaned) ...[
+                const SizedBox(height: 8),
+                _buildOrphanedWarning(context),
               ],
 
               // Context tag (if available)
@@ -317,6 +328,37 @@ class RecordingCard extends ConsumerWidget {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildOrphanedWarning(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.red.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.red.shade200, width: 1),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.warning_amber_rounded,
+            size: 18,
+            color: Colors.red.shade700,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Transcription failed. Tap to retry.',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.red.shade700,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
