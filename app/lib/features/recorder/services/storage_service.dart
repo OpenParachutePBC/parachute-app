@@ -7,6 +7,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path/path.dart' as p;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:app/core/providers/git_sync_provider.dart';
+import 'package:just_audio/just_audio.dart';
 
 /// Local-first storage service for recording management
 ///
@@ -227,13 +228,31 @@ class StorageService {
       final stat = await audioFile.stat();
       final fileSizeKB = stat.size / 1024;
 
+      // Try to get audio duration using just_audio
+      Duration duration = Duration.zero;
+      try {
+        // Create a temporary AudioPlayer to read duration
+        final player = AudioPlayer();
+        await player.setFilePath(audioFile.path);
+        duration = player.duration ?? Duration.zero;
+        await player.dispose();
+        debugPrint(
+          '[StorageService] Got duration for orphaned file: ${duration.inSeconds}s',
+        );
+      } catch (e) {
+        debugPrint(
+          '[StorageService] Could not get duration for orphaned file: $e',
+        );
+        // Continue with zero duration
+      }
+
       // Create a recording object with placeholder data
       return Recording(
         id: filename.replaceAll('.wav', '').replaceAll('.opus', ''),
         title: 'Untranscribed Recording',
         filePath: audioFile.path,
         timestamp: timestamp,
-        duration: Duration.zero, // Unknown duration
+        duration: duration,
         tags: [],
         transcript: '',
         context: '',
@@ -622,14 +641,17 @@ class StorageService {
       final mdFile = File(mdPath);
 
       if (!await mdFile.exists()) {
-        debugPrint('[StorageService] ❌ Markdown file not found: $mdPath');
-        return false;
+        debugPrint(
+          '[StorageService] ℹ️ Markdown file not found, creating new one for orphaned recording: $mdPath',
+        );
+        // For orphaned recordings, create the markdown file
+        // This allows transcription results to be saved
       }
 
       // Generate updated markdown content
       final markdown = _generateMarkdown(updatedRecording);
 
-      // Write updated content to file
+      // Write updated content to file (creates if doesn't exist)
       await mdFile.writeAsString(markdown);
       debugPrint('[StorageService] ✅ Updated markdown file: $mdPath');
 

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:record/record.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:app/features/recorder/services/storage_service.dart';
 
 enum RecordingState { stopped, recording, paused }
@@ -56,6 +57,17 @@ class AudioService {
 
   Future<void> dispose() async {
     _durationTimer?.cancel();
+
+    // Ensure wakelock is disabled on disposal
+    try {
+      if (await WakelockPlus.enabled) {
+        await WakelockPlus.disable();
+        debugPrint('Wakelock disabled on dispose');
+      }
+    } catch (e) {
+      debugPrint('Error checking/disabling wakelock on dispose: $e');
+    }
+
     await _recorder.dispose();
     await _player.dispose();
     _isInitialized = false;
@@ -182,6 +194,11 @@ class AudioService {
       _currentRecordingPath = await _getRecordingPath(recordingId);
       debugPrint('Will record to: $_currentRecordingPath');
 
+      // Enable wakelock to prevent device sleep during recording
+      debugPrint('Enabling wakelock...');
+      await WakelockPlus.enable();
+      debugPrint('Wakelock enabled');
+
       // Start recording with WAV format (compatible with Parakeet)
       debugPrint('Starting recorder...');
       await _recorder.start(
@@ -255,6 +272,11 @@ class AudioService {
     try {
       _durationTimer?.cancel();
 
+      // Disable wakelock when recording stops
+      debugPrint('Disabling wakelock...');
+      await WakelockPlus.disable();
+      debugPrint('Wakelock disabled');
+
       final path = await _recorder.stop();
       _recordingState = RecordingState.stopped;
       _currentRecordingPath = null;
@@ -282,6 +304,12 @@ class AudioService {
       debugPrint('Error stopping recording: $e');
       _recordingState = RecordingState.stopped;
       _durationTimer?.cancel();
+      // Ensure wakelock is disabled even on error
+      try {
+        await WakelockPlus.disable();
+      } catch (wakelockError) {
+        debugPrint('Error disabling wakelock: $wakelockError');
+      }
       return null;
     }
   }

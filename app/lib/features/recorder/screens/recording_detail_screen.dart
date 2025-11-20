@@ -622,6 +622,12 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
 
         // Auto-save after transcription
         await _saveChanges();
+
+        // Reload recording from disk to get updated metadata (duration, etc.)
+        await _refreshRecording();
+
+        // Trigger home screen refresh to update recording list
+        ref.read(recordingsRefreshTriggerProvider.notifier).state++;
       }
     } catch (e) {
       if (mounted) {
