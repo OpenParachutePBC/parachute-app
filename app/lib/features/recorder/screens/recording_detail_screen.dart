@@ -69,17 +69,21 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _transcriptController = TextEditingController();
   final TextEditingController _contextController = TextEditingController();
+  final TextEditingController _summaryController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 
   // Edit mode states
   bool _isTitleEditing = false;
   bool _isTranscriptEditing = false;
   bool _isContextEditing = false;
+  bool _isSummaryEditing = false;
 
   // Processing states
 
   bool _isTranscribing = false;
   bool _isGeneratingTitle = false;
+  bool _isGeneratingSummary = false;
+  bool _isCleaningTranscript = false;
   double _transcriptionProgress = 0.0;
   String _transcriptionStatus = '';
 
@@ -103,6 +107,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
       _titleController.text = _recording!.title;
       _transcriptController.text = _recording!.transcript;
       _contextController.text = _recording!.context;
+      _summaryController.text = _recording!.summary;
 
       // Check if background transcription is active for this recording
       final backgroundService = ref.read(backgroundTranscriptionProvider);
@@ -166,6 +171,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
     _titleController.dispose();
     _transcriptController.dispose();
     _contextController.dispose();
+    _summaryController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -333,6 +339,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
         if (!_isTranscriptEditing)
           _transcriptController.text = _recording!.transcript;
         if (!_isContextEditing) _contextController.text = _recording!.context;
+        if (!_isSummaryEditing) _summaryController.text = _recording!.summary;
       });
     }
   }
@@ -470,6 +477,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
             _transcriptController.text = _recording!.transcript;
           }
           if (!_isContextEditing) _contextController.text = _recording!.context;
+          if (!_isSummaryEditing) _summaryController.text = _recording!.summary;
         });
       }
     });
@@ -482,12 +490,13 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
         _isContextEditing = false;
         _isTitleEditing = false;
         _isTranscriptEditing = false;
+        _isSummaryEditing = false;
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Context saved (will be included when recording finishes)',
+            'Changes saved (will be included when recording finishes)',
           ),
           duration: Duration(seconds: 2),
         ),
@@ -502,6 +511,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
           : 'Untitled Recording',
       transcript: _transcriptController.text.trim(),
       context: _contextController.text.trim(),
+      summary: _summaryController.text.trim(),
       // Mark transcription as completed if transcript has content
       liveTranscriptionStatus: _transcriptController.text.trim().isNotEmpty
           ? 'completed'
@@ -518,6 +528,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
         _isTitleEditing = false;
         _isTranscriptEditing = false;
         _isContextEditing = false;
+        _isSummaryEditing = false;
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -594,9 +605,6 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
           _transcriptionStatus = 'Complete!';
         });
 
-        // Auto-generate title from transcript
-        await _generateTitleFromTranscript(transcriptResult.text);
-
         // Auto-save after transcription
         await _saveChanges();
 
@@ -626,28 +634,282 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
     }
   }
 
-  Future<void> _generateTitleFromTranscript(String transcript) async {
-    if (transcript.isEmpty) return;
+  /// Generate title from transcript using local LLM
+  Future<void> _generateTitle() async {
+    if (_recording == null || _recording!.transcript.isEmpty) return;
 
     setState(() {
       _isGeneratingTitle = true;
     });
 
     try {
-      final titleService = ref.read(titleGenerationServiceProvider);
-      final generatedTitle = await titleService.generateTitle(transcript);
+      final llmService = ref.read(localLlmServiceProvider);
+      final recordingContext = _recording!.context.isNotEmpty
+          ? _recording!.context
+          : null;
+      final generatedTitle = await llmService.generateTitle(
+        _recording!.transcript,
+        context: recordingContext,
+      );
 
       if (generatedTitle != null && generatedTitle.isNotEmpty && mounted) {
         setState(() {
           _titleController.text = generatedTitle;
         });
+
+        // Auto-save the new title
+        await _saveChanges();
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Title generated successfully!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
       }
     } catch (e) {
       debugPrint('[RecordingDetail] Title generation failed: $e');
+
+      final errorMessage = e.toString();
+      final isSetupError =
+          errorMessage.contains('Ollama') ||
+          errorMessage.contains('Model') ||
+          errorMessage.contains('Gemma');
+
+      if (mounted) {
+        if (isSetupError) {
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('Setup Required'),
+              content: SingleChildScrollView(
+                child: Text(
+                  errorMessage,
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('OK'),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const SettingsScreen(),
+                      ),
+                    );
+                  },
+                  child: const Text('Open Settings'),
+                ),
+              ],
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Title generation failed: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
     } finally {
       if (mounted) {
         setState(() {
           _isGeneratingTitle = false;
+        });
+      }
+    }
+  }
+
+  /// Generate summary from transcript using local LLM
+  Future<void> _generateSummary() async {
+    if (_recording == null || _recording!.transcript.isEmpty) return;
+
+    setState(() {
+      _isGeneratingSummary = true;
+    });
+
+    try {
+      final llmService = ref.read(localLlmServiceProvider);
+      final recordingContext = _recording!.context.isNotEmpty
+          ? _recording!.context
+          : null;
+      final generatedSummary = await llmService.generateSummary(
+        _recording!.transcript,
+        context: recordingContext,
+      );
+
+      if (generatedSummary != null && generatedSummary.isNotEmpty && mounted) {
+        setState(() {
+          _summaryController.text = generatedSummary;
+        });
+
+        // Auto-save the new summary
+        await _saveChanges();
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Summary generated successfully!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('[RecordingDetail] Summary generation failed: $e');
+
+      final errorMessage = e.toString();
+      final isSetupError =
+          errorMessage.contains('Ollama') ||
+          errorMessage.contains('Model') ||
+          errorMessage.contains('Gemma');
+
+      if (mounted) {
+        if (isSetupError) {
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('Setup Required'),
+              content: SingleChildScrollView(
+                child: Text(
+                  errorMessage,
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('OK'),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const SettingsScreen(),
+                      ),
+                    );
+                  },
+                  child: const Text('Open Settings'),
+                ),
+              ],
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Summary generation failed: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isGeneratingSummary = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _cleanupTranscript() async {
+    if (_recording == null || _recording!.transcript.isEmpty) return;
+
+    setState(() {
+      _isCleaningTranscript = true;
+    });
+
+    try {
+      final llmService = ref.read(localLlmServiceProvider);
+      final recordingContext = _recording!.context.isNotEmpty
+          ? _recording!.context
+          : null;
+      final cleanedTranscript = await llmService.cleanupTranscript(
+        _recording!.transcript,
+        context: recordingContext,
+      );
+
+      if (cleanedTranscript != null &&
+          cleanedTranscript.isNotEmpty &&
+          mounted) {
+        // Show preview dialog
+        final shouldApply = await showDialog<bool>(
+          context: context,
+          builder: (context) => _CleanupPreviewDialog(
+            originalTranscript: _recording!.transcript,
+            cleanedTranscript: cleanedTranscript,
+          ),
+        );
+
+        if (shouldApply == true && mounted) {
+          setState(() {
+            _transcriptController.text = cleanedTranscript;
+          });
+          await _saveChanges();
+
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Transcript cleaned up successfully'),
+              ),
+            );
+          }
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        // Show detailed error message for Ollama setup on desktop
+        final errorMessage = e.toString();
+        final isOllamaError =
+            errorMessage.contains('Ollama') ||
+            errorMessage.contains('Model') ||
+            errorMessage.contains('brew install');
+
+        if (isOllamaError) {
+          // Show detailed setup instructions
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('Ollama Setup Required'),
+              content: SingleChildScrollView(
+                child: Text(
+                  errorMessage,
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('OK'),
+                ),
+              ],
+            ),
+          );
+        } else {
+          // Show simple error for other failures
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Cleanup failed: $e'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isCleaningTranscript = false;
         });
       }
     }
@@ -1022,6 +1284,33 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
           ),
           PopupMenuButton(
             itemBuilder: (context) => [
+              if (_recording?.transcript.isNotEmpty ?? false) ...[
+                const PopupMenuItem(
+                  value: 'generate-title',
+                  child: Row(
+                    children: [
+                      Icon(Icons.title),
+                      SizedBox(width: 8),
+                      Text('Generate Title'),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'generate-summary',
+                  child: Row(
+                    children: [
+                      Icon(Icons.summarize),
+                      SizedBox(width: 8),
+                      Text('Generate Summary'),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'divider-1',
+                  enabled: false,
+                  child: Divider(),
+                ),
+              ],
               const PopupMenuItem(
                 value: 're-transcribe',
                 child: Row(
@@ -1044,6 +1333,8 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
               ),
             ],
             onSelected: (value) {
+              if (value == 'generate-title') _generateTitle();
+              if (value == 'generate-summary') _generateSummary();
               if (value == 're-transcribe') _retranscribe();
               if (value == 'delete') _confirmDelete();
             },
@@ -1082,6 +1373,11 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
 
           // Context section
           _buildContextSection(),
+
+          const SizedBox(height: 24),
+
+          // Summary section
+          _buildSummarySection(),
         ],
       ),
     );
@@ -1294,6 +1590,20 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
                         );
                       },
                       tooltip: 'Copy',
+                    ),
+                  if ((_recording?.transcript.isNotEmpty ?? false) &&
+                      !_isTranscriptEditing &&
+                      !_isCleaningTranscript)
+                    IconButton(
+                      icon: const Icon(Icons.auto_fix_high, size: 20),
+                      onPressed: _cleanupTranscript,
+                      tooltip: 'Clean Up Transcript',
+                    ),
+                  if (_isCleaningTranscript)
+                    const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
                     ),
                   if ((_recording?.transcript.isEmpty ?? true) &&
                       !_isTranscribing &&
@@ -1763,9 +2073,129 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
     );
   }
 
+  Widget _buildSummarySection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Summary',
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+            ),
+            // Generate summary button
+            if (!_isGeneratingSummary &&
+                (_recording?.transcript.isNotEmpty ?? false))
+              IconButton(
+                icon: Icon(
+                  Icons.auto_awesome,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                onPressed: _generateSummary,
+                tooltip: 'Generate AI summary',
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+
+        // Show generating indicator
+        if (_isGeneratingSummary) _buildGeneratingSummaryIndicator(),
+
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(12),
+            border: _isSummaryEditing
+                ? Border.all(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.primary.withValues(alpha: 0.5),
+                    width: 2,
+                  )
+                : null,
+          ),
+          child: _isSummaryEditing
+              ? TextField(
+                  controller: _summaryController,
+                  maxLines: 5,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    border: InputBorder.none,
+                    hintText: 'Add or edit summary...',
+                  ),
+                )
+              : GestureDetector(
+                  onTap: () => setState(() => _isSummaryEditing = true),
+                  child: Text(
+                    _summaryController.text.isNotEmpty
+                        ? _summaryController.text
+                        : 'Tap to add summary or generate with AI...',
+                    style: TextStyle(
+                      fontSize: 14,
+                      height: 1.5,
+                      color: _summaryController.text.isEmpty
+                          ? Colors.grey.shade600
+                          : null,
+                      fontStyle: _summaryController.text.isEmpty
+                          ? FontStyle.italic
+                          : null,
+                    ),
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildGeneratingSummaryIndicator() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.purple.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: Colors.purple.shade700.withValues(alpha: 0.3),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              valueColor: AlwaysStoppedAnimation(Colors.purple.shade700),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Generating summary...',
+              style: TextStyle(
+                color: Colors.purple.shade700,
+                fontWeight: FontWeight.w600,
+                fontSize: 14,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildBottomBar() {
     // Show save button if editing
-    if (_isTitleEditing || _isTranscriptEditing || _isContextEditing) {
+    if (_isTitleEditing ||
+        _isTranscriptEditing ||
+        _isContextEditing ||
+        _isSummaryEditing) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
@@ -1797,5 +2227,131 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
     }
 
     return const SizedBox.shrink();
+  }
+}
+
+/// Preview dialog for transcript cleanup
+class _CleanupPreviewDialog extends StatelessWidget {
+  final String originalTranscript;
+  final String cleanedTranscript;
+
+  const _CleanupPreviewDialog({
+    required this.originalTranscript,
+    required this.cleanedTranscript,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Cleanup Preview'),
+      content: SizedBox(
+        width: double.maxFinite,
+        height: 500,
+        child: Column(
+          children: [
+            const Text(
+              'Compare the original and cleaned up versions:',
+              style: TextStyle(fontSize: 14),
+            ),
+            const SizedBox(height: 16),
+            Expanded(
+              child: Row(
+                children: [
+                  // Original
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Original',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Theme.of(context).colorScheme.secondary,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Expanded(
+                          child: Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.surface.withOpacity(0.5),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.outline.withOpacity(0.3),
+                              ),
+                            ),
+                            child: SingleChildScrollView(
+                              child: Text(
+                                originalTranscript,
+                                style: const TextStyle(fontSize: 13),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  // Cleaned
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Cleaned Up',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Expanded(
+                          child: Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.primaryContainer.withOpacity(0.3),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                            ),
+                            child: SingleChildScrollView(
+                              child: Text(
+                                cleanedTranscript,
+                                style: const TextStyle(fontSize: 13),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: () => Navigator.of(context).pop(true),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Theme.of(context).colorScheme.primary,
+            foregroundColor: Colors.white,
+          ),
+          child: const Text('Apply'),
+        ),
+      ],
+    );
   }
 }

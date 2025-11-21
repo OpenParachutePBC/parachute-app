@@ -12,6 +12,14 @@ enum TitleModelMode {
   final String displayName;
   final String description;
 
+  /// Get platform-specific description
+  String getDescription(bool isDesktop) {
+    if (this == local && isDesktop) {
+      return 'Not available on desktop (use Ollama instead)';
+    }
+    return description;
+  }
+
   static TitleModelMode? fromString(String value) {
     final normalized = value.toLowerCase();
     for (final mode in TitleModelMode.values) {
@@ -28,14 +36,22 @@ enum TitleModelMode {
 /// Models are ordered by size and performance characteristics.
 /// Smaller models are faster but may be less accurate for complex titles.
 ///
-/// Models are downloaded from HuggingFace litert-community (requires license acceptance).
+/// Models are hosted on Parachute CDN for easy download (no HuggingFace token required).
+/// Original models from HuggingFace - redistributed under Gemma Terms of Use.
 enum GemmaModelType {
   gemma1b(
     'gemma-3-1b-int4',
     555,
-    'Fast and efficient on-device model',
-    'https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/gemma3-1b-it-int4.task',
+    'Fast and lightweight - Best for most users',
+    'https://pub-83d77b23427846aa85d32982f50d7f18.r2.dev/gemma3-1b-it-int4.task',
     'https://huggingface.co/litert-community/Gemma3-1B-IT',
+  ),
+  gemma3nE2B(
+    'gemma-3n-E2B-it-int4',
+    3390,
+    'Advanced multimodal model with vision support',
+    'https://pub-83d77b23427846aa85d32982f50d7f18.r2.dev/gemma-3n-E2B-it-int4.litertlm',
+    'https://huggingface.co/google/gemma-3n-E2B-it-litert-lm',
   );
 
   const GemmaModelType(

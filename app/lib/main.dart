@@ -10,6 +10,7 @@ import 'package:opus_flutter/opus_flutter.dart' as opus_flutter;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:git2dart/git2dart.dart' as git2dart;
 import 'package:git2dart_binaries/git2dart_binaries.dart';
+import 'package:flutter_gemma/flutter_gemma.dart';
 import 'core/theme/app_theme.dart';
 import 'core/providers/feature_flags_provider.dart';
 import 'features/spaces/screens/space_list_screen.dart';
@@ -23,7 +24,6 @@ import 'features/onboarding/screens/onboarding_flow.dart';
 void main() async {
   // Ensure Flutter bindings are initialized
   WidgetsFlutterBinding.ensureInitialized();
-
 
   // Initialize Git SSL certificates for Android
   if (Platform.isAndroid) {
@@ -55,6 +55,17 @@ void main() async {
 
   // Disable verbose FlutterBluePlus logs (reduces spam from onCharacteristicChanged)
   FlutterBluePlus.setLogLevel(LogLevel.none, color: false);
+
+  // Initialize Flutter Gemma for on-device AI title generation
+  try {
+    debugPrint('[Main] Initializing FlutterGemma...');
+    await FlutterGemma.initialize();
+    debugPrint('[Main] ✅ FlutterGemma initialized successfully');
+  } catch (e, stackTrace) {
+    debugPrint('[Main] ❌ Failed to initialize FlutterGemma: $e');
+    debugPrint('[Main] Stack trace: $stackTrace');
+    // Continue anyway - only affects title generation feature
+  }
 
   // Initialize Opus codec for audio decoding (required for Omi device recordings)
   try {

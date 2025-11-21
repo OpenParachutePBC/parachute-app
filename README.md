@@ -220,10 +220,38 @@ TBD - Will be decided before public release
 
 ---
 
+## Attribution
+
+Parachute uses the following open models and technologies:
+
+### Google Gemma
+
+Gemma models for on-device AI title generation are used under the [Gemma Terms of Use](https://ai.google.dev/gemma/terms).
+
+- **Model:** Gemma 3 1B Instruction-Tuned (INT4 quantized)
+- **Provider:** Google DeepMind
+- **License:** [Gemma Terms of Use](https://ai.google.dev/gemma/terms) (allows commercial use and redistribution)
+- **Source:** Originally from [litert-community/Gemma3-1B-IT](https://huggingface.co/litert-community/Gemma3-1B-IT)
+- **Hosting:** Hosted on Parachute CDN for easy download (no account required)
+
+**Citation:**
+
+> Gemma Team, Google DeepMind. "Gemma: Open Models Based on Gemini Research and Technology." 2024. https://ai.google.dev/gemma
+
+### OpenAI Whisper
+
+Whisper models for speech-to-text transcription are used under the MIT License.
+
+- **Provider:** OpenAI
+- **License:** MIT
+- **Source:** https://github.com/openai/whisper
+
+---
+
 ## Contact
 
 Questions? Ideas? Reach out: [contact info TBD]
 
 ---
 
-**Status:** Active Development (Alpha) - Last Updated: November 13, 2025
+**Status:** Active Development (Alpha) - Last Updated: November 20, 2025

@@ -14,22 +14,14 @@ class GemmaModelManager {
 
   /// Download and install a Gemma model
   ///
-  /// Requires a HuggingFace token for authentication as Gemma models are gated.
+  /// Downloads from Parachute CDN (no authentication required).
   /// Returns a stream of progress updates (0.0 to 1.0)
-  Stream<double> downloadModel(
-    GemmaModelType modelType, {
-    required String huggingFaceToken,
-  }) async* {
+  Stream<double> downloadModel(GemmaModelType modelType) async* {
     try {
       debugPrint(
         '[GemmaModelManager] Starting download for ${modelType.modelName}',
       );
-
-      if (huggingFaceToken.isEmpty) {
-        throw Exception(
-          'HuggingFace token is required. Please add your token in Settings.',
-        );
-      }
+      debugPrint('[GemmaModelManager] Download URL: ${modelType.downloadUrl}');
 
       // Check if already installed
       final isAlreadyInstalled = await isModelDownloaded(modelType);
@@ -47,7 +39,7 @@ class GemmaModelManager {
       // Start the download in a separate async operation
       final downloadFuture =
           FlutterGemma.installModel(modelType: ModelType.gemmaIt)
-              .fromNetwork(modelType.downloadUrl, token: huggingFaceToken)
+              .fromNetwork(modelType.downloadUrl) // No token needed!
               .withProgress((progress) {
                 // progress is an int from 0-100
                 final progressValue = progress / 100.0;
@@ -184,23 +176,46 @@ class GemmaModelManager {
           );
         }
 
-        // Re-install the model from network (will skip if already downloaded)
-        // This also sets it as the active model
-        debugPrint(
-          '[GemmaModelManager] Re-installing ${modelType.modelName} to activate it...',
-        );
+        // Check if model is already installed
+        final isInstalled = await isModelDownloaded(modelType);
+
+        if (isInstalled) {
+          // Model is installed but not active - activate it using setModelPath
+          debugPrint(
+            '[GemmaModelManager] Model ${modelType.modelName} is installed, activating it...',
+          );
+
+          // Re-install to activate (will skip download since already installed)
+          await FlutterGemma.installModel(
+            modelType: ModelType.gemmaIt,
+          ).fromNetwork(modelType.downloadUrl).install();
+
+          // Now get the active model
+          final model = await FlutterGemma.getActiveModel(
+            maxTokens: maxTokens,
+            preferredBackend: PreferredBackend.gpu,
+          );
+
+          debugPrint('[GemmaModelManager] ✅ Model re-activated successfully');
+          return model;
+        }
+
+        // Model not installed - install it
+        debugPrint('[GemmaModelManager] Installing ${modelType.modelName}...');
 
         await FlutterGemma.installModel(
           modelType: ModelType.gemmaIt,
         ).fromNetwork(modelType.downloadUrl).install();
 
-        // Now get the active model
+        debugPrint('[GemmaModelManager] Model installed, activating it...');
+
+        // After installation, get the active model
         final model = await FlutterGemma.getActiveModel(
           maxTokens: maxTokens,
           preferredBackend: PreferredBackend.gpu,
         );
 
-        debugPrint('[GemmaModelManager] ✅ Model loaded and activated');
+        debugPrint('[GemmaModelManager] ✅ Model installed and activated');
         return model;
       }
     } catch (e) {
@@ -208,11 +223,12 @@ class GemmaModelManager {
       if (e.toString().contains('channel-error') ||
           e.toString().contains('Unable to establish connection')) {
         debugPrint(
-          '[GemmaModelManager] ⚠️ Platform channel error - app restart may be needed',
+          '[GemmaModelManager] ⚠️ Platform channel error - app restart required',
         );
         throw Exception(
-          'Flutter Gemma plugin not ready. Please restart the app and try again. '
-          'This is common after first installing the plugin.',
+          'Model activation requires an app restart.\n\n'
+          'Please close and reopen the app, then try again.\n\n'
+          'This is a one-time requirement after downloading a model.',
         );
       }
 

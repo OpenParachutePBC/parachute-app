@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
@@ -50,6 +51,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   TitleModelMode _titleMode = TitleModelMode.api;
   GemmaModelType _preferredGemmaModel = GemmaModelType.gemma1b;
   String _gemmaStorageInfo = '0 MB used';
+
+  // Ollama settings (desktop)
+  String _ollamaModel = 'gemma2:2b';
+  List<String> _availableOllamaModels = [];
+  bool _ollamaAvailable = false;
 
   // Feature toggles
   bool _omiEnabled = false;
@@ -260,6 +266,44 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
     // Load storage info
     _gemmaStorageInfo = await gemmaManager.getStorageInfo();
+
+    // Load Ollama settings (desktop only)
+    if (Platform.isMacOS || Platform.isLinux || Platform.isWindows) {
+      await _loadOllamaSettings();
+    }
+  }
+
+  Future<void> _loadOllamaSettings() async {
+    final storageService = ref.read(storageServiceProvider);
+    final ollamaService = ref.read(ollamaCleanupServiceProvider);
+
+    // Load preferred Ollama model
+    final model = await storageService.getOllamaModel();
+    _ollamaModel = model ?? 'gemma2:2b';
+
+    // Check if Ollama is available
+    try {
+      _ollamaAvailable = await ollamaService.isAvailable();
+      if (_ollamaAvailable) {
+        _availableOllamaModels = await ollamaService.getAvailableModels();
+      }
+    } catch (e) {
+      debugPrint('[Settings] Failed to check Ollama availability: $e');
+      _ollamaAvailable = false;
+      _availableOllamaModels = [];
+    }
+
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  Future<void> _setOllamaModel(String model) async {
+    final storageService = ref.read(storageServiceProvider);
+    await storageService.setOllamaModel(model);
+    setState(() {
+      _ollamaModel = model;
+    });
   }
 
   Future<void> _saveGeminiApiKey() async {
@@ -2030,8 +2074,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   const Divider(),
                   const SizedBox(height: 32),
 
-                  // Local Gemma Models Section (only show if local mode selected)
-                  if (_titleMode == TitleModelMode.local) ...[
+                  // Local Gemma Models Section (only show if local mode selected AND on mobile)
+                  if (_titleMode == TitleModelMode.local &&
+                      (Platform.isAndroid || Platform.isIOS)) ...[
                     const Text(
                       'Local Gemma Models',
                       style: TextStyle(
@@ -2075,29 +2120,42 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         onDownloadComplete: () => _refreshGemmaStorage(),
                       ),
                     ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 32),
+                    const Divider(),
+                    const SizedBox(height: 32),
+                  ],
 
-                    // HuggingFace Token Section
+                  // === OLLAMA CONFIGURATION (DESKTOP ONLY) ===
+                  if (Platform.isMacOS ||
+                      Platform.isLinux ||
+                      Platform.isWindows) ...[
                     const Text(
-                      'HuggingFace Token',
+                      'Ollama Configuration',
                       style: TextStyle(
-                        fontSize: 18,
+                        fontSize: 20,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Required for downloading Gemma models. You must:',
+                      'Desktop transcription cleanup uses Ollama for local LLM processing',
                       style: TextStyle(color: Colors.grey[600], fontSize: 14),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 16),
+
+                    // Ollama Status Card
                     Container(
-                      padding: const EdgeInsets.all(12),
+                      padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: Colors.blue.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(8),
+                        color: _ollamaAvailable
+                            ? Colors.green.withValues(alpha: 0.1)
+                            : Colors.orange.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: Colors.blue.withValues(alpha: 0.3),
+                          color: _ollamaAvailable
+                              ? Colors.green
+                              : Colors.orange,
+                          width: 2,
                         ),
                       ),
                       child: Column(
@@ -2106,145 +2164,167 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           Row(
                             children: [
                               Icon(
-                                Icons.info_outline,
-                                color: Colors.blue[700],
-                                size: 16,
+                                _ollamaAvailable
+                                    ? Icons.check_circle
+                                    : Icons.warning,
+                                color: _ollamaAvailable
+                                    ? Colors.green[700]
+                                    : Colors.orange[700],
+                                size: 28,
                               ),
-                              const SizedBox(width: 8),
+                              const SizedBox(width: 12),
                               Expanded(
-                                child: Text(
-                                  'Setup Steps:',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.blue[900],
-                                    fontSize: 13,
-                                  ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      _ollamaAvailable
+                                          ? 'Ollama Connected'
+                                          : 'Ollama Not Found',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16,
+                                        color: _ollamaAvailable
+                                            ? Colors.green[900]
+                                            : Colors.orange[900],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      _ollamaAvailable
+                                          ? '${_availableOllamaModels.length} models available'
+                                          : 'Please install Ollama to use transcript cleanup',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey[600],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              ElevatedButton.icon(
+                                onPressed: () async {
+                                  await _loadOllamaSettings();
+                                },
+                                icon: const Icon(Icons.refresh, size: 18),
+                                label: const Text('Refresh'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.blue,
+                                  foregroundColor: Colors.white,
                                 ),
                               ),
                             ],
                           ),
-                          const SizedBox(height: 8),
-                          Text(
-                            '1. Create a HuggingFace account (free)\n'
-                            '2. Accept the license for each Gemma model\n'
-                            '3. Generate a read-only access token\n'
-                            '4. Paste the token below',
-                            style: TextStyle(
-                              color: Colors.grey[700],
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
 
-                    // HuggingFace Token Input
-                    TextField(
-                      controller: _huggingFaceTokenController,
-                      decoration: InputDecoration(
-                        labelText: 'HuggingFace Token',
-                        hintText: 'hf_...',
-                        border: const OutlineInputBorder(),
-                        suffixIcon: IconButton(
-                          icon: Icon(
-                            _obscureHuggingFaceToken
-                                ? Icons.visibility
-                                : Icons.visibility_off,
-                          ),
-                          onPressed: () {
-                            setState(() {
-                              _obscureHuggingFaceToken =
-                                  !_obscureHuggingFaceToken;
-                            });
-                          },
-                        ),
-                      ),
-                      obscureText: _obscureHuggingFaceToken,
-                      autocorrect: false,
-                      enableSuggestions: false,
-                    ),
-                    const SizedBox(height: 16),
-
-                    // HuggingFace Token Actions
-                    Row(
-                      children: [
-                        Expanded(
-                          child: ElevatedButton.icon(
-                            onPressed: _isSaving ? null : _saveHuggingFaceToken,
-                            icon: _isSaving
-                                ? const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
+                          // Show setup instructions if not available
+                          if (!_ollamaAvailable) ...[
+                            const SizedBox(height: 16),
+                            const Divider(),
+                            const SizedBox(height: 16),
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: Colors.grey.withValues(alpha: 0.3),
+                                ),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Icon(
+                                        Icons.terminal,
+                                        color: Colors.grey[700],
+                                        size: 16,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        'Installation Instructions',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.grey[900],
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    '1. Install Ollama:',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.grey[800],
+                                      fontSize: 12,
                                     ),
-                                  )
-                                : const Icon(Icons.save),
-                            label: Text(_isSaving ? 'Saving...' : 'Save Token'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Theme.of(
-                                context,
-                              ).colorScheme.primary,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 12),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withValues(
+                                        alpha: 0.8,
+                                      ),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      Platform.isMacOS
+                                          ? 'brew install ollama'
+                                          : Platform.isLinux
+                                          ? 'curl -fsSL https://ollama.com/install.sh | sh'
+                                          : 'Download from https://ollama.com',
+                                      style: const TextStyle(
+                                        fontFamily: 'monospace',
+                                        fontSize: 11,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    '2. Pull a model (recommended):',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.grey[800],
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withValues(
+                                        alpha: 0.8,
+                                      ),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: const Text(
+                                      'ollama pull llama3.2:1b',
+                                      style: TextStyle(
+                                        fontFamily: 'monospace',
+                                        fontSize: 11,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Other options: llama3.2:3b, qwen2.5:3b, phi4:3.8b',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: Colors.grey[600],
+                                      fontStyle: FontStyle.italic,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
-                        ),
-                        if (_hasHuggingFaceToken) ...[
-                          const SizedBox(width: 12),
-                          ElevatedButton.icon(
-                            onPressed: _deleteHuggingFaceToken,
-                            icon: const Icon(Icons.delete),
-                            label: const Text('Delete'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.red,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-
-                    // Help links
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        TextButton.icon(
-                          onPressed: () async {
-                            final url = Uri.parse(
-                              'https://huggingface.co/settings/tokens',
-                            );
-                            if (await canLaunchUrl(url)) {
-                              await launchUrl(
-                                url,
-                                mode: LaunchMode.externalApplication,
-                              );
-                            }
-                          },
-                          icon: const Icon(Icons.vpn_key),
-                          label: const Text('Step 3: Create HuggingFace token'),
-                        ),
-                        const SizedBox(height: 4),
-                        Padding(
-                          padding: const EdgeInsets.only(left: 12),
-                          child: Text(
-                            'Step 2: Accept license for each model:',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.grey[700],
-                            ),
-                          ),
-                        ),
-                        ...GemmaModelType.values.map(
-                          (model) => Padding(
-                            padding: const EdgeInsets.only(left: 24),
-                            child: TextButton.icon(
+                            const SizedBox(height: 12),
+                            TextButton.icon(
                               onPressed: () async {
-                                final url = Uri.parse(model.huggingFaceUrl);
+                                final url = Uri.parse('https://ollama.com');
                                 if (await canLaunchUrl(url)) {
                                   await launchUrl(
                                     url,
@@ -2252,27 +2332,131 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                                   );
                                 }
                               },
-                              icon: Icon(
-                                Icons.open_in_new,
-                                size: 14,
-                                color: Colors.blue[700],
-                              ),
-                              label: Text(
-                                model.displayName,
-                                style: const TextStyle(fontSize: 12),
-                              ),
-                              style: TextButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 4,
-                                ),
-                                minimumSize: const Size(0, 0),
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              icon: const Icon(Icons.open_in_new),
+                              label: const Text('Visit ollama.com'),
+                            ),
+                          ],
+
+                          // Show model selection if available
+                          if (_ollamaAvailable &&
+                              _availableOllamaModels.isNotEmpty) ...[
+                            const SizedBox(height: 16),
+                            const Divider(),
+                            const SizedBox(height: 16),
+                            Text(
+                              'Select Model for Transcript Cleanup',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                                color: Colors.grey[900],
                               ),
                             ),
-                          ),
-                        ),
-                      ],
+                            const SizedBox(height: 12),
+                            Container(
+                              decoration: BoxDecoration(
+                                border: Border.all(
+                                  color: Colors.grey.withValues(alpha: 0.3),
+                                ),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Column(
+                                children: _availableOllamaModels
+                                    .map(
+                                      (model) => InkWell(
+                                        onTap: () => _setOllamaModel(model),
+                                        child: Container(
+                                          padding: const EdgeInsets.all(12),
+                                          decoration: BoxDecoration(
+                                            color: _ollamaModel == model
+                                                ? Colors.blue.withValues(
+                                                    alpha: 0.1,
+                                                  )
+                                                : null,
+                                            border: Border(
+                                              bottom: BorderSide(
+                                                color: Colors.grey.withValues(
+                                                  alpha: 0.2,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                          child: Row(
+                                            children: [
+                                              Icon(
+                                                _ollamaModel == model
+                                                    ? Icons.radio_button_checked
+                                                    : Icons
+                                                          .radio_button_unchecked,
+                                                color: _ollamaModel == model
+                                                    ? Colors.blue[700]
+                                                    : Colors.grey[600],
+                                                size: 20,
+                                              ),
+                                              const SizedBox(width: 12),
+                                              Expanded(
+                                                child: Text(
+                                                  model,
+                                                  style: TextStyle(
+                                                    fontFamily: 'monospace',
+                                                    fontSize: 13,
+                                                    fontWeight:
+                                                        _ollamaModel == model
+                                                        ? FontWeight.bold
+                                                        : FontWeight.normal,
+                                                    color: _ollamaModel == model
+                                                        ? Colors.blue[900]
+                                                        : Colors.grey[800],
+                                                  ),
+                                                ),
+                                              ),
+                                              if (_ollamaModel == model)
+                                                Icon(
+                                                  Icons.check_circle,
+                                                  color: Colors.green[700],
+                                                  size: 18,
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    )
+                                    .toList(),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.blue.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: Colors.blue.withValues(alpha: 0.3),
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.info_outline,
+                                    color: Colors.blue[700],
+                                    size: 16,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'Selected model: $_ollamaModel',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.blue[900],
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 32),
                     const Divider(),
@@ -2391,63 +2575,71 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   Widget _buildTitleModeCard(TitleModelMode mode) {
     final isSelected = _titleMode == mode;
+    final isDesktop =
+        Platform.isMacOS || Platform.isLinux || Platform.isWindows;
+    final isDisabled = isDesktop && mode == TitleModelMode.local;
 
     return InkWell(
-      onTap: () => _setTitleMode(mode),
+      onTap: isDisabled ? null : () => _setTitleMode(mode),
       borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.1)
-              : Colors.grey.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
+      child: Opacity(
+        opacity: isDisabled ? 0.5 : 1.0,
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
             color: isSelected
-                ? Theme.of(context).colorScheme.primary
-                : Colors.grey,
-            width: isSelected ? 2 : 1,
+                ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.1)
+                : Colors.grey.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isSelected
+                  ? Theme.of(context).colorScheme.primary
+                  : Colors.grey,
+              width: isSelected ? 2 : 1,
+            ),
           ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  mode == TitleModelMode.api
-                      ? Icons.cloud
-                      : Icons.phone_android,
-                  color: isSelected
-                      ? Theme.of(context).colorScheme.primary
-                      : Colors.grey[600],
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    mode.displayName,
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: isSelected
-                          ? Theme.of(context).colorScheme.primary
-                          : Colors.grey[800],
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    mode == TitleModelMode.api
+                        ? Icons.cloud
+                        : mode == TitleModelMode.disabled
+                        ? Icons.timer
+                        : Icons.phone_android,
+                    color: isSelected
+                        ? Theme.of(context).colorScheme.primary
+                        : Colors.grey[600],
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      mode.displayName,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: isSelected
+                            ? Theme.of(context).colorScheme.primary
+                            : Colors.grey[800],
+                      ),
                     ),
                   ),
-                ),
-                if (isSelected)
-                  Icon(
-                    Icons.check_circle,
-                    color: Theme.of(context).colorScheme.primary,
-                    size: 20,
-                  ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              mode.description,
-              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-            ),
-          ],
+                  if (isSelected)
+                    Icon(
+                      Icons.check_circle,
+                      color: Theme.of(context).colorScheme.primary,
+                      size: 20,
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                mode.getDescription(isDesktop),
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              ),
+            ],
+          ),
         ),
       ),
     );

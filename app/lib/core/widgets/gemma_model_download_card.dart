@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:app/core/models/title_generation_models.dart';
 import 'package:app/core/providers/title_generation_provider.dart';
-import 'package:app/features/recorder/providers/service_providers.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 /// Widget for displaying and managing a Gemma model download
 class GemmaModelDownloadCard extends ConsumerStatefulWidget {
@@ -56,22 +54,11 @@ class _GemmaModelDownloadCardState
     });
 
     try {
-      // Get HuggingFace token from storage
-      final storage = ref.read(storageServiceProvider);
-      final token = await storage.getHuggingFaceToken();
-
-      if (token == null || token.isEmpty) {
-        throw Exception(
-          'HuggingFace token required. Please add it in the "HuggingFace Token" section below.',
-        );
-      }
-
       final modelManager = ref.read(gemmaModelManagerProvider);
 
       // Listen to download progress
       await for (final progress in modelManager.downloadModel(
         widget.modelType,
-        huggingFaceToken: token,
       )) {
         if (mounted) {
           setState(() {
@@ -204,42 +191,6 @@ class _GemmaModelDownloadCardState
                         ),
                       ],
                     ),
-                    // Show license acceptance link if 403 error
-                    if (_errorMessage!.contains('403') ||
-                        _errorMessage!.contains('Access forbidden')) ...[
-                      const SizedBox(height: 8),
-                      TextButton.icon(
-                        onPressed: () async {
-                          final url = Uri.parse(
-                            widget.modelType.huggingFaceUrl,
-                          );
-                          if (await canLaunchUrl(url)) {
-                            await launchUrl(
-                              url,
-                              mode: LaunchMode.externalApplication,
-                            );
-                          }
-                        },
-                        icon: Icon(
-                          Icons.open_in_new,
-                          size: 14,
-                          color: Colors.red[700],
-                        ),
-                        label: Text(
-                          'Accept license on HuggingFace',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.red[700],
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        style: TextButton.styleFrom(
-                          padding: EdgeInsets.zero,
-                          minimumSize: const Size(0, 0),
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                      ),
-                    ],
                   ],
                 ),
               ),

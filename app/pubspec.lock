@@ -872,6 +872,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.0.5"
+  ollama_dart:
+    dependency: "direct main"
+    description:
+      name: ollama_dart
+      sha256: "7ced51fa4151bef696a9e1571ca7b4ac4bc4b35331e45ae5e0684560fcd26d99"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.3.0+1"
   opus_dart:
     dependency: "direct main"
     description:

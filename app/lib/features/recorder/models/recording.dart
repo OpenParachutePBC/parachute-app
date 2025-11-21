@@ -69,6 +69,7 @@ class Recording {
   final List<String> tags;
   final String transcript;
   final String context; // Additional notes/context about the recording
+  final String summary; // AI-generated summary of the transcript
   final double fileSizeKB;
   final RecordingSource source;
   final String? deviceId; // Omi device ID if from device
@@ -91,6 +92,7 @@ class Recording {
     required this.tags,
     required this.transcript,
     this.context = '', // Default to empty string
+    this.summary = '', // Default to empty string
     required this.fileSizeKB,
     this.source = RecordingSource.phone,
     this.deviceId,
@@ -123,6 +125,7 @@ class Recording {
     'tags': tags,
     'transcript': transcript,
     'context': context,
+    'summary': summary,
     'fileSizeKB': fileSizeKB,
     'source': source.toString(),
     'deviceId': deviceId,
@@ -143,6 +146,7 @@ class Recording {
     tags: (json['tags'] as List<dynamic>?)?.cast<String>() ?? [],
     transcript: json['transcript'] as String? ?? '',
     context: json['context'] as String? ?? '',
+    summary: json['summary'] as String? ?? '',
     fileSizeKB: (json['fileSizeKB'] as num?)?.toDouble() ?? 0.0,
     source: json['source'] != null
         ? RecordingSource.fromString(json['source'] as String)
@@ -204,6 +208,7 @@ class Recording {
     List<String>? tags,
     String? transcript,
     String? context,
+    String? summary,
     double? fileSizeKB,
     RecordingSource? source,
     String? deviceId,
@@ -222,6 +227,7 @@ class Recording {
       tags: tags ?? this.tags,
       transcript: transcript ?? this.transcript,
       context: context ?? this.context,
+      summary: summary ?? this.summary,
       fileSizeKB: fileSizeKB ?? this.fileSizeKB,
       source: source ?? this.source,
       deviceId: deviceId ?? this.deviceId,

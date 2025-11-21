@@ -33,6 +33,7 @@ class StorageService {
   static const String _titleGenerationModeKey = 'title_generation_mode';
   static const String _preferredGemmaModelKey = 'preferred_gemma_model';
   static const String _preferredSmolLMModelKey = 'preferred_smollm_model';
+  static const String _preferredOllamaModelKey = 'preferred_ollama_model';
   static const String _huggingfaceTokenKey = 'huggingface_token';
 
   final FileSystemService _fileSystem = FileSystemService();
@@ -385,6 +386,7 @@ class StorageService {
       String? title;
       String? liveTranscriptionStatusStr;
       String? contextFromFrontmatter;
+      String? summaryFromFrontmatter;
 
       final lines = content.split('\n');
       if (lines.isNotEmpty && lines[0] == '---') {
@@ -426,6 +428,21 @@ class StorageService {
                     .replaceAll('\\"', '"');
                 contextFromFrontmatter = unescapedContext;
               }
+              if (key == 'summary') {
+                // Unescape the summary value (remove quotes and unescape)
+                String unescapedSummary = value;
+                if (unescapedSummary.startsWith('"') &&
+                    unescapedSummary.endsWith('"')) {
+                  unescapedSummary = unescapedSummary.substring(
+                    1,
+                    unescapedSummary.length - 1,
+                  );
+                }
+                unescapedSummary = unescapedSummary
+                    .replaceAll('\\n', '\n')
+                    .replaceAll('\\"', '"');
+                summaryFromFrontmatter = unescapedSummary;
+              }
             }
           }
         }
@@ -434,8 +451,9 @@ class StorageService {
       // Extract transcript (skip frontmatter)
       String transcript = '';
 
-      // Context comes from frontmatter now
+      // Context and summary come from frontmatter now
       String context = contextFromFrontmatter ?? '';
+      String summary = summaryFromFrontmatter ?? '';
 
       if (lines.isNotEmpty && lines[0] == '---') {
         final endIndex = lines.indexOf('---', 1);
@@ -525,6 +543,7 @@ class StorageService {
         tags: [],
         transcript: transcript,
         context: context,
+        summary: summary,
         fileSizeKB: fileSizeKB,
         source: recordingSource,
         deviceId: recordingSource == RecordingSource.omiDevice
@@ -699,6 +718,15 @@ class StorageService {
           .replaceAll('"', '\\"')
           .replaceAll('\n', '\\n');
       buffer.writeln('context: "$escapedContext"');
+    }
+
+    // Summary in frontmatter (if provided)
+    if (recording.summary.isNotEmpty) {
+      // Escape quotes and newlines for YAML
+      final escapedSummary = recording.summary
+          .replaceAll('"', '\\"')
+          .replaceAll('\n', '\\n');
+      buffer.writeln('summary: "$escapedSummary"');
     }
 
     if (recording.tags.isNotEmpty) {
@@ -1160,6 +1188,30 @@ class StorageService {
       return await prefs.setString(_preferredGemmaModelKey, modelName);
     } catch (e) {
       debugPrint('Error setting preferred Gemma model: $e');
+      return false;
+    }
+  }
+
+  // Ollama Configuration (for desktop platforms)
+
+  /// Get preferred Ollama model
+  Future<String?> getOllamaModel() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_preferredOllamaModelKey) ?? 'gemma2:2b';
+    } catch (e) {
+      debugPrint('Error getting preferred Ollama model: $e');
+      return 'gemma2:2b'; // Default model
+    }
+  }
+
+  /// Set preferred Ollama model
+  Future<bool> setOllamaModel(String modelName) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return await prefs.setString(_preferredOllamaModelKey, modelName);
+    } catch (e) {
+      debugPrint('Error setting preferred Ollama model: $e');
       return false;
     }
   }

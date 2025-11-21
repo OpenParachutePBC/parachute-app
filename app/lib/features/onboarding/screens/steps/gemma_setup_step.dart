@@ -25,61 +25,11 @@ class _GemmaSetupStepState extends ConsumerState<GemmaSetupStep> {
   TitleModelMode _selectedMode = TitleModelMode.local;
   GemmaModelType? _recommendedModel = GemmaModelType.gemma1b;
   bool _hasDownloadedModel = false;
-  bool _hasHuggingFaceToken = false;
-  final TextEditingController _tokenController = TextEditingController();
-  bool _obscureToken = true;
 
   @override
   void initState() {
     super.initState();
     _checkExistingModels();
-    _loadHuggingFaceToken();
-  }
-
-  Future<void> _loadHuggingFaceToken() async {
-    final storage = ref.read(storageServiceProvider);
-    final token = await storage.getHuggingFaceToken();
-    if (token != null && token.isNotEmpty && mounted) {
-      setState(() {
-        _hasHuggingFaceToken = true;
-        _tokenController.text = token;
-      });
-    }
-  }
-
-  Future<void> _saveHuggingFaceToken() async {
-    final token = _tokenController.text.trim();
-    if (token.isEmpty) return;
-
-    final storage = ref.read(storageServiceProvider);
-    final success = await storage.saveHuggingFaceToken(token);
-
-    if (mounted) {
-      if (success) {
-        setState(() => _hasHuggingFaceToken = true);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('HuggingFace token saved!'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 2),
-          ),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to save token'),
-            backgroundColor: Colors.red,
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    _tokenController.dispose();
-    super.dispose();
   }
 
   Future<void> _checkExistingModels() async {
@@ -191,136 +141,12 @@ class _GemmaSetupStepState extends ConsumerState<GemmaSetupStep> {
                           const SizedBox(width: 12),
                           Expanded(
                             child: Text(
-                              'Download a Gemma model for AI-powered title generation. Gemma 1B is fastest.',
+                              'Download a Gemma model for AI-powered title generation. Downloads directly - no account needed!',
                               style: TextStyle(
                                 fontSize: 13,
                                 color: Colors.blue[900],
                               ),
                             ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    // HuggingFace Token Input
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: _hasHuggingFaceToken
-                            ? Colors.green.withValues(alpha: 0.1)
-                            : Colors.orange.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: _hasHuggingFaceToken
-                              ? Colors.green
-                              : Colors.orange,
-                          width: 1,
-                        ),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(
-                                _hasHuggingFaceToken
-                                    ? Icons.check_circle
-                                    : Icons.key,
-                                color: _hasHuggingFaceToken
-                                    ? Colors.green[700]
-                                    : Colors.orange[700],
-                                size: 20,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                'HuggingFace Token',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: _hasHuggingFaceToken
-                                      ? Colors.green[900]
-                                      : Colors.orange[900],
-                                ),
-                              ),
-                              if (_hasHuggingFaceToken) ...[
-                                const SizedBox(width: 8),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 6,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.green,
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: const Text(
-                                    'READY',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Gemma models require a free HuggingFace token. '
-                            'Get yours at huggingface.co/settings/tokens',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: _hasHuggingFaceToken
-                                  ? Colors.green[900]
-                                  : Colors.orange[900],
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: TextField(
-                                  controller: _tokenController,
-                                  obscureText: _obscureToken,
-                                  decoration: InputDecoration(
-                                    hintText: 'hf_...',
-                                    border: const OutlineInputBorder(),
-                                    contentPadding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                      vertical: 8,
-                                    ),
-                                    suffixIcon: IconButton(
-                                      icon: Icon(
-                                        _obscureToken
-                                            ? Icons.visibility
-                                            : Icons.visibility_off,
-                                        size: 18,
-                                      ),
-                                      onPressed: () {
-                                        setState(
-                                          () => _obscureToken = !_obscureToken,
-                                        );
-                                      },
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              ElevatedButton.icon(
-                                onPressed: _saveHuggingFaceToken,
-                                icon: const Icon(Icons.save, size: 16),
-                                label: const Text('Save'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.green,
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 12,
-                                  ),
-                                ),
-                              ),
-                            ],
                           ),
                         ],
                       ),
