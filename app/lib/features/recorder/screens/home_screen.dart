@@ -33,10 +33,36 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     WidgetsBinding.instance.addObserver(this);
     _loadRecordings();
 
+    // Start filesystem watcher for external changes
+    _startFilesystemWatcher();
+
     // Auto-reconnect to Omi device if supported on this platform AND enabled
     if (PlatformUtils.shouldShowOmiFeatures) {
       _attemptAutoReconnectIfEnabled();
     }
+  }
+
+  /// Start watching the filesystem for external changes
+  Future<void> _startFilesystemWatcher() async {
+    final storageService = ref.read(storageServiceProvider);
+    await storageService.startWatchingFilesystem(
+      onChange: () {
+        if (mounted) {
+          debugPrint(
+            '[HomeScreen] External filesystem change detected, refreshing...',
+          );
+          _refreshRecordings();
+        }
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    // Stop filesystem watcher
+    ref.read(storageServiceProvider).stopWatchingFilesystem();
+    super.dispose();
   }
 
   /// Check if Omi is enabled before attempting auto-reconnect
@@ -92,12 +118,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    super.dispose();
-  }
-
-  @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _refreshRecordings();
@@ -127,7 +147,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     }
   }
 
-  void _refreshRecordings() {
+  void _refreshRecordings({bool forceRefresh = false}) {
+    if (forceRefresh) {
+      // Invalidate cache to force reload from filesystem
+      ref.read(storageServiceProvider).forceRefresh();
+    }
     setState(() {
       _isLoading = true;
     });
@@ -196,6 +220,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         title: const Text('Notes'),
         elevation: 0,
         actions: [
+          // Refresh button
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _isLoading
+                ? null
+                : () => _refreshRecordings(forceRefresh: true),
+            tooltip: 'Refresh from filesystem',
+          ),
           // View toggle (grid/list)
           IconButton(
             icon: Icon(_isGridView ? Icons.view_list : Icons.grid_view),

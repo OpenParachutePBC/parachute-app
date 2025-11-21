@@ -103,6 +103,17 @@ class ParakeetBridge {
         ])
     }
 
+    /// Check if models are already downloaded (without initializing)
+    func areModelsDownloaded(result: FlutterResult) {
+        // Check if model files exist on disk
+        let fileManager = FileManager.default
+        let supportDir = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        let modelPath = supportDir?.appendingPathComponent("FluidAudio/Models/parakeet-tdt-0.6b-v3-coreml")
+
+        let modelsExist = modelPath.flatMap { fileManager.fileExists(atPath: $0.path) } ?? false
+        result(["downloaded": modelsExist])
+    }
+
     // MARK: - Speaker Diarization
 
     /// Initialize speaker diarization models

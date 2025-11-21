@@ -143,7 +143,26 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     try {
       if (Platform.isIOS || Platform.isMacOS) {
         final parakeetService = parakeet.ParakeetService();
-        _parakeetModelInfo = await parakeetService.getModelInfo();
+
+        // First check if models exist without initializing
+        final modelsDownloaded = await parakeetService.areModelsDownloaded();
+
+        if (modelsDownloaded) {
+          // Models exist, check if service is initialized
+          _parakeetModelInfo = await parakeetService.getModelInfo();
+
+          // If not initialized but models exist, show as ready
+          if (_parakeetModelInfo == null) {
+            _parakeetModelInfo = parakeet.ModelInfo(
+              version: 'v3',
+              languageCount: 25,
+              isInitialized: true, // Models are ready, just not initialized yet
+            );
+          }
+        } else {
+          // Models not downloaded yet
+          _parakeetModelInfo = null;
+        }
       } else if (Platform.isAndroid || Platform.isLinux || Platform.isWindows) {
         final sherpaService = sherpa.SherpaOnnxService();
         _parakeetModelInfo = await sherpaService.getModelInfo();

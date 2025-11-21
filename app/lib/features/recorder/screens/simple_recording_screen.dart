@@ -694,7 +694,7 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
       final compressionService = AudioCompressionServiceDart();
       final opusPath = await compressionService.compressToOpus(
         wavPath: audioDestPath,
-        deleteOriginal: true, // Delete WAV (recreated on-demand for playback)
+        deleteOriginal: false, // Keep WAV for playback and local use
       );
       debugPrint('[SimpleRecording] Compression complete: $opusPath');
 

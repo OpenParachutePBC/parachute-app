@@ -145,6 +145,19 @@ class ParakeetService {
     }
   }
 
+  /// Check if models are already downloaded (without initializing)
+  Future<bool> areModelsDownloaded() async {
+    if (!isSupported) return false;
+
+    try {
+      final result = await _channel.invokeMethod<Map>('areModelsDownloaded');
+      return result?['downloaded'] as bool? ?? false;
+    } catch (e) {
+      debugPrint('[ParakeetService] areModelsDownloaded failed: $e');
+      return false;
+    }
+  }
+
   // MARK: - Speaker Diarization
 
   /// Initialize speaker diarization models

@@ -391,8 +391,7 @@ class GitSyncNotifier extends StateNotifier<GitSyncState> {
 
           final opusPath = await _audioCompression.compressToOpus(
             wavPath: wavFile.path,
-            deleteOriginal:
-                true, // Delete WAV (recreated on-demand for playback)
+            deleteOriginal: false, // Keep WAV for playback and local use
           );
 
           // Update the corresponding markdown file to reference Opus instead of WAV

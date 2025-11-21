@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'dart:io';
+import 'dart:async';
 import 'package:app/features/recorder/models/recording.dart';
 import 'package:app/core/services/file_system_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -38,7 +39,88 @@ class StorageService {
   bool _isInitialized = false;
   Future<void>? _initializationFuture;
 
+  // Cache for recordings to avoid excessive disk reads
+  List<Recording>? _cachedRecordings;
+  DateTime? _cacheTimestamp;
+  static const Duration _cacheDuration = Duration(seconds: 2);
+
+  // Filesystem watcher for external changes
+  StreamSubscription<FileSystemEvent>? _fsWatcher;
+  void Function()? _onExternalChange;
+
   StorageService([this._ref]);
+
+  /// Invalidate the recordings cache
+  void _invalidateCache() {
+    _cachedRecordings = null;
+    _cacheTimestamp = null;
+  }
+
+  /// Force refresh recordings from filesystem (bypasses cache)
+  void forceRefresh() {
+    debugPrint('[StorageService] Force refresh requested, invalidating cache');
+    _invalidateCache();
+  }
+
+  /// Start watching the captures directory for external changes
+  ///
+  /// Call this to enable automatic refresh when files are modified externally
+  /// (e.g., by Obsidian, Logseq, or git pull)
+  Future<void> startWatchingFilesystem({void Function()? onChange}) async {
+    await initialize();
+    _onExternalChange = onChange;
+
+    try {
+      final capturesPath = await _fileSystem.getCapturesPath();
+      final capturesDir = Directory(capturesPath);
+
+      if (!await capturesDir.exists()) {
+        debugPrint(
+          '[StorageService] Captures dir does not exist, skipping watcher',
+        );
+        return;
+      }
+
+      // Cancel existing watcher if any
+      await _fsWatcher?.cancel();
+
+      // Start watching the directory
+      _fsWatcher = capturesDir
+          .watch(events: FileSystemEvent.all)
+          .listen(
+            (event) {
+              // Only react to markdown and audio files
+              final path = event.path;
+              if (path.endsWith('.md') ||
+                  path.endsWith('.opus') ||
+                  path.endsWith('.wav') ||
+                  path.endsWith('.json')) {
+                debugPrint(
+                  '[StorageService] External file change detected: ${p.basename(path)}',
+                );
+                _invalidateCache();
+                _onExternalChange?.call();
+              }
+            },
+            onError: (error) {
+              debugPrint('[StorageService] Filesystem watcher error: $error');
+            },
+          );
+
+      debugPrint('[StorageService] ✅ Filesystem watcher started');
+    } catch (e) {
+      debugPrint('[StorageService] Failed to start filesystem watcher: $e');
+      // Fail gracefully - filesystem watching is optional
+    }
+  }
+
+  /// Stop watching the filesystem
+  Future<void> stopWatchingFilesystem() async {
+    await _fsWatcher?.cancel();
+    _fsWatcher = null;
+    _onExternalChange = null;
+    debugPrint('[StorageService] Filesystem watcher stopped');
+  }
 
   /// Initialize the storage service and ensure sync folder is set up
   Future<void> initialize() async {
@@ -140,6 +222,17 @@ class StorageService {
   Future<List<Recording>> getRecordings({bool includeOrphaned = false}) async {
     await initialize();
 
+    // Check if cache is valid
+    if (_cachedRecordings != null && _cacheTimestamp != null) {
+      final cacheAge = DateTime.now().difference(_cacheTimestamp!);
+      if (cacheAge < _cacheDuration) {
+        debugPrint(
+          '[StorageService] Using cached recordings (${_cachedRecordings!.length} items, age: ${cacheAge.inMilliseconds}ms)',
+        );
+        return _cachedRecordings!;
+      }
+    }
+
     try {
       debugPrint(
         '[StorageService] Loading recordings from local filesystem...',
@@ -199,6 +292,10 @@ class StorageService {
 
       // Sort by timestamp (newest first)
       recordings.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+
+      // Update cache
+      _cachedRecordings = recordings;
+      _cacheTimestamp = DateTime.now();
 
       debugPrint(
         '[StorageService] Loaded ${recordings.length} recordings from filesystem',
@@ -501,6 +598,9 @@ class StorageService {
 
       debugPrint('[StorageService] ✅ Recording saved locally');
 
+      // Invalidate cache since we added a new recording
+      _invalidateCache();
+
       // Trigger Git sync if enabled (async, don't wait for it)
       debugPrint('[StorageService] 🔄 Attempting to trigger auto-sync...');
       _triggerAutoSync();
@@ -655,6 +755,9 @@ class StorageService {
       await mdFile.writeAsString(markdown);
       debugPrint('[StorageService] ✅ Updated markdown file: $mdPath');
 
+      // Invalidate cache since we modified a recording
+      _invalidateCache();
+
       // Trigger Git sync to commit the update
       debugPrint('[StorageService] 🔄 Triggering auto-sync after update...');
       _triggerAutoSync();
@@ -721,6 +824,9 @@ class StorageService {
         debugPrint(
           '[StorageService] ✅ Deleted $deletedCount file(s) for recording: $recordingId',
         );
+
+        // Invalidate cache since we deleted a recording
+        _invalidateCache();
 
         // Trigger Git sync to commit the deletion
         debugPrint(

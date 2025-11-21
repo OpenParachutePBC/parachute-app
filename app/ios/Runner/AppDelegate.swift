@@ -39,6 +39,9 @@ import FluidAudio
       case "getModelInfo":
         ParakeetBridge.shared.getModelInfo(result: result)
 
+      case "areModelsDownloaded":
+        ParakeetBridge.shared.areModelsDownloaded(result: result)
+
       // Speaker diarization methods
       case "initializeDiarizer":
         ParakeetBridge.shared.initializeDiarizer(result: result)
