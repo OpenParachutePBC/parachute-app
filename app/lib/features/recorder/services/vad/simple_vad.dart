@@ -1,5 +1,4 @@
 import 'dart:math';
-import 'package:flutter/foundation.dart';
 
 /// Configuration for Voice Activity Detection
 /// Ported from RichardTate: server/internal/transcription/vad.go

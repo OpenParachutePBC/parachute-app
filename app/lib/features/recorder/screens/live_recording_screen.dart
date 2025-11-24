@@ -2,8 +2,6 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:app/features/recorder/services/live_transcription_service_v2.dart'
-    as v2;
 import 'package:app/features/recorder/services/live_transcription_service_v3.dart'
     as v3;
 import 'package:app/features/recorder/providers/service_providers.dart';
@@ -11,7 +9,6 @@ import 'package:app/features/recorder/widgets/audio_debug_overlay.dart';
 import 'package:app/features/recorder/screens/recording_detail_screen.dart';
 import 'package:app/core/services/file_system_service.dart';
 import 'package:app/features/files/providers/local_file_browser_provider.dart';
-import 'package:app/core/providers/git_sync_provider.dart';
 import 'package:path/path.dart' as path;
 
 /// Live journaling screen with auto-pause transcription
@@ -48,7 +45,6 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
   Duration _recordingDuration = Duration.zero;
   Timer? _durationTimer;
   DateTime? _startTime;
-  int _wordCount = 0;
 
   // Segments (from transcription service)
   final List<v3.TranscriptionSegment> _segments = [];
@@ -163,11 +159,6 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
     if (_textController.text != completedText) {
       _textController.text = completedText;
     }
-
-    // Update word count
-    _wordCount = completedText.trim().isEmpty
-        ? 0
-        : completedText.trim().split(RegExp(r'\s+')).length;
   }
 
   void _scrollToBottom() {
@@ -338,162 +329,6 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
     } catch (e) {
       debugPrint('[LiveRecording] ❌ Error saving files: $e');
     }
-  }
-
-  // Old method - can be removed later
-  Future<void> _saveRecording(
-    String? audioPath, {
-    bool waitForTranscription = false,
-  }) async {
-    try {
-      // Get file system service
-      final fileSystem = ref.read(fileSystemServiceProvider);
-
-      // Generate timestamp and filenames
-      final now = DateTime.now();
-      final timestamp = FileSystemService.formatTimestampForFilename(now);
-      final capturesPath = await fileSystem.getCapturesPath();
-
-      // Step 1: Save WAV file immediately
-      if (audioPath != null && await File(audioPath).exists()) {
-        final audioDestPath = path.join(capturesPath, '$timestamp.wav');
-        await File(audioPath).copy(audioDestPath);
-        debugPrint('[LiveRecording] ✅ WAV file saved: $audioDestPath');
-      }
-
-      // Step 2: Wait for transcription to complete BEFORE navigating (if needed)
-      if (waitForTranscription) {
-        debugPrint(
-          '[LiveRecording] ⏳ Waiting for transcription to complete...',
-        );
-
-        // Show progress snackbar
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Row(
-                children: [
-                  SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                    ),
-                  ),
-                  SizedBox(width: 12),
-                  Text('Finishing transcription...'),
-                ],
-              ),
-              duration: Duration(seconds: 30),
-            ),
-          );
-        }
-
-        // Wait for all transcriptions to finish
-        while (_transcriptionService!.isProcessing ||
-            _transcriptionService!.segments.any(
-              (s) =>
-                  s.status == v3.TranscriptionSegmentStatus.pending ||
-                  s.status == v3.TranscriptionSegmentStatus.processing,
-            )) {
-          await Future.delayed(const Duration(milliseconds: 500));
-        }
-
-        debugPrint(
-          '[LiveRecording] ✅ Transcription complete, saving markdown...',
-        );
-      }
-
-      // Step 3: Save markdown file with complete transcript
-      final fullTranscript = _transcriptionService!.getCombinedText();
-      final markdownPath = path.join(capturesPath, '$timestamp.md');
-      final markdownFile = File(markdownPath);
-
-      // Create metadata section
-      final metadata = StringBuffer();
-      metadata.writeln('---');
-      metadata.writeln('created: ${now.toIso8601String()}');
-      metadata.writeln('duration: $_formattedDuration');
-      metadata.writeln(
-        'words: ${fullTranscript.trim().isEmpty ? 0 : fullTranscript.trim().split(RegExp(r'\\s+')).length}',
-      );
-      metadata.writeln('source: live_recording');
-      metadata.writeln('---');
-      metadata.writeln();
-
-      // Write markdown file
-      await markdownFile.writeAsString('${metadata.toString()}$fullTranscript');
-      debugPrint('[LiveRecording] ✅ Markdown file saved: $markdownPath');
-
-      // Step 4: Trigger Git sync if enabled (async, don't wait for it)
-      debugPrint('[LiveRecording] 🔄 Attempting to trigger auto-sync...');
-      _triggerAutoSync();
-
-      // Step 5: Navigate away and show success
-      if (mounted) {
-        ScaffoldMessenger.of(context).clearSnackBars();
-        Navigator.of(context).pop();
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Note saved!\n$timestamp'),
-            duration: const Duration(seconds: 2),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-    } catch (e) {
-      debugPrint('[LiveRecording] ❌ Save error: $e');
-    }
-  }
-
-  /// Trigger Git sync in the background (don't block UI)
-  void _triggerAutoSync() {
-    debugPrint('[LiveRecording] 🔍 _triggerAutoSync called');
-
-    Future.delayed(Duration.zero, () async {
-      try {
-        debugPrint('[LiveRecording] 📡 Reading git sync state...');
-
-        final gitSync = ref.read(gitSyncProvider.notifier);
-        final gitSyncState = ref.read(gitSyncProvider);
-
-        debugPrint('[LiveRecording] Git sync state:');
-        debugPrint('  - isEnabled: ${gitSyncState.isEnabled}');
-        debugPrint('  - isSyncing: ${gitSyncState.isSyncing}');
-        debugPrint('  - hasRemote: ${gitSyncState.hasRemote}');
-        debugPrint('  - repositoryUrl: ${gitSyncState.repositoryUrl}');
-
-        if (!gitSyncState.isEnabled) {
-          debugPrint(
-            '[LiveRecording] ⚠️  Git sync is NOT enabled, skipping auto-sync',
-          );
-          return;
-        }
-
-        if (gitSyncState.isSyncing) {
-          debugPrint(
-            '[LiveRecording] ⚠️  Git sync already in progress, skipping',
-          );
-          return;
-        }
-
-        debugPrint(
-          '[LiveRecording] 🚀 Triggering auto-sync after recording save',
-        );
-        final success = await gitSync.sync();
-
-        if (success) {
-          debugPrint('[LiveRecording] ✅ Auto-sync completed successfully');
-        } else {
-          debugPrint('[LiveRecording] ❌ Auto-sync failed');
-        }
-      } catch (e, stackTrace) {
-        debugPrint('[LiveRecording] ❌ Auto-sync error: $e');
-        debugPrint('[LiveRecording] Stack trace: $stackTrace');
-      }
-    });
   }
 
   void _startDurationTimer() {
@@ -1136,7 +971,7 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
                   onChanged: (value) {
                     setState(() => _enableDiarization = value);
                   },
-                  activeColor: Theme.of(context).colorScheme.primary,
+                  activeTrackColor: Theme.of(context).colorScheme.primary,
                 ),
               ],
             ),

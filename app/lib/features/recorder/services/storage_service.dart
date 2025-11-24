@@ -4,7 +4,6 @@ import 'dart:async';
 import 'package:app/features/recorder/models/recording.dart';
 import 'package:app/core/services/file_system_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path/path.dart' as p;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:app/core/providers/git_sync_provider.dart';
@@ -20,7 +19,6 @@ import 'package:just_audio/just_audio.dart';
 /// Git sync handles multi-device synchronization
 class StorageService {
   final Ref? _ref; // Optional ref for accessing providers (like Git sync)
-  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
 
   static const String _hasInitializedKey = 'has_initialized';
   static const String _openaiApiKeyKey = 'openai_api_key';
@@ -159,30 +157,6 @@ class StorageService {
       timestamp,
     );
     return '$capturesPath/$timestampStr.opus';
-  }
-
-  /// Get the path for a recording's metadata markdown file (transcript)
-  Future<String> _getMetadataPath(
-    String recordingId,
-    DateTime timestamp,
-  ) async {
-    final capturesPath = await _fileSystem.getCapturesPath();
-    final timestampStr = FileSystemService.formatTimestampForFilename(
-      timestamp,
-    );
-    return '$capturesPath/$timestampStr.md';
-  }
-
-  /// Get the path for a recording's JSON metadata file
-  Future<String> _getJsonMetadataPath(
-    String recordingId,
-    DateTime timestamp,
-  ) async {
-    final capturesPath = await _fileSystem.getCapturesPath();
-    final timestampStr = FileSystemService.formatTimestampForFilename(
-      timestamp,
-    );
-    return '$capturesPath/$timestampStr.json';
   }
 
   /// Load all recordings from local filesystem (LOCAL-FIRST)
@@ -603,7 +577,8 @@ class StorageService {
   void _triggerAutoSync() {
     debugPrint('[StorageService] 🔍 _triggerAutoSync called');
 
-    if (_ref == null) {
+    final ref = _ref;
+    if (ref == null) {
       debugPrint('[StorageService] ❌ No ref available for auto-sync');
       return;
     }
@@ -618,8 +593,8 @@ class StorageService {
           '[StorageService] 📡 Inside Future.delayed, reading git sync state...',
         );
 
-        final gitSync = _ref!.read(gitSyncProvider.notifier);
-        final gitSyncState = _ref!.read(gitSyncProvider);
+        final gitSync = ref.read(gitSyncProvider.notifier);
+        final gitSyncState = ref.read(gitSyncProvider);
 
         debugPrint('[StorageService] Git sync state:');
         debugPrint('  - isEnabled: ${gitSyncState.isEnabled}');

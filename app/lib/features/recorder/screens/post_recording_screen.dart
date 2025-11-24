@@ -150,22 +150,6 @@ class _PostRecordingScreenState extends ConsumerState<PostRecordingScreen> {
     }
   }
 
-  Future<void> _checkAutoTranscribe() async {
-    final storageService = ref.read(storageServiceProvider);
-    final autoTranscribe = await storageService.getAutoTranscribe();
-
-    // If auto-transcribe is enabled and no transcript exists, start transcription
-    if (autoTranscribe &&
-        (widget.initialTranscript == null ||
-            widget.initialTranscript!.isEmpty)) {
-      // Delay slightly to let the UI render first
-      await Future.delayed(const Duration(milliseconds: 500));
-      if (mounted) {
-        _transcribeRecording();
-      }
-    }
-  }
-
   Future<void> _togglePlayback() async {
     if (_isPlaying) {
       await ref.read(audioServiceProvider).stopPlayback();
@@ -286,7 +270,7 @@ class _PostRecordingScreenState extends ConsumerState<PostRecordingScreen> {
     final transcriptionService = ref.read(transcriptionServiceAdapterProvider);
 
     // Transcribe with progress updates using Parakeet
-    return await transcriptionService.transcribeAudio(
+    final result = await transcriptionService.transcribeAudio(
       widget.recordingPath,
       language: 'auto',
       onProgress: (progress) {
@@ -298,6 +282,7 @@ class _PostRecordingScreenState extends ConsumerState<PostRecordingScreen> {
         }
       },
     );
+    return result.text;
   }
 
   Future<void> _saveRecording() async {
@@ -310,9 +295,6 @@ class _PostRecordingScreenState extends ConsumerState<PostRecordingScreen> {
           .read(audioServiceProvider)
           .getFileSizeKB(widget.recordingPath);
 
-      // Extract recording ID from the file path
-      // Path format: /path/to/2025-10-06-1759784172526.m4a
-      final fileName = widget.recordingPath.split('/').last;
       // Create temporary recording with placeholder ID
       final tempId = 'temp-${DateTime.now().millisecondsSinceEpoch}';
 

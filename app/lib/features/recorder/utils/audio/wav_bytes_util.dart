@@ -1,4 +1,3 @@
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:opus_dart/opus_dart.dart';
 import 'package:app/features/recorder/services/omi/models.dart';

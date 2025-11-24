@@ -2,7 +2,6 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:opus_dart/opus_dart.dart';
-import 'package:path/path.dart' as p;
 
 /// Pure Dart audio compression service using opus_dart
 ///

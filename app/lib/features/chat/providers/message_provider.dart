@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/models/message.dart';
 import '../../../core/providers/api_provider.dart';
-import '../../conversations/providers/conversation_provider.dart';
 
 // Tool Call State
 class ToolCallState {
@@ -101,7 +100,7 @@ class MessageNotifier extends StateNotifier<AsyncValue<MessageState>> {
       if (type == 'message_chunk') {
         final chunk = payload?['chunk'] as String?;
         print(
-          '   💬 Message chunk: ${chunk?.substring(0, chunk!.length > 50 ? 50 : chunk.length)}...',
+          '   💬 Message chunk: ${chunk?.substring(0, chunk.length > 50 ? 50 : chunk.length)}...',
         );
         if (chunk != null) {
           addStreamingChunk(chunk);

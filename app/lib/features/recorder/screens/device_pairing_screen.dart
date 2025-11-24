@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:app/features/recorder/models/omi_device.dart';
 import 'package:app/features/recorder/providers/omi_providers.dart';
-import 'package:app/features/recorder/providers/service_providers.dart';
 import 'package:app/features/recorder/services/omi/models.dart';
 import 'package:app/features/recorder/utils/platform_utils.dart';
 

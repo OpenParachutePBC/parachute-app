@@ -275,8 +275,8 @@ class GitService {
   /// Check if repository has any commits
   Future<bool> hasCommits({required Repository repo}) async {
     try {
-      // Try to get HEAD reference
-      final head = repo.head;
+      // Try to get HEAD reference - if it exists, there are commits
+      repo.head;
       debugPrint('[GitService] Repository has commits');
       return true;
     } catch (e) {

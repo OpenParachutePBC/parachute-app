@@ -57,7 +57,7 @@ class SpaceListScreen extends ConsumerWidget {
                     decoration: BoxDecoration(
                       color: Theme.of(
                         context,
-                      ).colorScheme.primaryContainer.withOpacity(0.3),
+                      ).colorScheme.primaryContainer.withValues(alpha: 0.3),
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
@@ -78,7 +78,7 @@ class SpaceListScreen extends ConsumerWidget {
                       fontSize: 16,
                       color: Theme.of(
                         context,
-                      ).colorScheme.onSurface.withOpacity(0.6),
+                      ).colorScheme.onSurface.withValues(alpha: 0.6),
                     ),
                   ),
                   const SizedBox(height: 32),
@@ -135,7 +135,7 @@ class SpaceListScreen extends ConsumerWidget {
                               ? Theme.of(context).colorScheme.primary
                               : Theme.of(
                                   context,
-                                ).colorScheme.outline.withOpacity(0.2),
+                                ).colorScheme.outline.withValues(alpha: 0.2),
                           width: isSelected ? 2 : 1,
                         ),
                       ),
@@ -153,10 +153,10 @@ class SpaceListScreen extends ConsumerWidget {
                                           ? Theme.of(context)
                                                 .colorScheme
                                                 .primary
-                                                .withOpacity(0.15)
+                                                .withValues(alpha: 0.15)
                                           : Theme.of(
                                               context,
-                                            ).colorScheme.surfaceVariant),
+                                            ).colorScheme.surfaceContainerHighest),
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: Center(
@@ -214,7 +214,7 @@ class SpaceListScreen extends ConsumerWidget {
                                                   : Theme.of(
                                                       context,
                                                     ).colorScheme.onSurface)
-                                              .withOpacity(0.7),
+                                              .withValues(alpha: 0.7),
                                     ),
                                   ),
                                 ],

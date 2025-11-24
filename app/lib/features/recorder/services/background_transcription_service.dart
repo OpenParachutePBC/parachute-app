@@ -12,7 +12,6 @@ class BackgroundTranscriptionService {
   StreamSubscription? _subscription;
   AutoPauseTranscriptionService? _activeService;
   String? _timestamp;
-  String? _audioPath;
   Duration? _duration;
   String? _capturesPath;
 
@@ -38,7 +37,7 @@ class BackgroundTranscriptionService {
 
     _activeService = service;
     _timestamp = timestamp;
-    _audioPath = audioPath;
+    // audioPath is passed but not needed after monitoring starts
     _duration = duration;
     _capturesPath = capturesPath;
 
@@ -226,7 +225,6 @@ class BackgroundTranscriptionService {
     _subscription = null;
     _activeService = null;
     _timestamp = null;
-    _audioPath = null;
     _duration = null;
     _capturesPath = null;
     _segmentListeners.clear();

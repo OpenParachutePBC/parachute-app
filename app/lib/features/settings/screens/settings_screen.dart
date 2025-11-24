@@ -18,7 +18,6 @@ import 'package:app/features/recorder/utils/platform_utils.dart';
 import 'package:app/features/settings/widgets/git_sync_settings_card.dart';
 import 'package:app/services/parakeet_service.dart' as parakeet;
 import 'package:app/services/sherpa_onnx_service.dart' as sherpa;
-import 'dart:io';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -29,14 +28,10 @@ class SettingsScreen extends ConsumerStatefulWidget {
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   final TextEditingController _geminiApiKeyController = TextEditingController();
-  final TextEditingController _huggingFaceTokenController =
-      TextEditingController();
   bool _isLoading = true;
   bool _isSaving = false;
   bool _obscureGeminiApiKey = true;
-  bool _obscureHuggingFaceToken = true;
   bool _hasGeminiApiKey = false;
-  bool _hasHuggingFaceToken = false;
   String _syncFolderPath = '';
 
   // Transcription settings (Parakeet)
@@ -84,7 +79,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   @override
   void dispose() {
     _geminiApiKeyController.dispose();
-    _huggingFaceTokenController.dispose();
     _aiServerUrlController.dispose();
     super.dispose();
   }
@@ -99,13 +93,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     if (geminiApiKey != null && geminiApiKey.isNotEmpty) {
       _geminiApiKeyController.text = geminiApiKey;
       _hasGeminiApiKey = true;
-    }
-
-    // Load HuggingFace token
-    final huggingFaceToken = await storageService.getHuggingFaceToken();
-    if (huggingFaceToken != null && huggingFaceToken.isNotEmpty) {
-      _huggingFaceTokenController.text = huggingFaceToken;
-      _hasHuggingFaceToken = true;
     }
 
     // Load Parachute folder path and subfolder names
@@ -389,83 +376,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Gemini API key deleted')),
-          );
-        }
-      }
-    }
-  }
-
-  Future<void> _saveHuggingFaceToken() async {
-    final token = _huggingFaceTokenController.text.trim();
-
-    if (token.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter a HuggingFace token'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-
-    setState(() => _isSaving = true);
-
-    try {
-      final success = await ref
-          .read(storageServiceProvider)
-          .saveHuggingFaceToken(token);
-
-      if (success) {
-        setState(() => _hasHuggingFaceToken = true);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('HuggingFace token saved successfully!'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isSaving = false);
-      }
-    }
-  }
-
-  Future<void> _deleteHuggingFaceToken() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete HuggingFace Token?'),
-        content: const Text(
-          'Are you sure you want to remove your HuggingFace token? '
-          'You will not be able to download Gemma models until you add a new token.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true) {
-      final success = await ref
-          .read(storageServiceProvider)
-          .deleteHuggingFaceToken();
-      if (success) {
-        _huggingFaceTokenController.clear();
-        setState(() => _hasHuggingFaceToken = false);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('HuggingFace token deleted')),
           );
         }
       }
@@ -1577,7 +1487,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           Switch(
                             value: _omiEnabled,
                             onChanged: _setOmiEnabled,
-                            activeColor: Colors.blue,
+                            activeTrackColor: Colors.blue,
                           ),
                         ],
                       ),
@@ -1651,7 +1561,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             Switch(
                               value: _aiChatEnabled,
                               onChanged: _setAiChatEnabled,
-                              activeColor: Colors.purple,
+                              activeTrackColor: Colors.purple,
                             ),
                           ],
                         ),
@@ -2682,7 +2592,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             Switch(
                               value: _crashReportingEnabled,
                               onChanged: _setCrashReportingEnabled,
-                              activeColor: Colors.green,
+                              activeTrackColor: Colors.green,
                             ),
                           ],
                         ),

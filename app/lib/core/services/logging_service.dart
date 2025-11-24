@@ -315,12 +315,12 @@ class LoggingService {
         withScope: (scope) {
           if (tag != null) scope.setTag('source', tag);
           if (extras != null) {
-            extras.forEach((key, value) => scope.setExtra(key, value));
+            extras.forEach((key, value) => scope.setContexts(key, value));
           }
           // Attach recent logs
-          scope.setExtra(
+          scope.setContexts(
             'recent_logs',
-            _buffer.take(50).map((e) => e.formatted).toList(),
+            {'logs': _buffer.take(50).map((e) => e.formatted).toList()},
           );
         },
       );

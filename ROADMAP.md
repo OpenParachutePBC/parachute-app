@@ -493,7 +493,7 @@ Have an idea for Parachute? Here's how to propose it:
 - [docs/features/space-sqlite-knowledge-system.md](docs/features/space-sqlite-knowledge-system.md) - Current feature in development
 - [ARCHITECTURE.md](ARCHITECTURE.md) - System design and technical decisions
 - [CLAUDE.md](CLAUDE.md) - Developer guidance for working with this codebase
-- [docs/merger-plan.md](docs/merger-plan.md) - Historical: How we merged recorder into main app
+- [docs/archive/merger-plan.md](docs/archive/merger-plan.md) - Historical: How we merged recorder into main app
 
 ---
 

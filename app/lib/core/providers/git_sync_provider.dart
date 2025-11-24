@@ -389,7 +389,7 @@ class GitSyncNotifier extends StateNotifier<GitSyncState> {
           final wavBasename = p.basename(wavFile.path);
           debugPrint('[GitSync] Converting: $wavBasename');
 
-          final opusPath = await _audioCompression.compressToOpus(
+          await _audioCompression.compressToOpus(
             wavPath: wavFile.path,
             deleteOriginal: false, // Keep WAV for playback and local use
           );
@@ -400,15 +400,10 @@ class GitSyncNotifier extends StateNotifier<GitSyncState> {
           final mdFile = File(mdPath);
 
           if (await mdFile.exists()) {
-            try {
-              final content = await mdFile.readAsString();
-              // Note: The markdown files don't actually reference the audio file path
-              // They're just named with the same timestamp
-              // So no update needed to markdown content
-              debugPrint('[GitSync] Markdown file exists for $timestamp');
-            } catch (e) {
-              debugPrint('[GitSync] ⚠️  Error checking markdown file: $e');
-            }
+            // Note: The markdown files don't actually reference the audio file path
+            // They're just named with the same timestamp
+            // So no update needed to markdown content
+            debugPrint('[GitSync] Markdown file exists for $timestamp');
           }
 
           convertedCount++;

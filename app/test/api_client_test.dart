@@ -1,7 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http_mock_adapter/http_mock_adapter.dart';
 import 'package:dio/dio.dart';
-import 'package:app/core/services/api_client.dart';
 import 'package:app/core/models/space.dart';
 import 'package:app/core/models/conversation.dart';
 import 'package:app/core/models/message.dart';
@@ -9,14 +8,12 @@ import 'package:app/core/models/message.dart';
 void main() {
   late Dio dio;
   late DioAdapter dioAdapter;
-  late ApiClient apiClient;
 
   setUp(() {
     dio = Dio();
     dioAdapter = DioAdapter(dio: dio);
-    apiClient = ApiClient(baseUrl: 'http://localhost:8080');
-    // Replace the internal Dio instance with our mocked one
-    // This is a workaround since ApiClient creates its own Dio
+    // Note: ApiClient creates its own Dio instance, so mocking is limited
+    // These tests validate data structures and response parsing
   });
 
   group('Space API Tests', () {

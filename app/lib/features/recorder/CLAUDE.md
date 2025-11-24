@@ -200,7 +200,7 @@ flutter run -d macos
 
 **Project Documentation:**
 - Main `CLAUDE.md` - Project-wide context
-- `docs/merger-plan.md` - Integration roadmap
+- `docs/archive/merger-plan.md` - Historical: Integration roadmap (completed)
 
 **Recorder-Specific:**
 - `docs/recorder/` - Omi integration guides, testing procedures, dev notes

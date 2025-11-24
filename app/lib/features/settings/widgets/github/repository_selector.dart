@@ -124,9 +124,9 @@ class _RepositorySelectorState extends ConsumerState<RepositorySelector> {
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: Colors.blue.withOpacity(0.1),
+            color: Colors.blue.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.blue.withOpacity(0.3)),
+            border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
           ),
           child: Row(
             children: [
@@ -214,7 +214,7 @@ class _RepositorySelectorState extends ConsumerState<RepositorySelector> {
 
         return Card(
           margin: const EdgeInsets.only(bottom: 8),
-          color: isSelected ? Colors.blue.withOpacity(0.1) : null,
+          color: isSelected ? Colors.blue.withValues(alpha: 0.1) : null,
           child: ListTile(
             leading: Icon(
               repo.private ? Icons.lock_outline : Icons.public,

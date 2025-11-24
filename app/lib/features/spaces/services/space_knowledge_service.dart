@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:uuid/uuid.dart';
-import '../../../core/services/file_system_service.dart';
 
 /// Service for managing knowledge links between captures and spaces
 ///
@@ -15,14 +14,12 @@ import '../../../core/services/file_system_service.dart';
 /// Philosophy: Captures are canonical (in ~/Parachute/captures/), spaces
 /// just reference them with their own context and organization.
 class SpaceKnowledgeService {
-  final FileSystemService _fileSystemService;
   final Uuid _uuid = const Uuid();
 
   // In-memory cache of links per space (space_path -> List<LinkedCapture>)
   final Map<String, List<LinkedCapture>> _linkCache = {};
 
-  SpaceKnowledgeService({FileSystemService? fileSystemService})
-    : _fileSystemService = fileSystemService ?? FileSystemService();
+  SpaceKnowledgeService();
 
   /// Get the JSONL file path for a space
   String _getJsonlPath(String spacePath) {

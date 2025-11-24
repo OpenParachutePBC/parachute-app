@@ -164,7 +164,7 @@ class _NoteCard extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: Theme.of(
                       context,
-                    ).colorScheme.primaryContainer.withOpacity(0.3),
+                    ).colorScheme.primaryContainer.withValues(alpha: 0.3),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Column(
@@ -213,7 +213,7 @@ class _NoteCard extends StatelessWidget {
                           ),
                           backgroundColor: Theme.of(
                             context,
-                          ).colorScheme.secondaryContainer.withOpacity(0.5),
+                          ).colorScheme.secondaryContainer.withValues(alpha: 0.5),
                           padding: const EdgeInsets.symmetric(horizontal: 8),
                           materialTapTargetSize:
                               MaterialTapTargetSize.shrinkWrap,

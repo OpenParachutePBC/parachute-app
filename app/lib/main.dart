@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:ffi';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -11,13 +10,11 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:git2dart/git2dart.dart' as git2dart;
 import 'package:git2dart_binaries/git2dart_binaries.dart';
 import 'package:flutter_gemma/flutter_gemma.dart';
-import 'package:sentry_flutter/sentry_flutter.dart';
 import 'core/theme/app_theme.dart';
 import 'core/providers/feature_flags_provider.dart';
 import 'core/services/logging_service.dart';
 import 'features/spaces/screens/space_list_screen.dart';
 import 'features/recorder/screens/home_screen.dart' as recorder;
-import 'features/recorder/providers/service_providers.dart';
 import 'features/recorder/providers/model_download_provider.dart';
 import 'features/recorder/services/transcription_service_adapter.dart';
 import 'features/files/screens/file_browser_screen.dart';
@@ -37,8 +34,9 @@ void main() async {
     );
   }
 
-  // Initialize logging service with Sentry
-  final sentryDsn = dotenv.env['SENTRY_DSN'];
+  // Initialize logging service with Sentry (only in release mode)
+  // This keeps debug output clean and avoids Sentry SDK warnings during development
+  final sentryDsn = kReleaseMode ? dotenv.env['SENTRY_DSN'] : null;
   await logger.initialize(
     sentryDsn: sentryDsn,
     environment: kReleaseMode ? 'production' : 'development',
@@ -179,13 +177,13 @@ void main() async {
     return true; // Prevents error from propagating
   };
 
-  // Run app within error zone for additional safety
-  runZonedGuarded(() => runApp(const ProviderScope(child: ParachuteApp())), (
-    error,
-    stackTrace,
-  ) {
-    logger.captureException(error, stackTrace: stackTrace, tag: 'Zone');
-  });
+  // Run the app
+  // Note: runZonedGuarded removed to avoid zone mismatch with Flutter bindings
+  // Error handling is already comprehensive via:
+  // - Sentry SDK integration
+  // - FlutterError.onError
+  // - PlatformDispatcher.instance.onError
+  runApp(const ProviderScope(child: ParachuteApp()));
 }
 
 class ParachuteApp extends StatelessWidget {
@@ -231,19 +229,15 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
 
     TranscriptionServiceAdapter.setGlobalProgressCallbacks(
       onProgress: (progress) {
-        // Update UI with progress
-        downloadNotifier.updateProgress(
-          progress,
-          downloadNotifier.state.status,
-        );
+        // Update UI with progress - read current state to get status
+        final currentState = ref.read(modelDownloadProvider);
+        downloadNotifier.updateProgress(progress, currentState.status);
       },
       onStatus: (status) {
-        // Update UI with status
+        // Update UI with status - read current state to get progress
         debugPrint('[Main] $status');
-        downloadNotifier.updateProgress(
-          downloadNotifier.state.progress,
-          status,
-        );
+        final currentState = ref.read(modelDownloadProvider);
+        downloadNotifier.updateProgress(currentState.progress, status);
 
         // Start download indicator on first meaningful status
         if (status.contains('Downloading') || status.contains('Initializing')) {
@@ -295,7 +289,6 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
         final navItems = <BottomNavigationBarItem>[];
 
         int recorderIndex = 0;
-        int filesIndex = 1;
 
         // Add Spaces tab if enabled (local-first knowledge management)
         if (aiChatEnabled) {
@@ -309,7 +302,6 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
             ),
           );
           recorderIndex = 1;
-          filesIndex = 2;
         }
 
         // Always show Recorder tab (core feature)

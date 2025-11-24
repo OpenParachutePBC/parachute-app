@@ -88,7 +88,7 @@ class _SpaceDetailScreenState extends ConsumerState<SpaceDetailScreen> {
           data: (stats) {
             return Container(
               padding: const EdgeInsets.all(16),
-              color: Theme.of(context).colorScheme.surfaceVariant,
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
               child: Row(
                 children: [
                   Icon(
@@ -110,7 +110,7 @@ class _SpaceDetailScreenState extends ConsumerState<SpaceDetailScreen> {
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Theme.of(
                           context,
-                        ).colorScheme.onSurfaceVariant.withOpacity(0.7),
+                        ).colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
                       ),
                     ),
                   ],
@@ -260,7 +260,7 @@ class _SpaceDetailScreenState extends ConsumerState<SpaceDetailScreen> {
                       decoration: BoxDecoration(
                         color: Theme.of(
                           context,
-                        ).colorScheme.primaryContainer.withOpacity(0.3),
+                        ).colorScheme.primaryContainer.withValues(alpha: 0.3),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Row(
@@ -316,7 +316,7 @@ class _SpaceDetailScreenState extends ConsumerState<SpaceDetailScreen> {
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Theme.of(
                         context,
-                      ).colorScheme.onSurface.withOpacity(0.5),
+                      ).colorScheme.onSurface.withValues(alpha: 0.5),
                     ),
                   ),
                 ],
@@ -338,7 +338,7 @@ class _SpaceDetailScreenState extends ConsumerState<SpaceDetailScreen> {
             Icon(
               Icons.folder_open,
               size: 64,
-              color: Theme.of(context).colorScheme.primary.withOpacity(0.5),
+              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
             ),
             const SizedBox(height: 16),
             Text(
@@ -349,7 +349,7 @@ class _SpaceDetailScreenState extends ConsumerState<SpaceDetailScreen> {
             Text(
               'Record a voice note and link it to this space',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
               ),
               textAlign: TextAlign.center,
             ),

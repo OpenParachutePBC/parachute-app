@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:app/core/providers/feature_flags_provider.dart';
 
 class AdvancedFeaturesStep extends ConsumerWidget {
   final VoidCallback onComplete;

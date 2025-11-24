@@ -148,7 +148,7 @@ class ConversationListScreen extends ConsumerWidget {
                               ? Theme.of(context).colorScheme.primary
                               : Theme.of(
                                   context,
-                                ).colorScheme.outline.withOpacity(0.2),
+                                ).colorScheme.outline.withValues(alpha: 0.2),
                           width: isSelected ? 2 : 1,
                         ),
                       ),
@@ -162,10 +162,10 @@ class ConversationListScreen extends ConsumerWidget {
                                 color: isSelected
                                     ? Theme.of(
                                         context,
-                                      ).colorScheme.primary.withOpacity(0.15)
+                                      ).colorScheme.primary.withValues(alpha: 0.15)
                                     : Theme.of(
                                         context,
-                                      ).colorScheme.surfaceVariant,
+                                      ).colorScheme.surfaceContainerHighest,
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: Icon(
@@ -212,7 +212,7 @@ class ConversationListScreen extends ConsumerWidget {
                                                   : Theme.of(
                                                       context,
                                                     ).colorScheme.onSurface)
-                                              .withOpacity(0.7),
+                                              .withValues(alpha: 0.7),
                                     ),
                                   ),
                                 ],
@@ -222,7 +222,7 @@ class ConversationListScreen extends ConsumerWidget {
                               Icons.chevron_right,
                               color: Theme.of(
                                 context,
-                              ).colorScheme.onSurface.withOpacity(0.3),
+                              ).colorScheme.onSurface.withValues(alpha: 0.3),
                             ),
                           ],
                         ),

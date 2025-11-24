@@ -18,7 +18,6 @@ class FileSystemService {
   static const String _rootFolderPathKey = 'parachute_root_folder_path';
   static const String _capturesFolderNameKey = 'parachute_captures_folder_name';
   static const String _spacesFolderNameKey = 'parachute_spaces_folder_name';
-  static const String _hasInitializedKey = 'file_system_initialized';
 
   // Default subfolder names
   static const String _defaultCapturesFolderName = 'captures';

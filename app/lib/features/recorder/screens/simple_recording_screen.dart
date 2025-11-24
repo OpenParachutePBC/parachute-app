@@ -42,7 +42,6 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
   Duration _recordingDuration = Duration.zero;
   Timer? _durationTimer;
   DateTime? _startTime;
-  DateTime? _pauseTime;
 
   // Waveform state
   List<double> _waveformAmplitudes = List.filled(
@@ -103,7 +102,7 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
   void _startRecording() async {
     final audioService = ref.read(audioServiceProvider);
     try {
-      final success = await audioService.startRecording();
+      await audioService.startRecording();
       setState(() {
         _isRecording = true;
         _isPaused = false;
@@ -123,7 +122,6 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
       await audioService.pauseRecording();
       setState(() {
         _isPaused = true;
-        _pauseTime = DateTime.now();
       });
       _stopWaveformAnimation();
       _pulseController.stop();
@@ -310,11 +308,6 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), backgroundColor: Colors.red),
     );
-  }
-
-  String _formatTimestamp(DateTime dt) {
-    return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}_'
-        '${dt.hour.toString().padLeft(2, '0')}-${dt.minute.toString().padLeft(2, '0')}-${dt.second.toString().padLeft(2, '0')}';
   }
 
   String _formatDuration(Duration duration) {

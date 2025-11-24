@@ -3,7 +3,6 @@ import 'package:flutter/foundation.dart';
 import 'package:app/core/services/gemma_model_manager.dart';
 import 'package:app/core/services/ollama_cleanup_service.dart';
 import 'package:app/core/models/title_generation_models.dart';
-import 'package:flutter_gemma/flutter_gemma.dart';
 
 /// Service for cleaning up voice transcripts using local AI
 ///

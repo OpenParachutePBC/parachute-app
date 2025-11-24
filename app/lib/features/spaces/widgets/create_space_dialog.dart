@@ -116,7 +116,7 @@ class _CreateSpaceDialogState extends ConsumerState<CreateSpaceDialog> {
                         color: isSelected
                             ? Theme.of(
                                 context,
-                              ).colorScheme.primary.withOpacity(0.1)
+                              ).colorScheme.primary.withValues(alpha: 0.1)
                             : null,
                       ),
                       child: Center(
@@ -200,8 +200,9 @@ class _CreateSpaceDialogState extends ConsumerState<CreateSpaceDialog> {
       // Convert Color to hex string if selected
       String? colorHex;
       if (_selectedColor != null) {
+        // Use toARGB32 for explicit color value conversion
         colorHex =
-            '#${_selectedColor!.value.toRadixString(16).substring(2).toUpperCase()}';
+            '#${_selectedColor!.toARGB32().toRadixString(16).substring(2).toUpperCase()}';
       }
 
       await ref

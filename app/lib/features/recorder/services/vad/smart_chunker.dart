@@ -45,7 +45,6 @@ class SmartChunker {
   final SmartChunkerConfig config;
   final SimpleVAD _vad;
   final List<int> _buffer = [];
-  DateTime _startTime = DateTime.now();
   DateTime _lastChunk = DateTime.now();
   Duration _totalSpeech = Duration.zero;
 
@@ -58,11 +57,7 @@ class SmartChunker {
           energyThreshold: config.vadEnergyThreshold,
           silenceThresholdMs: config.silenceThreshold.inMilliseconds,
         ),
-      ) {
-    // Pre-allocate buffer capacity for max duration
-    final maxCapacity = config.sampleRate * config.maxChunkDuration.inSeconds;
-    // Note: Dart lists grow dynamically, but we can hint at expected size
-  }
+      );
 
   /// Process incoming audio samples
   ///
@@ -213,7 +208,6 @@ class SmartChunker {
   void reset() {
     _buffer.clear();
     _vad.reset();
-    _startTime = DateTime.now();
     _lastChunk = DateTime.now();
     _totalSpeech = Duration.zero;
   }

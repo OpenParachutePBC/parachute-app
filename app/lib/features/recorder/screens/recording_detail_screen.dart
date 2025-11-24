@@ -440,12 +440,6 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
     }
   }
 
-  String _formatDuration(Duration duration) {
-    final minutes = duration.inMinutes;
-    final seconds = duration.inSeconds % 60;
-    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
-  }
-
   // Periodic refresh removed - we now rely on event-driven callbacks from
   // BackgroundTranscriptionService (addSegmentListener, addCompletionListener)
   // This eliminates 60+ unnecessary filesystem reads during a 5-minute transcription
@@ -1406,10 +1400,10 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
               decoration: BoxDecoration(
                 color: Theme.of(
                   context,
-                ).colorScheme.primaryContainer.withOpacity(0.3),
+                ).colorScheme.primaryContainer.withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
-                  color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
                 ),
               ),
               child: Row(
@@ -2243,12 +2237,12 @@ class _CleanupPreviewDialog extends StatelessWidget {
                             decoration: BoxDecoration(
                               color: Theme.of(
                                 context,
-                              ).colorScheme.surface.withOpacity(0.5),
+                              ).colorScheme.surface.withValues(alpha: 0.5),
                               borderRadius: BorderRadius.circular(8),
                               border: Border.all(
                                 color: Theme.of(
                                   context,
-                                ).colorScheme.outline.withOpacity(0.3),
+                                ).colorScheme.outline.withValues(alpha: 0.3),
                               ),
                             ),
                             child: SingleChildScrollView(
@@ -2282,7 +2276,7 @@ class _CleanupPreviewDialog extends StatelessWidget {
                             decoration: BoxDecoration(
                               color: Theme.of(
                                 context,
-                              ).colorScheme.primaryContainer.withOpacity(0.3),
+                              ).colorScheme.primaryContainer.withValues(alpha: 0.3),
                               borderRadius: BorderRadius.circular(8),
                               border: Border.all(
                                 color: Theme.of(context).colorScheme.primary,

@@ -212,7 +212,7 @@ ls -la ~/Parachute/
 ### Feature Documentation
 
 - **[docs/features/space-sqlite-knowledge-system.md](docs/features/space-sqlite-knowledge-system.md)** - Current feature in development
-- **[docs/merger-plan.md](docs/merger-plan.md)** - COMPLETED: Recorder integration history
+- **[docs/archive/merger-plan.md](docs/archive/merger-plan.md)** - COMPLETED: Recorder integration history
 
 ### Development Guides
 

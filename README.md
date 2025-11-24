@@ -31,7 +31,7 @@ Capture thoughts and conversations effortlessly:
 - Local microphone recording
 - Omi device integration (Bluetooth pendant)
 - AI transcription (local Whisper models)
-- Gemma 2B model for intelligent title generation
+- Gemma models for intelligent title generation (3n, 3 1B, or 2B)
 - Recording management and playback
 - Transcript viewing and editing
 
@@ -112,16 +112,16 @@ The app includes three main features accessible via bottom navigation:
 
 - **[Architecture](ARCHITECTURE.md)** - System design and technical decisions
 - **[API Documentation](http://localhost:8080/api/docs)** - Interactive REST API documentation (Swagger UI)
-- **[Branding](docs/BRANDING.md)** - Brand identity and philosophy
-- **[Launch Guide](docs/LAUNCH-GUIDE.md)** - Comprehensive implementation guide
-- **[Setup Guide](docs/SETUP.md)** - Environment setup instructions
-- **[Development Workflow](docs/DEVELOPMENT-WORKFLOW.md)** - Day-to-day development
-- **[Roadmap](docs/ROADMAP.md)** - Implementation phases and progress
+- **[Branding](docs/project/branding.md)** - Brand identity and philosophy
+- **[Setup Guide](docs/setup/QUICKSTART.md)** - Environment setup instructions
+- **[Development Workflow](docs/development/workflow.md)** - Day-to-day development
+- **[Roadmap](ROADMAP.md)** - Implementation phases and progress
 
 ### Component Documentation
 
-- **Backend:** See `backend/CLAUDE.md` and `backend/dev-docs/`
-- **Frontend:** See `app/CLAUDE.md` and `app/dev-docs/`
+- **Backend:** See `backend/CLAUDE.md`
+- **Frontend:** See `app/CLAUDE.md`
+- **Recorder:** See `docs/recorder/` for Omi integration and testing guides
 
 ---
 
@@ -228,10 +228,10 @@ Parachute uses the following open models and technologies:
 
 Gemma models for on-device AI title generation are used under the [Gemma Terms of Use](https://ai.google.dev/gemma/terms).
 
-- **Model:** Gemma 3 1B Instruction-Tuned (INT4 quantized)
+- **Models Available:** Gemma 3n E4M3 (recommended, ~550MB), Gemma 3 1B IT, Gemma 2B IT
 - **Provider:** Google DeepMind
 - **License:** [Gemma Terms of Use](https://ai.google.dev/gemma/terms) (allows commercial use and redistribution)
-- **Source:** Originally from [litert-community/Gemma3-1B-IT](https://huggingface.co/litert-community/Gemma3-1B-IT)
+- **Recommended:** Gemma 3n - optimized for mobile devices with excellent performance/size ratio
 - **Hosting:** Hosted on Parachute CDN for easy download (no account required)
 
 **Citation:**

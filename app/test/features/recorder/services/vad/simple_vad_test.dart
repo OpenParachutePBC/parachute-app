@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:app/features/recorder/services/vad/simple_vad.dart';
-import 'dart:math';
 
 void main() {
   group('SimpleVAD', () {
