@@ -43,11 +43,14 @@ class StorageService {
   // Cache for recordings to avoid excessive disk reads
   List<Recording>? _cachedRecordings;
   DateTime? _cacheTimestamp;
-  static const Duration _cacheDuration = Duration(seconds: 2);
+  // Increased cache duration - filesystem reads are expensive
+  // Cache is invalidated explicitly when app makes changes
+  static const Duration _cacheDuration = Duration(seconds: 30);
 
-  // Filesystem watcher for external changes
-  StreamSubscription<FileSystemEvent>? _fsWatcher;
-  void Function()? _onExternalChange;
+  // Filesystem watcher removed - it was causing excessive refreshes
+  // The app now relies on explicit cache invalidation when it makes changes
+  // External changes (git pull, Obsidian) will be picked up on next app open
+  // or when user does pull-to-refresh
 
   StorageService([this._ref]);
 
@@ -63,64 +66,29 @@ class StorageService {
     _invalidateCache();
   }
 
-  /// Start watching the captures directory for external changes
-  ///
-  /// Call this to enable automatic refresh when files are modified externally
-  /// (e.g., by Obsidian, Logseq, or git pull)
+  /// @deprecated Filesystem watcher has been removed due to performance issues.
+  /// The app now relies on explicit cache invalidation and pull-to-refresh.
+  /// This method is kept for backwards compatibility but does nothing.
   Future<void> startWatchingFilesystem({void Function()? onChange}) async {
-    await initialize();
-    _onExternalChange = onChange;
-
-    try {
-      final capturesPath = await _fileSystem.getCapturesPath();
-      final capturesDir = Directory(capturesPath);
-
-      if (!await capturesDir.exists()) {
-        debugPrint(
-          '[StorageService] Captures dir does not exist, skipping watcher',
-        );
-        return;
-      }
-
-      // Cancel existing watcher if any
-      await _fsWatcher?.cancel();
-
-      // Start watching the directory
-      _fsWatcher = capturesDir
-          .watch(events: FileSystemEvent.all)
-          .listen(
-            (event) {
-              // Only react to markdown and audio files
-              final path = event.path;
-              if (path.endsWith('.md') ||
-                  path.endsWith('.opus') ||
-                  path.endsWith('.wav') ||
-                  path.endsWith('.json')) {
-                debugPrint(
-                  '[StorageService] External file change detected: ${p.basename(path)}',
-                );
-                _invalidateCache();
-                _onExternalChange?.call();
-              }
-            },
-            onError: (error) {
-              debugPrint('[StorageService] Filesystem watcher error: $error');
-            },
-          );
-
-      debugPrint('[StorageService] ✅ Filesystem watcher started');
-    } catch (e) {
-      debugPrint('[StorageService] Failed to start filesystem watcher: $e');
-      // Fail gracefully - filesystem watching is optional
-    }
+    // No-op: Filesystem watcher removed to prevent excessive refreshes
+    debugPrint(
+      '[StorageService] Filesystem watcher disabled (performance optimization)',
+    );
   }
 
-  /// Stop watching the filesystem
+  /// @deprecated Filesystem watcher has been removed.
   Future<void> stopWatchingFilesystem() async {
-    await _fsWatcher?.cancel();
-    _fsWatcher = null;
-    _onExternalChange = null;
-    debugPrint('[StorageService] Filesystem watcher stopped');
+    // No-op
+  }
+
+  /// @deprecated Filesystem watcher has been removed.
+  void setIgnoredRecordingPath(String? path) {
+    // No-op
+  }
+
+  /// @deprecated Filesystem watcher has been removed.
+  void clearIgnoredRecordingPath() {
+    // No-op
   }
 
   /// Initialize the storage service and ensure sync folder is set up

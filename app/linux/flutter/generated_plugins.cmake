@@ -7,6 +7,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   git2dart_binaries
   gtk
   record_linux
+  sentry_flutter
   url_launcher_linux
 )
 

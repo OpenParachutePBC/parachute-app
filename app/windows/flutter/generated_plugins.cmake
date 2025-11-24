@@ -8,6 +8,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   git2dart_binaries
   permission_handler_windows
   record_windows
+  sentry_flutter
   url_launcher_windows
 )
 

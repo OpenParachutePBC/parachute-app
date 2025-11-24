@@ -10,6 +10,7 @@ import 'package:app/core/providers/feature_flags_provider.dart';
 import 'package:app/core/providers/backend_health_provider.dart';
 import 'package:app/core/widgets/gemma_model_download_card.dart';
 import 'package:app/core/services/file_system_service.dart';
+import 'package:app/core/services/logging_service.dart';
 import 'package:app/features/recorder/providers/omi_providers.dart';
 import 'package:app/features/recorder/providers/service_providers.dart';
 import 'package:app/features/recorder/screens/device_pairing_screen.dart';
@@ -71,6 +72,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   final TextEditingController _spacesFolderNameController =
       TextEditingController();
 
+  // Crash reporting
+  bool _crashReportingEnabled = true;
+
   @override
   void initState() {
     super.initState();
@@ -119,6 +123,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _aiChatEnabled = await featureFlagsService.isAiChatEnabled();
     _aiServerUrl = await featureFlagsService.getAiServerUrl();
     _aiServerUrlController.text = _aiServerUrl;
+
+    // Load crash reporting setting
+    _crashReportingEnabled = logger.isCrashReportingEnabled;
 
     // Load transcription settings (Parakeet)
     await _loadTranscriptionSettings();
@@ -692,6 +699,44 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Future<void> _setAudioDebugOverlay(bool enabled) async {
     await ref.read(storageServiceProvider).setAudioDebugOverlay(enabled);
     setState(() => _audioDebugOverlay = enabled);
+  }
+
+  Future<void> _setCrashReportingEnabled(bool enabled) async {
+    await logger.setCrashReportingEnabled(enabled);
+    setState(() => _crashReportingEnabled = enabled);
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            enabled
+                ? 'Crash reporting enabled - helps improve Parachute!'
+                : 'Crash reporting disabled',
+          ),
+          backgroundColor: enabled ? Colors.green : Colors.orange,
+        ),
+      );
+    }
+  }
+
+  Future<void> _viewLogFiles() async {
+    final logPaths = await logger.getLogFilePaths();
+    if (logPaths.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('No log files found')));
+      }
+      return;
+    }
+
+    // Open the most recent log file location
+    final latestLog = logPaths.first;
+    final logDir = latestLog.substring(0, latestLog.lastIndexOf('/'));
+    final uri = Uri.file(logDir);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    }
   }
 
   Future<void> _refreshGemmaStorage() async {
@@ -2567,6 +2612,135 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     const Divider(),
                     const SizedBox(height: 32),
                   ],
+
+                  // === PRIVACY & DEBUGGING SECTION ===
+                  const Text(
+                    'Privacy & Debugging',
+                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Help improve Parachute by sharing crash reports',
+                    style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Crash Reporting Toggle
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: _crashReportingEnabled
+                          ? Colors.green.withValues(alpha: 0.1)
+                          : Colors.grey.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: _crashReportingEnabled
+                            ? Colors.green
+                            : Colors.grey,
+                        width: 2,
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              _crashReportingEnabled
+                                  ? Icons.bug_report
+                                  : Icons.bug_report_outlined,
+                              color: _crashReportingEnabled
+                                  ? Colors.green[700]
+                                  : Colors.grey[600],
+                              size: 32,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Crash Reporting',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    _crashReportingEnabled
+                                        ? 'Automatically send crash reports to help fix bugs'
+                                        : 'Crash reports are not sent',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Switch(
+                              value: _crashReportingEnabled,
+                              onChanged: _setCrashReportingEnabled,
+                              activeColor: Colors.green,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: Colors.blue.withValues(alpha: 0.3),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.privacy_tip_outlined,
+                                color: Colors.blue[700],
+                                size: 16,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Only crash data and logs are sent. No personal data, recordings, or transcripts are ever shared.',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.blue[900],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // View Logs Button (desktop only - mobile can't easily browse files)
+                  if (Platform.isMacOS ||
+                      Platform.isLinux ||
+                      Platform.isWindows) ...[
+                    OutlinedButton.icon(
+                      onPressed: _viewLogFiles,
+                      icon: const Icon(Icons.folder_open),
+                      label: const Text('View Local Log Files'),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size(double.infinity, 48),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Log files are stored locally and rotated automatically',
+                      style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                  const SizedBox(height: 32),
                 ],
               ),
       ),

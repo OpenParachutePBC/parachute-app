@@ -60,7 +60,7 @@ class RecordingDetailScreen extends ConsumerStatefulWidget {
 
 class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
   Recording? _recording; // Nullable now - might not exist yet if transcribing
-  Timer? _refreshTimer;
+  // _refreshTimer removed - using event-driven callbacks instead of polling
   StreamSubscription? _transcriptionSubscription;
   BackgroundTranscriptionService?
   _backgroundServiceRef; // Store reference for cleanup
@@ -126,7 +126,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
         backgroundService.addCompletionListener(_handleTranscriptionComplete);
       }
 
-      _startPeriodicRefresh();
+      // Periodic refresh removed - using event callbacks instead
     } else {
       // Mode 2: Viewing recording being transcribed
       _isTranscribing = widget.isTranscribing;
@@ -141,7 +141,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
 
   @override
   void dispose() {
-    _refreshTimer?.cancel();
+    // _refreshTimer removed
     _transcriptionSubscription?.cancel();
 
     // Remove listeners from background service using stored reference
@@ -446,42 +446,9 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
     return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
   }
 
-  void _startPeriodicRefresh() {
-    if (_recording == null) return; // Only for saved recordings
-
-    // Only refresh while processing is happening
-    _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
-      if (_recording == null) return;
-
-      final isProcessing =
-          _recording!.transcriptionStatus == ProcessingStatus.pending ||
-          _recording!.transcriptionStatus == ProcessingStatus.processing ||
-          _recording!.titleGenerationStatus == ProcessingStatus.pending ||
-          _recording!.titleGenerationStatus == ProcessingStatus.processing;
-
-      if (!isProcessing) {
-        _refreshTimer?.cancel();
-        return;
-      }
-
-      // Fetch updated recording from storage
-      final updated = await ref
-          .read(storageServiceProvider)
-          .getRecording(_recording!.id);
-      if (updated != null && mounted) {
-        setState(() {
-          _recording = updated;
-          // Update controllers if not currently editing
-          if (!_isTitleEditing) _titleController.text = _recording!.title;
-          if (!_isTranscriptEditing) {
-            _transcriptController.text = _recording!.transcript;
-          }
-          if (!_isContextEditing) _contextController.text = _recording!.context;
-          if (!_isSummaryEditing) _summaryController.text = _recording!.summary;
-        });
-      }
-    });
-  }
+  // Periodic refresh removed - we now rely on event-driven callbacks from
+  // BackgroundTranscriptionService (addSegmentListener, addCompletionListener)
+  // This eliminates 60+ unnecessary filesystem reads during a 5-minute transcription
 
   Future<void> _saveChanges() async {
     // For transcribing mode, save context to temporary state (will be included in final save)

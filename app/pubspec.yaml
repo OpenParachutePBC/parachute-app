@@ -87,6 +87,9 @@ dependencies:
   # OTA Firmware Updates
   nordic_dfu: ^6.1.4
 
+  # Crash Reporting & Logging
+  sentry_flutter: ^8.11.0
+
 dependency_overrides:
   git2dart_binaries:
     git:

@@ -3,7 +3,7 @@ import 'dart:ffi';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart' as flutter_blue_plus;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:opus_dart/opus_dart.dart' as opus_dart;
 import 'package:opus_flutter/opus_flutter.dart' as opus_flutter;
@@ -11,8 +11,10 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:git2dart/git2dart.dart' as git2dart;
 import 'package:git2dart_binaries/git2dart_binaries.dart';
 import 'package:flutter_gemma/flutter_gemma.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 import 'core/theme/app_theme.dart';
 import 'core/providers/feature_flags_provider.dart';
+import 'core/services/logging_service.dart';
 import 'features/spaces/screens/space_list_screen.dart';
 import 'features/recorder/screens/home_screen.dart' as recorder;
 import 'features/recorder/providers/service_providers.dart';
@@ -25,24 +27,6 @@ void main() async {
   // Ensure Flutter bindings are initialized
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize Git SSL certificates for Android
-  if (Platform.isAndroid) {
-    try {
-      debugPrint('[Main] Initializing Android SSL certificates for Git...');
-
-      // 1. Initialize libgit2 FIRST
-      final version = git2dart.Libgit2.version;
-      debugPrint('[Main] libgit2 version: $version');
-
-      // 2. NOW initialize SSL
-      final certPath = await AndroidSSLHelper.initialize();
-      git2dart.Libgit2.setSSLCertLocations(file: certPath);
-      debugPrint('[Main] ✅ Git SSL certificates configured: $certPath');
-    } catch (e) {
-      debugPrint('[Main] ❌ Failed to initialize Git SSL: $e');
-    }
-  }
-
   // Load environment variables from .env file (optional, fails silently if not found)
   try {
     await dotenv.load(fileName: '.env');
@@ -53,27 +37,65 @@ void main() async {
     );
   }
 
+  // Initialize logging service with Sentry
+  final sentryDsn = dotenv.env['SENTRY_DSN'];
+  await logger.initialize(
+    sentryDsn: sentryDsn,
+    environment: kReleaseMode ? 'production' : 'development',
+    release: 'parachute@1.0.0', // Update this with your version
+  );
+
+  // Initialize Git SSL certificates for Android
+  if (Platform.isAndroid) {
+    try {
+      logger.info('Main', 'Initializing Android SSL certificates for Git...');
+
+      // 1. Initialize libgit2 FIRST
+      final version = git2dart.Libgit2.version;
+      logger.info('Main', 'libgit2 version: $version');
+
+      // 2. NOW initialize SSL
+      final certPath = await AndroidSSLHelper.initialize();
+      git2dart.Libgit2.setSSLCertLocations(file: certPath);
+      logger.info('Main', 'Git SSL certificates configured: $certPath');
+    } catch (e, stackTrace) {
+      logger.error(
+        'Main',
+        'Failed to initialize Git SSL',
+        error: e,
+        stackTrace: stackTrace,
+      );
+    }
+  }
+
   // Disable verbose FlutterBluePlus logs (reduces spam from onCharacteristicChanged)
-  FlutterBluePlus.setLogLevel(LogLevel.none, color: false);
+  flutter_blue_plus.FlutterBluePlus.setLogLevel(
+    flutter_blue_plus.LogLevel.none,
+    color: false,
+  );
 
   // Initialize Flutter Gemma for on-device AI title generation
   try {
-    debugPrint('[Main] Initializing FlutterGemma...');
+    logger.info('Main', 'Initializing FlutterGemma...');
     await FlutterGemma.initialize();
-    debugPrint('[Main] ✅ FlutterGemma initialized successfully');
+    logger.info('Main', 'FlutterGemma initialized successfully');
   } catch (e, stackTrace) {
-    debugPrint('[Main] ❌ Failed to initialize FlutterGemma: $e');
-    debugPrint('[Main] Stack trace: $stackTrace');
+    logger.error(
+      'Main',
+      'Failed to initialize FlutterGemma',
+      error: e,
+      stackTrace: stackTrace,
+    );
     // Continue anyway - only affects title generation feature
   }
 
   // Initialize Opus codec for audio decoding (required for Omi device recordings)
   try {
-    debugPrint('[Main] Loading Opus library...');
+    logger.info('Main', 'Loading Opus library...');
 
     // opus_flutter doesn't support macOS, so we need to manually load the library
     if (Platform.isMacOS) {
-      debugPrint('[Main] Platform: macOS - loading Opus library manually');
+      logger.debug('Main', 'Platform: macOS - loading Opus library manually');
 
       // Try to load from bundled library first, then fall back to system paths
       final possiblePaths = [
@@ -84,12 +106,12 @@ void main() async {
       DynamicLibrary? loadedLib;
       for (final path in possiblePaths) {
         try {
-          debugPrint('[Main] Trying to load Opus from: $path');
+          logger.debug('Main', 'Trying to load Opus from: $path');
           loadedLib = DynamicLibrary.open(path);
-          debugPrint('[Main] ✅ Successfully loaded Opus from: $path');
+          logger.info('Main', 'Successfully loaded Opus from: $path');
           break;
         } catch (e) {
-          debugPrint('[Main] Failed to load from $path: $e');
+          logger.debug('Main', 'Failed to load from $path: $e');
         }
       }
 
@@ -99,59 +121,71 @@ void main() async {
         );
       }
 
-      debugPrint('[Main] Initializing Opus codec...');
+      logger.debug('Main', 'Initializing Opus codec...');
       // Cast to dynamic to work around static analysis issue with conditional exports
       opus_dart.initOpus(loadedLib as dynamic);
-      debugPrint('[Main] ✅ Opus codec initialized successfully');
+      logger.info('Main', 'Opus codec initialized successfully');
     } else {
       // Use opus_flutter for supported platforms (Android, iOS, Windows)
       final library = await opus_flutter.load();
-      debugPrint('[Main] Opus library loaded via opus_flutter: $library');
+      logger.debug('Main', 'Opus library loaded via opus_flutter: $library');
 
-      debugPrint('[Main] Initializing Opus codec...');
+      logger.debug('Main', 'Initializing Opus codec...');
       opus_dart.initOpus(library);
-      debugPrint('[Main] ✅ Opus codec initialized successfully');
+      logger.info('Main', 'Opus codec initialized successfully');
     }
 
     // Verify initialization by getting version
     try {
       final version = opus_dart.getOpusVersion();
-      debugPrint('[Main] Opus version: $version');
+      logger.debug('Main', 'Opus version: $version');
     } catch (e) {
-      debugPrint('[Main] ⚠️  Warning: Could not get Opus version: $e');
+      logger.warning('Main', 'Could not get Opus version', error: e);
     }
   } catch (e, stackTrace) {
-    debugPrint('[Main] ❌ Failed to initialize Opus codec: $e');
-    debugPrint('[Main] Stack trace: $stackTrace');
+    logger.error(
+      'Main',
+      'Failed to initialize Opus codec',
+      error: e,
+      stackTrace: stackTrace,
+    );
     // Continue anyway - only affects Omi device recordings with Opus codec
   }
 
-  // Set up global error handling
+  // Set up global error handling with Sentry integration
   FlutterError.onError = (FlutterErrorDetails details) {
     // Log the error
     FlutterError.presentError(details);
 
-    // In production, you could send to crash reporting service
-    if (kReleaseMode) {
-      // TODO: Send to crash reporting (Firebase Crashlytics, Sentry, etc.)
-      debugPrint('Error caught in release mode: ${details.exception}');
-    }
+    // Send to logging service (which sends to Sentry if enabled)
+    logger.captureException(
+      details.exception,
+      stackTrace: details.stack,
+      tag: 'FlutterError',
+      extras: {
+        'library': details.library ?? 'unknown',
+        'context': details.context?.toString() ?? 'unknown',
+      },
+    );
   };
 
   // Catch errors not caught by Flutter
   PlatformDispatcher.instance.onError = (error, stack) {
-    debugPrint('Uncaught error: $error');
-    debugPrint('Stack trace: $stack');
-
-    // In production, send to crash reporting
-    if (kReleaseMode) {
-      // TODO: Send to crash reporting
-    }
-
+    logger.captureException(
+      error,
+      stackTrace: stack,
+      tag: 'PlatformDispatcher',
+    );
     return true; // Prevents error from propagating
   };
 
-  runApp(const ProviderScope(child: ParachuteApp()));
+  // Run app within error zone for additional safety
+  runZonedGuarded(() => runApp(const ProviderScope(child: ParachuteApp())), (
+    error,
+    stackTrace,
+  ) {
+    logger.captureException(error, stackTrace: stackTrace, tag: 'Zone');
+  });
 }
 
 class ParachuteApp extends StatelessWidget {
