@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:app/features/recorder/repositories/recording_repository.dart';
 import 'package:app/features/recorder/services/audio_service.dart';
@@ -11,11 +12,18 @@ import 'package:app/features/recorder/services/recording_post_processing_service
 ///
 /// This manages audio recording and playback functionality.
 /// The service is initialized on first access and kept alive for the app lifetime.
+///
+/// IMPORTANT: The service initializes asynchronously. Callers should use
+/// `await audioService.ensureInitialized()` before using the service if they
+/// need to guarantee initialization is complete.
 final audioServiceProvider = Provider<AudioService>((ref) {
   final storageService = ref.watch(storageServiceProvider);
   final service = AudioService(storageService);
   // Initialize the service when first accessed
-  service.initialize();
+  // Note: This is async but we don't await - callers should use ensureInitialized() if needed
+  service.initialize().catchError((e) {
+    debugPrint('[AudioServiceProvider] Initialization error: $e');
+  });
 
   // Dispose when the provider is disposed
   ref.onDispose(() {
@@ -30,10 +38,17 @@ final audioServiceProvider = Provider<AudioService>((ref) {
 /// Local-first storage service for recording management.
 /// All recordings are stored in ~/Parachute/captures/ as .wav, .md, and .json files.
 /// Git sync handles multi-device synchronization.
+///
+/// IMPORTANT: The service initializes asynchronously. Callers should use
+/// `await storageService.ensureInitialized()` before using the service if they
+/// need to guarantee initialization is complete.
 final storageServiceProvider = Provider<StorageService>((ref) {
   final service = StorageService(ref);
   // Initialize the service when first accessed
-  service.initialize();
+  // Note: This is async but we don't await - callers should use ensureInitialized() if needed
+  service.initialize().catchError((e) {
+    debugPrint('[StorageServiceProvider] Initialization error: $e');
+  });
 
   return service;
 });
