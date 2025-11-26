@@ -110,10 +110,11 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
     super.dispose();
   }
 
-  void _startRecording() async {
+  Future<void> _startRecording() async {
     final audioService = ref.read(audioServiceProvider);
     try {
       await audioService.startRecording();
+      if (!mounted) return;
       setState(() {
         _isRecording = true;
         _isPaused = false;
@@ -123,39 +124,44 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
       _startWaveformAnimation();
       _pulseController.repeat(reverse: true); // Gentle fade in/out
     } catch (e) {
+      if (!mounted) return;
       _showError('Failed to start recording: $e');
     }
   }
 
-  void _pauseRecording() async {
+  Future<void> _pauseRecording() async {
     final audioService = ref.read(audioServiceProvider);
     try {
       await audioService.pauseRecording();
+      if (!mounted) return;
       setState(() {
         _isPaused = true;
       });
       _stopWaveformAnimation();
       _pulseController.stop();
     } catch (e) {
+      if (!mounted) return;
       _showError('Failed to pause recording: $e');
     }
   }
 
-  void _resumeRecording() async {
+  Future<void> _resumeRecording() async {
     final audioService = ref.read(audioServiceProvider);
     try {
       await audioService.resumeRecording();
+      if (!mounted) return;
       setState(() {
         _isPaused = false;
       });
       _startWaveformAnimation();
       _pulseController.repeat(reverse: true); // Resume gentle fade
     } catch (e) {
+      if (!mounted) return;
       _showError('Failed to resume recording: $e');
     }
   }
 
-  void _saveRecording() async {
+  Future<void> _saveRecording() async {
     setState(() => _isSaving = true);
 
     final audioService = ref.read(audioServiceProvider);
@@ -174,6 +180,12 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
         throw Exception('No audio path returned');
       }
 
+      // Capture values before any async gaps to avoid null issues
+      final startTime = _startTime;
+      if (startTime == null) {
+        throw Exception('Recording start time not set');
+      }
+
       // Check if we're appending to an existing recording
       if (widget.appendToRecordingId != null) {
         await _saveAppendedRecording(
@@ -188,7 +200,7 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
 
       // Copy audio file to captures folder immediately (keep as WAV for now)
       final timestamp = FileSystemService.formatTimestampForFilename(
-        _startTime!,
+        startTime,
       );
       final capturesPath = await fileSystemService.getCapturesPath();
       final audioDestPath = path.join(capturesPath, '$timestamp.wav');
@@ -200,7 +212,7 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
         id: timestamp,
         title: 'Untitled Recording',
         filePath: audioDestPath,
-        timestamp: _startTime!,
+        timestamp: startTime,
         duration: _recordingDuration,
         tags: [],
         transcript: 'Transcribing...', // Placeholder
@@ -214,7 +226,9 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
 
       // Save recording immediately with placeholder
       await storageService.saveRecording(recording);
-      ref.read(recordingsRefreshTriggerProvider.notifier).state++;
+      if (mounted) {
+        ref.read(recordingsRefreshTriggerProvider.notifier).state++;
+      }
 
       // Start background transcription (non-blocking)
       // Will compress to Opus after transcription completes
@@ -225,6 +239,8 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
         storageService: storageService,
       );
 
+      if (!mounted) return;
+
       setState(() {
         _isRecording = false;
         _isSaving = false;
@@ -232,15 +248,14 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
       });
 
       // Navigate immediately to detail screen (transcription will update in background)
-      if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => RecordingDetailScreen(recording: recording),
-          ),
-        );
-      }
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => RecordingDetailScreen(recording: recording),
+        ),
+      );
     } catch (e) {
+      if (!mounted) return;
       setState(() => _isSaving = false);
       _showError('Failed to save recording: $e');
     }
@@ -346,7 +361,7 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
     }
   }
 
-  void _discardRecording() async {
+  Future<void> _discardRecording() async {
     // Show confirmation dialog
     final confirmed = await showDialog<bool>(
       context: context,
@@ -802,7 +817,7 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
   }
 
   /// Process transcription in background without blocking UI
-  void _processInBackground({
+  Future<void> _processInBackground({
     required String audioDestPath,
     required Recording recording,
     required RecordingPostProcessingService postProcessingService,

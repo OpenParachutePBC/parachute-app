@@ -52,6 +52,16 @@ class StorageService {
 
   StorageService([this._ref]);
 
+  /// Check if the service is initialized
+  bool get isInitialized => _isInitialized;
+
+  /// Wait for initialization to complete.
+  /// Safe to call multiple times - will return immediately if already initialized.
+  Future<void> ensureInitialized() async {
+    if (_isInitialized) return;
+    await initialize();
+  }
+
   /// Invalidate the recordings cache
   void _invalidateCache() {
     _cachedRecordings = null;

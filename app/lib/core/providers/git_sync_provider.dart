@@ -81,6 +81,7 @@ class GitSyncNotifier extends StateNotifier<GitSyncState> {
 
   /// Wait for initialization to complete
   /// Useful for code that needs to ensure Git is initialized before operating
+  /// Throws if initialization fails
   Future<void> ensureInitialized() async {
     if (state.isInitialized) return;
     // If already initializing, wait for it
@@ -88,7 +89,7 @@ class GitSyncNotifier extends StateNotifier<GitSyncState> {
       await _initCompleter!.future;
       return;
     }
-    // Otherwise trigger initialization
+    // Otherwise trigger initialization (may throw if it fails)
     await initialize();
   }
 
@@ -141,8 +142,11 @@ class GitSyncNotifier extends StateNotifier<GitSyncState> {
       _initCompleter!.complete();
     } catch (e) {
       debugPrint('[GitSync] ❌ Initialization failed: $e');
-      state = state.copyWith(isInitializing: false, isInitialized: true, lastError: e.toString());
+      // Keep isInitialized: false on error so callers know initialization failed
+      // Set isInitializing: false so we can retry
+      state = state.copyWith(isInitializing: false, isInitialized: false, lastError: e.toString());
       _initCompleter!.completeError(e);
+      _initCompleter = null; // Allow retry on failure
     }
   }
 

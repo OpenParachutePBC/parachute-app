@@ -25,16 +25,38 @@ class AudioService {
   DateTime? _pauseStartTime;
   Timer? _durationTimer;
   bool _isInitialized = false;
+  Completer<void>? _initCompleter;
 
   RecordingState get recordingState => _recordingState;
   Duration get recordingDuration => _recordingDuration;
   bool get isPlaying => _player.playing;
+  bool get isInitialized => _isInitialized;
+
+  /// Wait for initialization to complete.
+  /// Safe to call multiple times - will return immediately if already initialized.
+  Future<void> ensureInitialized() async {
+    if (_isInitialized) return;
+    if (_initCompleter != null) {
+      await _initCompleter!.future;
+      return;
+    }
+    await initialize();
+  }
 
   Future<void> initialize() async {
     if (_isInitialized) {
       debugPrint('AudioService already initialized');
       return;
     }
+
+    // If already initializing, wait for that to complete
+    if (_initCompleter != null) {
+      debugPrint('AudioService already initializing, waiting...');
+      await _initCompleter!.future;
+      return;
+    }
+
+    _initCompleter = Completer<void>();
 
     try {
       debugPrint('Initializing AudioService...');
@@ -47,11 +69,14 @@ class AudioService {
       }
 
       _isInitialized = true;
+      _initCompleter!.complete();
       debugPrint('AudioService initialized successfully');
     } catch (e, stackTrace) {
       debugPrint('Error initializing AudioService: $e');
       debugPrint('Stack trace: $stackTrace');
       _isInitialized = false;
+      _initCompleter!.completeError(e);
+      _initCompleter = null; // Allow retry on failure
       rethrow;
     }
   }

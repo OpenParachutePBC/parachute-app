@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:app/core/providers/feature_flags_provider.dart';
 import 'package:app/features/recorder/models/omi_device.dart';
@@ -24,11 +25,17 @@ final omiBluetoothServiceProvider = Provider<OmiBluetoothService>((ref) {
     if (enabled) {
       service.start();
     }
+  }).catchError((e) {
+    debugPrint('[OmiBluetoothServiceProvider] Error checking Omi enabled: $e');
   });
 
   // Clean up on dispose
-  ref.onDispose(() async {
-    await service.stop();
+  // Note: onDispose callbacks are synchronous, so we fire-and-forget the async cleanup
+  // but catch any errors to prevent unhandled exceptions
+  ref.onDispose(() {
+    service.stop().catchError((e) {
+      debugPrint('[OmiBluetoothServiceProvider] Error stopping service: $e');
+    });
   });
 
   return service;
@@ -91,8 +98,12 @@ final omiCaptureServiceProvider = Provider<OmiCaptureService>((ref) {
   };
 
   // Clean up on dispose
-  ref.onDispose(() async {
-    await service.dispose();
+  // Note: onDispose callbacks are synchronous, so we fire-and-forget the async cleanup
+  // but catch any errors to prevent unhandled exceptions
+  ref.onDispose(() {
+    service.dispose().catchError((e) {
+      debugPrint('[OmiCaptureServiceProvider] Error disposing service: $e');
+    });
   });
 
   return service;
