@@ -85,6 +85,7 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
 
       // Check if debug overlay is enabled
       _showDebugOverlay = await storageService.getAudioDebugOverlay();
+      if (!mounted) return;
 
       // Always use auto-pause (V3) for now
       debugPrint('[LiveRecordingScreen] Using AUTO-PAUSE mode (V3)');
@@ -93,6 +94,7 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
       );
 
       await _transcriptionService!.initialize();
+      if (!mounted) return;
 
       // Listen to segment updates (store subscription for cleanup)
       _segmentSubscription =
@@ -118,11 +120,10 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
         }
       });
 
-      if (mounted) {
-        setState(() {
-          _isInitializing = false;
-        });
-      }
+      if (!mounted) return;
+      setState(() {
+        _isInitializing = false;
+      });
 
       // Auto-start recording
       await _startRecording();
@@ -188,6 +189,8 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
 
     debugPrint('[LiveRecordingScreen] 🎙️ Attempting to start recording...');
     final success = await _transcriptionService!.startRecording();
+    if (!mounted) return;
+
     debugPrint('[LiveRecordingScreen] Recording start result: $success');
 
     if (success) {
@@ -200,14 +203,12 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
       debugPrint('[LiveRecordingScreen] ✅ Recording started successfully');
     } else {
       debugPrint('[LiveRecordingScreen] ❌ Failed to start recording');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to start listening. Check permissions.'),
-          ),
-        );
-        Navigator.of(context).pop();
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to start listening. Check permissions.'),
+        ),
+      );
+      Navigator.of(context).pop();
     }
   }
 
@@ -216,6 +217,7 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
 
     if (_isPaused) {
       await _transcriptionService!.resumeRecording();
+      if (!mounted) return;
       setState(() {
         _isPaused = false;
       });
@@ -223,6 +225,7 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
     } else {
       _durationTimer?.cancel();
       await _transcriptionService!.pauseRecording();
+      if (!mounted) return;
       setState(() {
         _isPaused = true;
       });
@@ -230,7 +233,10 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
   }
 
   Future<void> _stopAndSave() async {
-    if (_transcriptionService == null || _startTime == null) return;
+    // Capture values early to avoid null issues after async gaps
+    final transcriptionService = _transcriptionService;
+    final startTime = _startTime;
+    if (transcriptionService == null || startTime == null) return;
 
     _durationTimer?.cancel();
 
@@ -241,13 +247,13 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
 
     // Register service with provider BEFORE stopping
     final activeRecording = ref.read(activeRecordingProvider.notifier);
-    activeRecording.startSession(_transcriptionService!, _startTime!);
+    activeRecording.startSession(transcriptionService, startTime);
 
     // Stop recording (triggers final chunk, returns immediately)
     final audioPath = await activeRecording.stopRecording();
 
     // Get current transcript (partial, may not include final segment yet)
-    final partialTranscript = _transcriptionService!.getCombinedText();
+    final partialTranscript = transcriptionService.getCombinedText();
 
     // Save WAV file immediately
     await _saveWavFile(audioPath);
@@ -255,11 +261,11 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
     // Start background monitoring so transcription continues even if screen is closed
     final fileSystem = ref.read(fileSystemServiceProvider);
     final capturesPath = await fileSystem.getCapturesPath();
-    final timestamp = FileSystemService.formatTimestampForFilename(_startTime!);
+    final timestamp = FileSystemService.formatTimestampForFilename(startTime);
 
     final backgroundService = ref.read(backgroundTranscriptionProvider);
     backgroundService.startMonitoring(
-      service: _transcriptionService!,
+      service: transcriptionService,
       timestamp: timestamp,
       audioPath: audioPath ?? '',
       duration: _recordingDuration,
@@ -289,10 +295,18 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
   Future<void> _saveWavFile(String? audioPath) async {
     if (audioPath == null) return;
 
+    // Capture values before any async operations to avoid null issues
+    final startTime = _startTime;
+    final transcriptionService = _transcriptionService;
+    if (startTime == null || transcriptionService == null) {
+      debugPrint('[LiveRecording] ❌ Cannot save: missing startTime or transcriptionService');
+      return;
+    }
+
     try {
       final fileSystem = ref.read(fileSystemServiceProvider);
       final timestamp = FileSystemService.formatTimestampForFilename(
-        _startTime!,
+        startTime,
       );
       final capturesPath = await fileSystem.getCapturesPath();
 
@@ -306,12 +320,12 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
       // Save placeholder .md file IMMEDIATELY so recording is visible
       // This will be updated when transcription completes
       final markdownPath = path.join(capturesPath, '$timestamp.md');
-      final partialTranscript = _transcriptionService!.getCombinedText();
+      final partialTranscript = transcriptionService.getCombinedText();
 
       final metadata = StringBuffer();
       metadata.writeln('---');
       metadata.writeln('title: Untitled Recording');
-      metadata.writeln('created: ${_startTime!.toIso8601String()}');
+      metadata.writeln('created: ${startTime.toIso8601String()}');
       metadata.writeln('duration: ${_recordingDuration.inSeconds}');
       metadata.writeln(
         'words: ${partialTranscript.trim().isEmpty ? 0 : partialTranscript.trim().split(RegExp(r'\\s+')).length}',
@@ -337,7 +351,9 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
       debugPrint('[LiveRecording] ✅ Placeholder .md file saved: $markdownPath');
 
       // Trigger refresh so recording appears immediately in list
-      ref.read(recordingsRefreshTriggerProvider.notifier).state++;
+      if (mounted) {
+        ref.read(recordingsRefreshTriggerProvider.notifier).state++;
+      }
     } catch (e) {
       debugPrint('[LiveRecording] ❌ Error saving files: $e');
     }
