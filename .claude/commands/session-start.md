@@ -8,20 +8,44 @@ The user wants to work on: **$ARGUMENTS**
 
 If no objective was provided, ask the user what they want to accomplish this session before proceeding.
 
-## Step 2: Gather Context
+## Step 2: Sync with Origin Main
+
+**Ensure we're starting fresh from the latest main branch:**
+
+1. **Check for uncommitted work** first:
+   ```bash
+   git --no-pager status
+   ```
+   If there are uncommitted changes, ask the user how to handle them (stash, commit, or discard).
+
+2. **Fetch latest from origin:**
+   ```bash
+   git fetch origin
+   ```
+
+3. **Switch to main and pull latest:**
+   ```bash
+   git checkout main && git pull origin main
+   ```
+
+4. **Create a new feature branch** (if the objective suggests a feature name):
+   ```bash
+   git checkout -b feature/[descriptive-name]
+   ```
+   Ask the user for a branch name if the objective doesn't suggest one clearly.
+
+## Step 3: Gather Context
 
 **Read recent git history** to understand what's been happening:
 ```bash
 git --no-pager log --oneline -20
 ```
 
-**Check for leftover session state** - if `claude-session.md` exists at the repo root, read it to see if there was an interrupted session.
+**Check for leftover session state** - if `claude-session.md` exists at the repo root, read it to see if there was an interrupted session. If starting a new feature unrelated to the previous session, consider archiving or removing the old session file.
 
 **Read ROADMAP.md** to understand current project focus and priorities.
 
-**Check git status** for any uncommitted work.
-
-## Step 3: Run Baseline Tests
+## Step 4: Run Baseline Tests
 
 Run the test suite to verify we're starting from a clean state:
 ```bash
@@ -30,7 +54,7 @@ cd app && flutter test
 
 If tests fail, note this - we may need to fix them before proceeding, or they may be pre-existing failures.
 
-## Step 4: Create Session State
+## Step 5: Create Session State
 
 Create or update `claude-session.md` in the repo root with:
 
@@ -72,7 +96,7 @@ Create or update `claude-session.md` in the repo root with:
 [Space for observations, blockers, decisions made during the session]
 ```
 
-## Step 5: Output the Plan
+## Step 6: Output the Plan
 
 Summarize for the user:
 1. What recent work is relevant
