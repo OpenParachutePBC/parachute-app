@@ -56,7 +56,8 @@ dependencies:
 
   # Audio & Recording
   record: ^6.1.2
-  just_audio: ^0.9.42
+  just_audio: ^0.10.0
+  audio_session: ^0.2.0
   wakelock_plus: ^1.2.0
 
   # Permissions
@@ -83,7 +84,7 @@ dependencies:
   nordic_dfu: ^6.1.4
 
   # Crash Reporting & Logging
-  sentry_flutter: ^8.11.0
+  sentry_flutter: ^9.0.0
 
 dev_dependencies:
   flutter_test:
