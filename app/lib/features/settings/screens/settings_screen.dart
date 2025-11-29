@@ -491,7 +491,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       builder: (context) => AlertDialog(
         title: const Text('Change Parachute Folder'),
         content: const Text(
-          'This will copy all your recordings, transcripts, and AI spaces to the new location. '
+          'This will copy all your recordings, transcripts, and spheres to the new location. '
           'This may take a while depending on how much data you have.\n\n'
           'Your original files will remain in the old location until you manually delete them.\n\n'
           'Make sure you have enough space in the new location.',
@@ -1647,7 +1647,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'All your recordings, transcripts, and AI spaces are stored here. '
+                    'All your recordings, transcripts, and spheres are stored here. '
                     'Choose a location you can sync with iCloud, Syncthing, Dropbox, etc.',
                     style: TextStyle(color: Colors.grey[600], fontSize: 14),
                   ),
@@ -1811,12 +1811,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         Row(
                           children: [
                             Icon(
-                              Icons.chat_bubble_outline,
+                              Icons.bubble_chart_outlined,
                               color: Colors.grey[700],
                             ),
                             const SizedBox(width: 8),
                             const Text(
-                              'AI spaces folder name',
+                              'Spheres folder name',
                               style: TextStyle(fontWeight: FontWeight.bold),
                             ),
                           ],
@@ -1825,13 +1825,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         TextField(
                           controller: _spacesFolderNameController,
                           decoration: InputDecoration(
-                            hintText: 'e.g., spaces, ai-chats, conversations',
+                            hintText: 'e.g., spheres, spaces, topics',
                             border: const OutlineInputBorder(),
                             contentPadding: const EdgeInsets.symmetric(
                               horizontal: 12,
                               vertical: 8,
                             ),
-                            prefixIcon: const Icon(Icons.chat_bubble, size: 18),
+                            prefixIcon: const Icon(Icons.bubble_chart, size: 18),
                           ),
                         ),
                         const SizedBox(height: 16),
@@ -1880,7 +1880,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
-                                  'Example: Use "Parachute Captures" and "Parachute Spaces" '
+                                  'Example: Use "Parachute Captures" and "Parachute Spheres" '
                                   'to avoid conflicts with your existing note folders',
                                   style: TextStyle(
                                     fontSize: 11,

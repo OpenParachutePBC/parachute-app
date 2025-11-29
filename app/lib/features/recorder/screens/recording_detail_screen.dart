@@ -1284,9 +1284,9 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
             tooltip: 'Edit title',
           ),
           IconButton(
-            icon: const Icon(Icons.link),
+            icon: const Icon(Icons.bubble_chart),
             onPressed: _linkToSpaces,
-            tooltip: 'Link to Spaces',
+            tooltip: 'Add to Sphere',
           ),
           PopupMenuButton(
             itemBuilder: (context) => [

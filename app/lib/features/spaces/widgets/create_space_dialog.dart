@@ -59,7 +59,7 @@ class _CreateSpaceDialogState extends ConsumerState<CreateSpaceDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Create Space'),
+      title: const Text('Create Sphere'),
       content: SingleChildScrollView(
         child: Form(
           key: _formKey,

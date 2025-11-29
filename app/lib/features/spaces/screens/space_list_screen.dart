@@ -16,14 +16,14 @@ class SpaceListScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('AI Chat'),
+        title: const Text('Spheres'),
         elevation: 0,
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 8.0),
             child: FilledButton.icon(
               icon: const Icon(Icons.add, size: 20),
-              label: const Text('New Space'),
+              label: const Text('New Sphere'),
               onPressed: () => _showCreateSpaceDialog(context, ref),
               style: FilledButton.styleFrom(
                 padding: const EdgeInsets.symmetric(
@@ -73,7 +73,7 @@ class SpaceListScreen extends ConsumerWidget {
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    'Create your first space to get started',
+                    'Create your first sphere to get started',
                     style: TextStyle(
                       fontSize: 16,
                       color: Theme.of(
@@ -85,7 +85,7 @@ class SpaceListScreen extends ConsumerWidget {
                   FilledButton.icon(
                     onPressed: () => _showCreateSpaceDialog(context, ref),
                     icon: const Icon(Icons.add),
-                    label: const Text('Create Your First Space'),
+                    label: const Text('Create Your First Sphere'),
                     style: FilledButton.styleFrom(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 24,
@@ -231,7 +231,7 @@ class SpaceListScreen extends ConsumerWidget {
                                 space.id,
                                 space.name,
                               ),
-                              tooltip: 'Delete space',
+                              tooltip: 'Delete sphere',
                             ),
                           ],
                         ),
@@ -279,7 +279,7 @@ class SpaceListScreen extends ConsumerWidget {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete Space'),
+        title: const Text('Delete Sphere'),
         content: Text('Are you sure you want to delete "$name"?'),
         actions: [
           TextButton(
