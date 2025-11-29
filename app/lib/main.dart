@@ -11,7 +11,6 @@ import 'package:git2dart/git2dart.dart' as git2dart;
 import 'package:git2dart_binaries/git2dart_binaries.dart';
 import 'package:flutter_gemma/flutter_gemma.dart';
 import 'core/theme/app_theme.dart';
-import 'core/providers/feature_flags_provider.dart';
 import 'core/services/logging_service.dart';
 import 'features/spaces/screens/space_list_screen.dart';
 import 'features/recorder/screens/home_screen.dart' as recorder;
@@ -290,98 +289,42 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
       );
     }
 
-    final aiChatEnabledAsync = ref.watch(aiChatEnabledNotifierProvider);
+    // Initialize to recorder (index 1) on first build
+    _selectedIndex ??= 1;
 
-    return aiChatEnabledAsync.when(
-      data: (aiChatEnabled) {
-        // Build screens list based on feature flags
-        final screens = <Widget>[];
-        final navItems = <BottomNavigationBarItem>[];
-
-        int recorderIndex = 0;
-
-        // Add Spaces tab if enabled (local-first knowledge management)
-        if (aiChatEnabled) {
-          screens.add(const SpaceListScreen());
-          navItems.add(
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.space_dashboard_outlined),
-              activeIcon: Icon(Icons.space_dashboard),
-              label: 'Spaces',
-              tooltip: 'Knowledge Spaces',
-            ),
-          );
-          recorderIndex = 1;
-        }
-
-        // Always show Recorder tab (core feature)
-        screens.add(const recorder.HomeScreen());
-        navItems.add(
-          const BottomNavigationBarItem(
+    return Scaffold(
+      body: IndexedStack(
+        index: _selectedIndex!,
+        children: const [
+          SpaceListScreen(),
+          recorder.HomeScreen(),
+          FileBrowserScreen(),
+        ],
+      ),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _selectedIndex!,
+        onTap: (index) => setState(() => _selectedIndex = index),
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.bubble_chart_outlined),
+            activeIcon: Icon(Icons.bubble_chart),
+            label: 'Spheres',
+            tooltip: 'Knowledge Spheres',
+          ),
+          BottomNavigationBarItem(
             icon: Icon(Icons.mic_none),
             activeIcon: Icon(Icons.mic),
             label: 'Recorder',
             tooltip: 'Voice Recorder',
           ),
-        );
-
-        // Always show Files tab
-        screens.add(const FileBrowserScreen());
-        navItems.add(
-          const BottomNavigationBarItem(
+          BottomNavigationBarItem(
             icon: Icon(Icons.folder_outlined),
             activeIcon: Icon(Icons.folder),
             label: 'Files',
             tooltip: 'Browse Files',
           ),
-        );
-
-        // Initialize to recorder on first build, or ensure selected index is valid
-        if (_selectedIndex == null || _selectedIndex! >= screens.length) {
-          _selectedIndex = recorderIndex; // Default to recorder
-        }
-
-        return Scaffold(
-          body: IndexedStack(index: _selectedIndex!, children: screens),
-          bottomNavigationBar: BottomNavigationBar(
-            currentIndex: _selectedIndex!,
-            onTap: (index) => setState(() => _selectedIndex = index),
-            items: navItems,
-          ),
-        );
-      },
-      loading: () =>
-          const Scaffold(body: Center(child: CircularProgressIndicator())),
-      error: (error, stack) {
-        // On error, show a minimal interface with just Recorder
-        // Default to Recorder (index 0) on error
-        final currentIndex = (_selectedIndex ?? 0).clamp(0, 1);
-
-        return Scaffold(
-          body: IndexedStack(
-            index: currentIndex,
-            children: const [recorder.HomeScreen(), FileBrowserScreen()],
-          ),
-          bottomNavigationBar: BottomNavigationBar(
-            currentIndex: currentIndex,
-            onTap: (index) => setState(() => _selectedIndex = index),
-            items: const [
-              BottomNavigationBarItem(
-                icon: Icon(Icons.mic_none),
-                activeIcon: Icon(Icons.mic),
-                label: 'Recorder',
-                tooltip: 'Voice Recorder',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.folder_outlined),
-                activeIcon: Icon(Icons.folder),
-                label: 'Files',
-                tooltip: 'Browse Files',
-              ),
-            ],
-          ),
-        );
-      },
+        ],
+      ),
     );
   }
 }
