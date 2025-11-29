@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:app/core/services/git/git_service.dart';
 import 'package:app/core/services/audio_compression_service_dart.dart';
+import 'package:app/core/providers/github_auth_provider.dart';
 import 'package:app/features/files/providers/local_file_browser_provider.dart';
 import 'package:app/features/recorder/providers/service_providers.dart';
 
@@ -198,14 +199,14 @@ class GitSyncNotifier extends StateNotifier<GitSyncState> {
       if ((isEnabled || token != null) && repoUrl != null && token != null) {
         debugPrint('[GitSync] Restoring Git sync settings from storage');
 
-        // Set the token
+        // Set the token (validation/refresh happens in sync() before operations)
         _gitService.setGitHubToken(token);
 
         // Update state
         await _updateStatus();
         state = state.copyWith(isEnabled: true, repositoryUrl: repoUrl);
 
-        // Enable periodic sync
+        // Enable periodic sync (token will be validated/refreshed on each sync)
         enablePeriodicSync();
 
         debugPrint('[GitSync] ✅ Git sync restored and enabled');
@@ -216,6 +217,55 @@ class GitSyncNotifier extends StateNotifier<GitSyncState> {
       }
     } catch (e) {
       debugPrint('[GitSync] Error restoring settings: $e');
+    }
+  }
+
+  /// Ensure the GitHub token is valid before Git operations
+  /// This checks token expiry and refreshes if needed
+  /// Returns true if token is valid (or we should try anyway), false only if
+  /// we definitively know re-authentication is required
+  Future<bool> _ensureValidToken() async {
+    try {
+      // Get the GitHub auth notifier to check/refresh token
+      final authNotifier = _ref.read(gitHubAuthProvider.notifier);
+      final authState = _ref.read(gitHubAuthProvider);
+
+      // If auth provider shows needs reauth, that's definitive
+      if (authState.needsReauth) {
+        debugPrint('[GitSync] ❌ Re-authentication required (token was revoked)');
+        return false;
+      }
+
+      // If not authenticated yet, the auth provider might still be loading
+      // In this case, continue with whatever token GitService already has
+      if (!authState.isAuthenticated) {
+        debugPrint('[GitSync] ⚠️  Auth not loaded yet, continuing with existing token');
+        return true;
+      }
+
+      // Try to ensure the token is valid (this will refresh if needed)
+      final isValid = await authNotifier.ensureValidToken();
+
+      if (!isValid) {
+        debugPrint('[GitSync] ❌ Token validation failed, re-auth required');
+        state = state.copyWith(
+          lastError: 'GitHub token expired. Please reconnect to continue syncing.',
+        );
+        return false;
+      }
+
+      // Get the potentially refreshed token and update GitService
+      final currentAuthState = _ref.read(gitHubAuthProvider);
+      if (currentAuthState.accessToken != null) {
+        _gitService.setGitHubToken(currentAuthState.accessToken!);
+        debugPrint('[GitSync] ✅ Token validated and updated');
+      }
+
+      return true;
+    } catch (e) {
+      debugPrint('[GitSync] ⚠️  Error ensuring valid token: $e');
+      // Optimistic: try to continue with existing token
+      return true;
     }
   }
 
@@ -577,6 +627,17 @@ class GitSyncNotifier extends StateNotifier<GitSyncState> {
     try {
       state = state.copyWith(isSyncing: true, lastError: null);
       debugPrint('[GitSync] State updated: isSyncing=true');
+
+      // Ensure token is valid before Git operations (refresh if expired)
+      final tokenValid = await _ensureValidToken();
+      if (!tokenValid) {
+        debugPrint('[GitSync] ❌ Token validation failed, aborting sync');
+        state = state.copyWith(
+          isSyncing: false,
+          lastError: 'GitHub authentication required. Please reconnect.',
+        );
+        return false;
+      }
 
       // Note: WAV to Opus conversion happens immediately after transcription
       // (see AudioCompressionServiceDart in simple_recording_screen.dart)
