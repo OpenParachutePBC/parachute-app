@@ -50,6 +50,25 @@ class _SpaceDetailScreenState extends ConsumerState<SpaceDetailScreen> {
             onPressed: () => _showFilterDialog(),
             tooltip: 'Filter',
           ),
+          PopupMenuButton<String>(
+            onSelected: (value) {
+              if (value == 'cleanup') {
+                _cleanupOrphanedLinks();
+              }
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'cleanup',
+                child: Row(
+                  children: [
+                    Icon(Icons.cleaning_services),
+                    SizedBox(width: 8),
+                    Text('Clean up broken links'),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ],
       ),
       body: Column(
@@ -221,8 +240,16 @@ class _SpaceDetailScreenState extends ConsumerState<SpaceDetailScreen> {
     return FutureBuilder<Recording?>(
       future: _loadRecording(linkedCapture.captureId),
       builder: (context, snapshot) {
+        final isLoading = snapshot.connectionState == ConnectionState.waiting;
         final recording = snapshot.data;
-        final title = recording?.title ?? 'Loading...';
+        final isOrphaned = !isLoading && recording == null;
+
+        // Show orphaned state with option to remove
+        if (isOrphaned) {
+          return _buildOrphanedCaptureCard(linkedCapture, spacePath);
+        }
+
+        final title = isLoading ? 'Loading...' : (recording?.title ?? 'Untitled');
         final timestamp = recording?.timestamp;
 
         return Card(
@@ -363,6 +390,214 @@ class _SpaceDetailScreenState extends ConsumerState<SpaceDetailScreen> {
         ),
       ),
     );
+  }
+
+  /// Card shown for orphaned links (recording was deleted)
+  Widget _buildOrphanedCaptureCard(
+    LinkedCapture linkedCapture,
+    String spacePath,
+  ) {
+    final theme = Theme.of(context);
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      color: theme.colorScheme.errorContainer.withValues(alpha: 0.3),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.link_off,
+                  color: theme.colorScheme.error,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Recording deleted',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      color: theme.colorScheme.error,
+                    ),
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: () => _unlinkCapture(linkedCapture, spacePath),
+                  icon: Icon(
+                    Icons.delete_outline,
+                    size: 18,
+                    color: theme.colorScheme.error,
+                  ),
+                  label: Text(
+                    'Remove',
+                    style: TextStyle(color: theme.colorScheme.error),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'ID: ${linkedCapture.captureId}',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onErrorContainer.withValues(alpha: 0.7),
+                fontFamily: 'monospace',
+              ),
+            ),
+            if (linkedCapture.context?.isNotEmpty ?? false) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Context: ${linkedCapture.context}',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onErrorContainer.withValues(alpha: 0.7),
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
+            const SizedBox(height: 4),
+            Text(
+              'Linked ${_formatDate(linkedCapture.linkedAt)}',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onErrorContainer.withValues(alpha: 0.5),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Remove an orphaned link from this sphere
+  Future<void> _unlinkCapture(
+    LinkedCapture linkedCapture,
+    String spacePath,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remove Link?'),
+        content: const Text(
+          'This will remove the orphaned link from this sphere. '
+          'The original recording has already been deleted.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final knowledgeService = ref.read(spaceKnowledgeServiceProvider);
+      await knowledgeService.unlinkCaptureFromSpace(
+        spacePath: spacePath,
+        captureId: linkedCapture.captureId,
+      );
+
+      // Refresh the list
+      ref.invalidate(spaceLinkedCapturesProvider(spacePath));
+      ref.invalidate(spaceStatsProvider(spacePath));
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Link removed')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to remove link: $e')),
+        );
+      }
+    }
+  }
+
+  /// Clean up all orphaned links in this sphere
+  Future<void> _cleanupOrphanedLinks() async {
+    final spacePath = await _getSpacePath();
+    final knowledgeService = ref.read(spaceKnowledgeServiceProvider);
+    final linkedCaptures = await knowledgeService.getLinkedCaptures(
+      spacePath: spacePath,
+    );
+
+    // Find orphaned links
+    final orphanedLinks = <LinkedCapture>[];
+    for (final link in linkedCaptures) {
+      final recording = await _loadRecording(link.captureId);
+      if (recording == null) {
+        orphanedLinks.add(link);
+      }
+    }
+
+    if (orphanedLinks.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No broken links found')),
+        );
+      }
+      return;
+    }
+
+    // Confirm cleanup
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Clean Up Broken Links?'),
+        content: Text(
+          'Found ${orphanedLinks.length} broken ${orphanedLinks.length == 1 ? 'link' : 'links'} '
+          'to deleted recordings. Remove them?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Clean Up'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    // Remove all orphaned links
+    int removed = 0;
+    for (final link in orphanedLinks) {
+      try {
+        await knowledgeService.unlinkCaptureFromSpace(
+          spacePath: spacePath,
+          captureId: link.captureId,
+        );
+        removed++;
+      } catch (e) {
+        debugPrint('[SpaceDetail] Failed to remove orphaned link: $e');
+      }
+    }
+
+    // Refresh the list
+    ref.invalidate(spaceLinkedCapturesProvider(spacePath));
+    ref.invalidate(spaceStatsProvider(spacePath));
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Removed $removed broken ${removed == 1 ? 'link' : 'links'}',
+          ),
+        ),
+      );
+    }
   }
 
   void _showSearchDialog() {
