@@ -864,6 +864,11 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
     required RecordingPostProcessingService postProcessingService,
     required StorageService storageService,
   }) async {
+    // Capture the refresh notifier before async work starts
+    // This allows us to trigger refresh even after widget is disposed
+    // (which happens immediately via Navigator.pushReplacement)
+    final refreshNotifier = ref.read(recordingsRefreshTriggerProvider.notifier);
+
     try {
       // Process in background
       final result = await postProcessingService.process(
@@ -893,10 +898,9 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
       // Save updated recording
       await storageService.updateRecording(updatedRecording);
 
-      // Only trigger refresh if widget is still mounted
-      if (mounted) {
-        ref.read(recordingsRefreshTriggerProvider.notifier).state++;
-      }
+      // Trigger refresh using captured notifier (works even after widget disposed)
+      debugPrint('[SimpleRecording] Triggering recordings refresh...');
+      refreshNotifier.state++;
     } catch (e) {
       debugPrint('[SimpleRecording] Background transcription failed: $e');
       // Update recording to show error state
@@ -907,10 +911,9 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
       );
       await storageService.updateRecording(errorRecording);
 
-      // Only trigger refresh if widget is still mounted
-      if (mounted) {
-        ref.read(recordingsRefreshTriggerProvider.notifier).state++;
-      }
+      // Trigger refresh using captured notifier (works even after widget disposed)
+      debugPrint('[SimpleRecording] Triggering recordings refresh after error...');
+      refreshNotifier.state++;
     }
   }
 }

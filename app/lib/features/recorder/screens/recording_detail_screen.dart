@@ -130,7 +130,16 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
         backgroundService.addCompletionListener(_handleTranscriptionComplete);
       }
 
-      // Periodic refresh removed - using event callbacks instead
+      // Check if recording is processing (background transcription via SimpleRecordingScreen)
+      // In this case, we need to listen for refresh triggers since the transcription
+      // runs in _processInBackground() without using BackgroundTranscriptionService
+      if (_recording!.transcriptionStatus == ProcessingStatus.processing ||
+          _recording!.liveTranscriptionStatus == 'in_progress') {
+        debugPrint(
+          '[RecordingDetail] Recording is processing, will listen for refresh triggers',
+        );
+        _isTranscribing = true;
+      }
     } else {
       // Mode 2: Viewing recording being transcribed
       _isTranscribing = widget.isTranscribing;
@@ -349,6 +358,54 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
         if (!_isContextEditing) _contextController.text = _recording!.context;
         if (!_isSummaryEditing) _summaryController.text = _recording!.summary;
       });
+    }
+  }
+
+  /// Refresh recording and update transcription state
+  /// Called when recordingsRefreshTriggerProvider changes while transcribing
+  Future<void> _refreshRecordingAndUpdateState() async {
+    if (_recording == null) return;
+
+    final updated = await ref
+        .read(storageServiceProvider)
+        .getRecording(_recording!.id);
+    if (updated != null && mounted) {
+      final wasTranscribing = _isTranscribing;
+      final isNowComplete =
+          updated.transcriptionStatus == ProcessingStatus.completed ||
+          updated.liveTranscriptionStatus == 'completed';
+      final isNowFailed =
+          updated.transcriptionStatus == ProcessingStatus.failed ||
+          updated.liveTranscriptionStatus == 'failed';
+
+      setState(() {
+        _recording = updated;
+        if (!_isTitleEditing) _titleController.text = updated.title;
+        if (!_isTranscriptEditing) {
+          _transcriptController.text = updated.transcript;
+        }
+        if (!_isContextEditing) _contextController.text = updated.context;
+        if (!_isSummaryEditing) _summaryController.text = updated.summary;
+
+        // Update transcription state based on recording status
+        if (isNowComplete || isNowFailed) {
+          _isTranscribing = false;
+          debugPrint(
+            '[RecordingDetail] Transcription finished: ${isNowComplete ? "completed" : "failed"}',
+          );
+        }
+      });
+
+      // Show success message if transcription just completed
+      if (wasTranscribing && isNowComplete && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Transcription complete!'),
+            backgroundColor: BrandColors.success,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
     }
   }
 
@@ -1238,6 +1295,18 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Listen to refresh triggers to update UI when background transcription completes
+    // This is critical because SimpleRecordingScreen._processInBackground() doesn't use
+    // BackgroundTranscriptionService, so we can't rely on listener callbacks
+    ref.listen<int>(recordingsRefreshTriggerProvider, (previous, next) {
+      if (_recording != null && _isTranscribing) {
+        debugPrint(
+          '[RecordingDetail] Refresh trigger detected while transcribing, refreshing...',
+        );
+        _refreshRecordingAndUpdateState();
+      }
+    });
+
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: _buildAppBar(),
