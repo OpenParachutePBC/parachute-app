@@ -7,16 +7,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:opus_dart/opus_dart.dart' as opus_dart;
 import 'package:opus_flutter/opus_flutter.dart' as opus_flutter;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:git2dart/git2dart.dart' as git2dart;
-import 'package:git2dart_binaries/git2dart_binaries.dart';
 import 'package:flutter_gemma/flutter_gemma.dart';
 import 'core/theme/app_theme.dart';
 import 'core/services/logging_service.dart';
-import 'features/spaces/screens/space_list_screen.dart';
-import 'features/recorder/screens/home_screen.dart' as recorder;
+import 'features/recorder/screens/home_screen.dart';
 import 'features/recorder/providers/model_download_provider.dart';
 import 'features/recorder/services/transcription_service_adapter.dart';
-import 'features/files/screens/file_browser_screen.dart';
 import 'features/onboarding/screens/onboarding_flow.dart';
 
 void main() async {
@@ -41,29 +37,6 @@ void main() async {
     environment: kReleaseMode ? 'production' : 'development',
     release: 'parachute@1.0.0', // Update this with your version
   );
-
-  // Initialize Git SSL certificates for Android
-  if (Platform.isAndroid) {
-    try {
-      logger.info('Main', 'Initializing Android SSL certificates for Git...');
-
-      // 1. Initialize libgit2 FIRST
-      final version = git2dart.Libgit2.version;
-      logger.info('Main', 'libgit2 version: $version');
-
-      // 2. NOW initialize SSL
-      final certPath = await AndroidSSLHelper.initialize();
-      git2dart.Libgit2.setSSLCertLocations(file: certPath);
-      logger.info('Main', 'Git SSL certificates configured: $certPath');
-    } catch (e, stackTrace) {
-      logger.error(
-        'Main',
-        'Failed to initialize Git SSL',
-        error: e,
-        stackTrace: stackTrace,
-      );
-    }
-  }
 
   // Disable verbose FlutterBluePlus logs (reduces spam from onCharacteristicChanged)
   flutter_blue_plus.FlutterBluePlus.setLogLevel(
@@ -220,7 +193,6 @@ class MainNavigationScreen extends ConsumerStatefulWidget {
 }
 
 class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
-  int? _selectedIndex; // Will be set to recorder index on first build
   bool _hasSeenWelcome = true; // Default to true, will be updated
   bool _isCheckingWelcome = true;
 
@@ -289,42 +261,7 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
       );
     }
 
-    // Initialize to recorder (index 1) on first build
-    _selectedIndex ??= 1;
-
-    return Scaffold(
-      body: IndexedStack(
-        index: _selectedIndex!,
-        children: const [
-          SpaceListScreen(),
-          recorder.HomeScreen(),
-          FileBrowserScreen(),
-        ],
-      ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedIndex!,
-        onTap: (index) => setState(() => _selectedIndex = index),
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.bubble_chart_outlined),
-            activeIcon: Icon(Icons.bubble_chart),
-            label: 'Spheres',
-            tooltip: 'Knowledge Spheres',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.mic_none),
-            activeIcon: Icon(Icons.mic),
-            label: 'Recorder',
-            tooltip: 'Voice Recorder',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.folder_outlined),
-            activeIcon: Icon(Icons.folder),
-            label: 'Files',
-            tooltip: 'Browse Files',
-          ),
-        ],
-      ),
-    );
+    // Single screen app - just show HomeScreen
+    return const HomeScreen();
   }
 }
