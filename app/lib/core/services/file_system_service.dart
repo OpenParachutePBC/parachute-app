@@ -379,18 +379,22 @@ class FileSystemService {
         // Check if we can access the saved path
         debugPrint('[FileSystemService] Loaded saved root: $_rootFolderPath');
 
-        // On macOS, verify we still have access to the saved path
-        if (Platform.isMacOS) {
+        // Verify we still have access to the saved path
+        // On iOS, the container UUID changes on reinstall
+        // On macOS, the user might revoke folder access
+        if (Platform.isMacOS || Platform.isIOS) {
           final savedDir = Directory(_rootFolderPath!);
           bool hasAccess = false;
 
           try {
-            // Test if we can list the directory
-            await savedDir.list().first.timeout(
-              const Duration(milliseconds: 100),
-              onTimeout: () => throw Exception('No access'),
-            );
-            hasAccess = true;
+            // Test if the directory exists and is accessible
+            if (await savedDir.exists()) {
+              hasAccess = true;
+            } else {
+              // Try to create it - will fail if container changed
+              await savedDir.create(recursive: true);
+              hasAccess = true;
+            }
           } catch (e) {
             debugPrint('[FileSystemService] Lost access to saved path: $e');
           }

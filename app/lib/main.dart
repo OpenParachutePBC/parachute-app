@@ -20,8 +20,10 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Load environment variables from .env file (optional, fails silently if not found)
+  bool envLoaded = false;
   try {
     await dotenv.load(fileName: '.env');
+    envLoaded = true;
     debugPrint('[Main] ✅ Loaded .env file');
   } catch (e) {
     debugPrint(
@@ -31,7 +33,8 @@ void main() async {
 
   // Initialize logging service with Sentry (only in release mode)
   // This keeps debug output clean and avoids Sentry SDK warnings during development
-  final sentryDsn = kReleaseMode ? dotenv.env['SENTRY_DSN'] : null;
+  // Only access dotenv.env if it was successfully loaded
+  final sentryDsn = (kReleaseMode && envLoaded) ? dotenv.env['SENTRY_DSN'] : null;
   await logger.initialize(
     sentryDsn: sentryDsn,
     environment: kReleaseMode ? 'production' : 'development',
