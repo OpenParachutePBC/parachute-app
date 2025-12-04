@@ -1,22 +1,49 @@
+import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:app/core/models/embedding_models.dart';
 import 'package:app/core/services/embedding/embedding_service.dart';
 import 'package:app/core/services/embedding/embedding_model_manager.dart';
+import 'package:app/core/services/embedding/mobile_embedding_service.dart';
+
+/// Provider for mobile embedding service (Android/iOS)
+///
+/// Uses flutter_gemma_embedder with EmbeddingGemma model.
+final mobileEmbeddingServiceProvider = Provider<EmbeddingService>((ref) {
+  final service = MobileEmbeddingService();
+
+  ref.onDispose(() async {
+    await service.dispose();
+  });
+
+  return service;
+});
+
+/// Provider for desktop embedding service (macOS/Linux/Windows)
+///
+/// Uses Ollama with embedding models.
+/// TODO: Implement in issue #22
+final desktopEmbeddingServiceProvider = Provider<EmbeddingService>((ref) {
+  throw UnimplementedError(
+    'Desktop embedding service not yet implemented.\n'
+    'See issue #22 for progress.',
+  );
+});
 
 /// Provider for the embedding service
 ///
-/// This provider will be implemented by platform-specific providers:
-/// - mobileEmbeddingServiceProvider (Android/iOS with flutter_gemma)
-/// - desktopEmbeddingServiceProvider (macOS/Linux/Windows with Ollama)
-///
-/// For now, this is a placeholder that will throw an error.
-/// Actual implementations will be created in issues #20 (mobile) and #22 (desktop).
+/// Automatically selects the appropriate implementation based on platform:
+/// - Mobile (Android/iOS): flutter_gemma_embedder
+/// - Desktop (macOS/Linux/Windows): Ollama (TODO: issue #22)
 final embeddingServiceProvider = Provider<EmbeddingService>((ref) {
-  throw UnimplementedError(
-    'Embedding service not yet implemented for this platform.\n'
-    'Mobile implementation: Issue #20\n'
-    'Desktop implementation: Issue #22',
-  );
+  if (Platform.isAndroid || Platform.isIOS) {
+    return ref.watch(mobileEmbeddingServiceProvider);
+  } else if (Platform.isMacOS || Platform.isLinux || Platform.isWindows) {
+    return ref.watch(desktopEmbeddingServiceProvider);
+  } else {
+    throw UnimplementedError(
+      'Embedding service not available on this platform: ${Platform.operatingSystem}',
+    );
+  }
 });
 
 /// Provider for the embedding model manager
