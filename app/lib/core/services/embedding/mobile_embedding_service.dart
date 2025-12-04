@@ -1,12 +1,8 @@
-import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_gemma_embedder/flutter_gemma_embedder.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:http/http.dart' as http;
+import 'package:flutter_gemma/flutter_gemma.dart';
 import 'package:app/core/services/embedding/embedding_service.dart';
-import 'package:app/core/models/embedding_models.dart';
 
-/// Mobile embedding service using flutter_gemma_embedder
+/// Mobile embedding service using flutter_gemma
 ///
 /// Generates text embeddings on-device using Google's EmbeddingGemma model.
 /// Supports Android and iOS with GPU acceleration where available.
@@ -17,19 +13,21 @@ import 'package:app/core/models/embedding_models.dart';
 /// - <200MB RAM usage with quantization
 /// - No network required after model download
 class MobileEmbeddingService implements EmbeddingService {
-  final FlutterGemmaEmbedder _embedder = FlutterGemmaEmbedder.instance;
   EmbeddingModel? _model;
   bool _isDisposed = false;
+  bool _isInstalled = false;
 
   /// Target dimensions (using Matryoshka truncation from 768)
-  static const int _dimensions = 256;
+  static const int _targetDimensions = 256;
 
-  /// Model configuration
-  static const EmbeddingGemmaModelType _modelType =
-      EmbeddingGemmaModelType.standard;
+  /// Model URLs from HuggingFace
+  static const String _modelUrl =
+      'https://huggingface.co/litert-community/embeddinggemma-300m/resolve/main/embeddinggemma-300M_seq1024_mixed-precision.tflite';
+  static const String _tokenizerUrl =
+      'https://huggingface.co/litert-community/embeddinggemma-300m/resolve/main/sentencepiece.model';
 
   @override
-  int get dimensions => _dimensions;
+  int get dimensions => _targetDimensions;
 
   @override
   Future<bool> isReady() async {
@@ -44,24 +42,21 @@ class MobileEmbeddingService implements EmbeddingService {
       return true;
     }
 
-    // Check if model file exists on disk
+    // Try to get active embedder if already installed
     try {
-      final modelPath = await _getModelPath();
-      final modelFile = File(modelPath);
-      final exists = await modelFile.exists();
-
-      if (exists) {
-        debugPrint('[MobileEmbedding] Model file exists, loading...');
-        await _loadModel();
-        return _model != null;
+      _model = await FlutterGemma.getActiveEmbedder(
+        preferredBackend: PreferredBackend.gpu,
+      );
+      if (_model != null) {
+        _isInstalled = true;
+        debugPrint('[MobileEmbedding] Model loaded from existing installation');
+        return true;
       }
-
-      debugPrint('[MobileEmbedding] Model file does not exist');
-      return false;
     } catch (e) {
-      debugPrint('[MobileEmbedding] Error checking if ready: $e');
-      return false;
+      debugPrint('[MobileEmbedding] No active embedder available: $e');
     }
+
+    return false;
   }
 
   @override
@@ -71,19 +66,21 @@ class MobileEmbeddingService implements EmbeddingService {
       return false;
     }
 
+    // Try to check if model is already installed
     try {
-      final modelPath = await _getModelPath();
-      final modelFile = File(modelPath);
-      final exists = await modelFile.exists();
-
-      debugPrint(
-        '[MobileEmbedding] Model file ${exists ? 'exists' : 'needs download'}: $modelPath',
+      final embedder = await FlutterGemma.getActiveEmbedder(
+        preferredBackend: PreferredBackend.gpu,
       );
-      return !exists;
+      if (embedder != null) {
+        await embedder.close();
+        debugPrint('[MobileEmbedding] Model already installed');
+        return false;
+      }
     } catch (e) {
-      debugPrint('[MobileEmbedding] Error checking if download needed: $e');
-      return true;
+      debugPrint('[MobileEmbedding] Model needs download: $e');
     }
+
+    return true;
   }
 
   @override
@@ -93,8 +90,6 @@ class MobileEmbeddingService implements EmbeddingService {
     }
 
     debugPrint('[MobileEmbedding] Starting model download...');
-    debugPrint('[MobileEmbedding] Download URL: ${_modelType.downloadUrl}');
-    debugPrint('[MobileEmbedding] Model size: ${_modelType.formattedSize}');
 
     try {
       // Check if already downloaded
@@ -104,56 +99,28 @@ class MobileEmbeddingService implements EmbeddingService {
         return;
       }
 
-      // Get model storage path
-      final modelPath = await _getModelPath();
-      final modelFile = File(modelPath);
+      double modelProgress = 0.0;
+      double tokenizerProgress = 0.0;
 
-      // Create parent directory if needed
-      await modelFile.parent.create(recursive: true);
+      // Install model and tokenizer
+      await FlutterGemma.installEmbedder()
+          .modelFromNetwork(_modelUrl)
+          .tokenizerFromNetwork(_tokenizerUrl)
+          .withModelProgress((progress) {
+            modelProgress = progress / 100.0;
+            debugPrint('[MobileEmbedding] Model download: ${progress.toStringAsFixed(1)}%');
+          })
+          .withTokenizerProgress((progress) {
+            tokenizerProgress = progress / 100.0;
+            debugPrint('[MobileEmbedding] Tokenizer download: ${progress.toStringAsFixed(1)}%');
+          })
+          .install();
 
-      // Download the model file with progress tracking
-      debugPrint('[MobileEmbedding] Downloading to: $modelPath');
+      // Report combined progress (model is ~95% of download, tokenizer ~5%)
+      yield (modelProgress * 0.95) + (tokenizerProgress * 0.05);
 
-      final request = http.Request('GET', Uri.parse(_modelType.downloadUrl));
-      final response = await request.send();
-
-      if (response.statusCode != 200) {
-        throw Exception(
-          'Failed to download model: HTTP ${response.statusCode}',
-        );
-      }
-
-      final totalBytes = response.contentLength ?? 0;
-      if (totalBytes == 0) {
-        throw Exception('Server did not provide content length');
-      }
-
-      int downloadedBytes = 0;
-      final chunks = <List<int>>[];
-
-      await for (final chunk in response.stream) {
-        downloadedBytes += chunk.length;
-        chunks.add(chunk);
-
-        final progress = downloadedBytes / totalBytes;
-        yield progress;
-
-        if (downloadedBytes % (1024 * 1024) == 0) {
-          // Log every MB
-          debugPrint(
-            '[MobileEmbedding] Download progress: ${(progress * 100).toStringAsFixed(1)}%',
-          );
-        }
-      }
-
-      // Write all chunks to file
-      debugPrint('[MobileEmbedding] Writing model file...');
-      final bytes = chunks.expand((chunk) => chunk).toList();
-      await modelFile.writeAsBytes(bytes);
-
-      debugPrint('[MobileEmbedding] ✅ Model downloaded successfully');
-      debugPrint('[MobileEmbedding] File size: ${bytes.length} bytes');
-
+      _isInstalled = true;
+      debugPrint('[MobileEmbedding] ✅ Model installed successfully');
       yield 1.0;
     } catch (e, stackTrace) {
       debugPrint('[MobileEmbedding] ❌ Download failed: $e');
@@ -173,25 +140,18 @@ class MobileEmbeddingService implements EmbeddingService {
     }
 
     // Ensure model is loaded
-    if (_model == null) {
-      final ready = await isReady();
-      if (!ready) {
-        throw Exception(
-          'Model is not ready. Please download the model first.',
-        );
-      }
-    }
+    await _ensureModelLoaded();
 
     try {
       debugPrint('[MobileEmbedding] Embedding text (${text.length} chars)');
 
       // Generate 768-dimensional embedding
-      final fullEmbedding = await _model!.encode(text);
+      final fullEmbedding = await _model!.generateEmbedding(text);
 
       // Truncate to 256 dimensions (Matryoshka)
       final truncated = EmbeddingDimensionHelper.truncate(
         fullEmbedding,
-        _dimensions,
+        _targetDimensions,
         renormalize: true,
       );
 
@@ -221,32 +181,25 @@ class MobileEmbeddingService implements EmbeddingService {
     }
 
     // Ensure model is loaded
-    if (_model == null) {
-      final ready = await isReady();
-      if (!ready) {
-        throw Exception(
-          'Model is not ready. Please download the model first.',
-        );
-      }
-    }
+    await _ensureModelLoaded();
 
     try {
       debugPrint('[MobileEmbedding] Embedding batch of ${texts.length} texts');
 
       // Generate 768-dimensional embeddings
-      final fullEmbeddings = await _model!.batchEncode(texts);
+      final fullEmbeddings = await _model!.generateEmbeddings(texts);
 
       // Truncate each to 256 dimensions (Matryoshka)
       final truncatedEmbeddings = fullEmbeddings.map((embedding) {
         return EmbeddingDimensionHelper.truncate(
           embedding,
-          _dimensions,
+          _targetDimensions,
           renormalize: true,
         );
       }).toList();
 
       debugPrint(
-        '[MobileEmbedding] ✅ Generated ${truncatedEmbeddings.length} embeddings (${_dimensions}d each)',
+        '[MobileEmbedding] ✅ Generated ${truncatedEmbeddings.length} embeddings (${_targetDimensions}d each)',
       );
       return truncatedEmbeddings;
     } catch (e, stackTrace) {
@@ -266,9 +219,9 @@ class MobileEmbeddingService implements EmbeddingService {
 
     try {
       if (_model != null) {
-        await _model!.dispose();
+        await _model!.close();
         _model = null;
-        debugPrint('[MobileEmbedding] ✅ Model disposed');
+        debugPrint('[MobileEmbedding] ✅ Model closed');
       }
     } catch (e) {
       debugPrint('[MobileEmbedding] Error disposing model: $e');
@@ -278,56 +231,30 @@ class MobileEmbeddingService implements EmbeddingService {
     debugPrint('[MobileEmbedding] Service disposed');
   }
 
-  /// Get the local path where the model should be stored
-  Future<String> _getModelPath() async {
-    final dir = await getApplicationDocumentsDirectory();
-    final modelsDir = Directory('${dir.path}/models');
-
-    // Extract filename from URL
-    final uri = Uri.parse(_modelType.downloadUrl);
-    final filename = uri.pathSegments.last;
-
-    return '${modelsDir.path}/$filename';
-  }
-
-  /// Load the model from disk into memory
-  Future<void> _loadModel() async {
+  /// Ensure the model is loaded and ready to use
+  Future<void> _ensureModelLoaded() async {
     if (_model != null) {
-      debugPrint('[MobileEmbedding] Model already loaded');
       return;
     }
 
+    debugPrint('[MobileEmbedding] Loading model...');
+
     try {
-      debugPrint('[MobileEmbedding] Loading model from disk...');
-
-      final modelPath = await _getModelPath();
-      final modelFile = File(modelPath);
-
-      if (!await modelFile.exists()) {
-        throw Exception('Model file not found: $modelPath');
-      }
-
-      // Create model instance
-      _model = await _embedder.createModel(
-        modelPath: modelPath,
-        modelType: EmbeddingModelType.embeddingGemma300M,
-        dimensions: 768, // Full dimensions (will truncate to 256)
-        taskType: EmbeddingTaskType.retrieval,
-        backend: PreferredBackend.gpu, // Use GPU if available
+      _model = await FlutterGemma.getActiveEmbedder(
+        preferredBackend: PreferredBackend.gpu,
       );
 
-      // Initialize the model
-      await _model!.initialize();
+      if (_model == null) {
+        throw Exception(
+          'Model is not ready. Please download the model first.',
+        );
+      }
 
       debugPrint('[MobileEmbedding] ✅ Model loaded successfully');
-      debugPrint('[MobileEmbedding] Model path: $modelPath');
-      debugPrint('[MobileEmbedding] Backend: GPU (if available)');
-      debugPrint('[MobileEmbedding] Full dimensions: 768');
-      debugPrint('[MobileEmbedding] Truncated dimensions: $_dimensions');
+      debugPrint('[MobileEmbedding] Using GPU backend if available');
     } catch (e, stackTrace) {
       debugPrint('[MobileEmbedding] ❌ Failed to load model: $e');
       debugPrint('[MobileEmbedding] Stack trace: $stackTrace');
-      _model = null;
       rethrow;
     }
   }

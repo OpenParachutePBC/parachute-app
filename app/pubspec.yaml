@@ -72,11 +72,8 @@ dependencies:
   # Sherpa-ONNX for cross-platform ASR (Parakeet on Android)
   sherpa_onnx: ^1.12.12
 
-  # Local LLM for Title Generation
+  # Local LLM for Title Generation & Embeddings
   flutter_gemma: ^0.11.8
-
-  # Embedding Generation for RAG Search
-  flutter_gemma_embedder: ^0.10.4
 
   # Ollama integration for desktop LLM
   ollama_dart: ^0.3.0
