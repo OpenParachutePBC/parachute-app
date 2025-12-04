@@ -25,7 +25,7 @@ void main() {
       test('returns true when model is available', () async {
         // Arrange
         when(() => mockClient.listModels()).thenAnswer(
-          (_) async => ListModelsResponse(
+          (_) async => ModelsResponse(
             models: [
               Model(model: 'nomic-embed-text'),
               Model(model: 'llama2'),
@@ -44,7 +44,7 @@ void main() {
       test('returns false when model is not available', () async {
         // Arrange
         when(() => mockClient.listModels()).thenAnswer(
-          (_) async => ListModelsResponse(
+          (_) async => ModelsResponse(
             models: [
               Model(model: 'llama2'),
               Model(model: 'mistral'),
@@ -75,7 +75,7 @@ void main() {
       test('handles empty model list', () async {
         // Arrange
         when(() => mockClient.listModels()).thenAnswer(
-          (_) async => ListModelsResponse(models: []),
+          (_) async => ModelsResponse(models: []),
         );
 
         // Act
@@ -88,7 +88,7 @@ void main() {
       test('handles null model list', () async {
         // Arrange
         when(() => mockClient.listModels()).thenAnswer(
-          (_) async => ListModelsResponse(models: null),
+          (_) async => ModelsResponse(models: null),
         );
 
         // Act
@@ -103,7 +103,7 @@ void main() {
       test('returns false when model is ready', () async {
         // Arrange
         when(() => mockClient.listModels()).thenAnswer(
-          (_) async => ListModelsResponse(
+          (_) async => ModelsResponse(
             models: [Model(model: 'nomic-embed-text')],
           ),
         );
@@ -118,7 +118,7 @@ void main() {
       test('returns true when model is not available', () async {
         // Arrange
         when(() => mockClient.listModels()).thenAnswer(
-          (_) async => ListModelsResponse(models: []),
+          (_) async => ModelsResponse(models: []),
         );
 
         // Act
@@ -146,7 +146,7 @@ void main() {
       test('successfully downloads model', () async {
         // Arrange
         when(() => mockClient.listModels()).thenAnswer(
-          (_) async => ListModelsResponse(models: []),
+          (_) async => ModelsResponse(models: []),
         );
         when(() => mockClient.pullModel(request: any(named: 'request')))
             .thenAnswer((_) async => PullModelResponse());
@@ -185,7 +185,7 @@ void main() {
       test('throws when pull fails', () async {
         // Arrange
         when(() => mockClient.listModels()).thenAnswer(
-          (_) async => ListModelsResponse(models: []),
+          (_) async => ModelsResponse(models: []),
         );
         when(() => mockClient.pullModel(request: any(named: 'request')))
             .thenThrow(Exception('Network error'));
@@ -210,7 +210,7 @@ void main() {
         final fullEmbedding = List.generate(768, (i) => i / 768.0);
 
         when(() => mockClient.listModels()).thenAnswer(
-          (_) async => ListModelsResponse(
+          (_) async => ModelsResponse(
             models: [Model(model: 'nomic-embed-text')],
           ),
         );
@@ -250,7 +250,7 @@ void main() {
       test('throws when model is not ready', () async {
         // Arrange
         when(() => mockClient.listModels()).thenAnswer(
-          (_) async => ListModelsResponse(models: []),
+          (_) async => ModelsResponse(models: []),
         );
 
         // Act & Assert
@@ -269,7 +269,7 @@ void main() {
       test('throws when Ollama returns empty embedding', () async {
         // Arrange
         when(() => mockClient.listModels()).thenAnswer(
-          (_) async => ListModelsResponse(
+          (_) async => ModelsResponse(
             models: [Model(model: 'nomic-embed-text')],
           ),
         );
@@ -294,7 +294,7 @@ void main() {
       test('throws when Ollama returns null embedding', () async {
         // Arrange
         when(() => mockClient.listModels()).thenAnswer(
-          (_) async => ListModelsResponse(
+          (_) async => ModelsResponse(
             models: [Model(model: 'nomic-embed-text')],
           ),
         );
@@ -321,7 +321,7 @@ void main() {
         final largeEmbedding = List.generate(1024, (i) => i / 1024.0);
 
         when(() => mockClient.listModels()).thenAnswer(
-          (_) async => ListModelsResponse(
+          (_) async => ModelsResponse(
             models: [Model(model: 'nomic-embed-text')],
           ),
         );
@@ -345,7 +345,7 @@ void main() {
         final fullEmbedding = List.generate(768, (i) => i / 768.0);
 
         when(() => mockClient.listModels()).thenAnswer(
-          (_) async => ListModelsResponse(
+          (_) async => ModelsResponse(
             models: [Model(model: 'nomic-embed-text')],
           ),
         );
@@ -392,7 +392,7 @@ void main() {
       test('stops on first error and propagates exception', () async {
         // Arrange
         when(() => mockClient.listModels()).thenAnswer(
-          (_) async => ListModelsResponse(
+          (_) async => ModelsResponse(
             models: [Model(model: 'nomic-embed-text')],
           ),
         );
@@ -428,7 +428,7 @@ void main() {
         service.setModel(OllamaEmbeddingModelType.mxbaiEmbedLarge);
 
         when(() => mockClient.listModels()).thenAnswer(
-          (_) async => ListModelsResponse(
+          (_) async => ModelsResponse(
             models: [Model(model: 'mxbai-embed-large')],
           ),
         );
@@ -445,7 +445,7 @@ void main() {
       test('isOllamaAvailable returns true when server is running', () async {
         // Arrange
         when(() => mockClient.listModels()).thenAnswer(
-          (_) async => ListModelsResponse(models: []),
+          (_) async => ModelsResponse(models: []),
         );
 
         // Act
@@ -469,7 +469,7 @@ void main() {
       test('getAvailableModels returns list of models', () async {
         // Arrange
         when(() => mockClient.listModels()).thenAnswer(
-          (_) async => ListModelsResponse(
+          (_) async => ModelsResponse(
             models: [
               Model(model: 'nomic-embed-text'),
               Model(model: 'llama2'),
@@ -488,7 +488,7 @@ void main() {
       test('getAvailableModels filters out empty names', () async {
         // Arrange
         when(() => mockClient.listModels()).thenAnswer(
-          (_) async => ListModelsResponse(
+          (_) async => ModelsResponse(
             models: [
               Model(model: 'nomic-embed-text'),
               Model(model: ''),

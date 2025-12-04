@@ -96,9 +96,10 @@ void main() {
         expect(hash1, equals(hash2));
       });
 
-      test('handles empty fields', () {
+      test('handles minimal fields', () {
+        // Recording requires non-empty title, so test with minimal content
         final recording = _createSampleRecording(
-          title: '',
+          title: 'Untitled', // Title is required to be non-empty
           summary: '',
           context: '',
           tags: [],

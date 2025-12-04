@@ -33,14 +33,14 @@ void main() {
     });
 
     group('desktopEmbeddingServiceProvider', () {
-      test('throws UnimplementedError', () {
+      test('creates DesktopEmbeddingService instance', () {
         final container = ProviderContainer();
         addTearDown(container.dispose);
 
-        expect(
-          () => container.read(desktopEmbeddingServiceProvider),
-          throwsA(isA<UnimplementedError>()),
-        );
+        final service = container.read(desktopEmbeddingServiceProvider);
+
+        expect(service, isA<EmbeddingService>());
+        expect(service.dimensions, 256);
       });
     });
 
@@ -59,7 +59,7 @@ void main() {
         expect(service, isA<MobileEmbeddingService>());
       });
 
-      test('throws on desktop platforms (until #22 is implemented)', () {
+      test('returns desktop service on desktop platforms', () {
         if (!Platform.isMacOS && !Platform.isLinux && !Platform.isWindows) {
           // Skip if not on desktop platform
           return;
@@ -68,10 +68,10 @@ void main() {
         final container = ProviderContainer();
         addTearDown(container.dispose);
 
-        expect(
-          () => container.read(embeddingServiceProvider),
-          throwsA(isA<UnimplementedError>()),
-        );
+        final service = container.read(embeddingServiceProvider);
+
+        expect(service, isA<EmbeddingService>());
+        expect(service.dimensions, 256);
       });
     });
 

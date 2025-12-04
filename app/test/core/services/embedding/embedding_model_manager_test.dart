@@ -51,6 +51,8 @@ class MockEmbeddingService implements EmbeddingService {
   @override
   Stream<double> downloadModel() async* {
     if (_shouldFailDownload) {
+      // Yield first to ensure stream is established before throwing
+      yield 0.0;
       throw Exception('Download failed');
     }
 
@@ -216,14 +218,15 @@ void main() {
       test('handles download errors', () async {
         mockService.setShouldFailDownload(true);
 
-        expect(
-          () async {
-            await for (final _ in manager.downloadModel()) {
-              // Consume stream
-            }
-          },
-          throwsException,
-        );
+        // Consume the stream and expect exception
+        try {
+          await for (final _ in manager.downloadModel()) {
+            // Consume stream
+          }
+          fail('Expected exception to be thrown');
+        } catch (e) {
+          expect(e.toString(), contains('Download failed'));
+        }
 
         expect(manager.status, EmbeddingModelStatus.error);
         expect(manager.error, isNotNull);

@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:app/core/services/embedding/mobile_embedding_service.dart';
 
@@ -57,9 +56,10 @@ void main() {
 
       test('throws exception when model is not ready', () async {
         // Try to embed without downloading model
+        // flutter_gemma throws StateError when no active embedder is set
         expect(
           () => service.embed('test text'),
-          throwsA(isA<Exception>()),
+          throwsA(anyOf(isA<Exception>(), isA<StateError>())),
         );
       });
     });
@@ -85,9 +85,10 @@ void main() {
       });
 
       test('throws exception when model is not ready', () async {
+        // flutter_gemma throws StateError when no active embedder is set
         expect(
           () => service.embedBatch(['test1', 'test2']),
-          throwsA(isA<Exception>()),
+          throwsA(anyOf(isA<Exception>(), isA<StateError>())),
         );
       });
     });

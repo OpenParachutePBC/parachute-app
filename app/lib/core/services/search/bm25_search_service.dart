@@ -30,6 +30,7 @@ import 'package:app/core/services/search/models/bm25_search_result.dart';
 class BM25SearchService {
   BM25? _index;
   List<Recording>? _indexedRecordings;
+  bool _indexBuilt = false;
 
   /// Build or rebuild the BM25 index from recordings
   ///
@@ -46,12 +47,22 @@ class BM25SearchService {
 
     _indexedRecordings = recordings;
 
+    // Handle empty recordings list - BM25 package requires at least one document
+    if (recordings.isEmpty) {
+      _index = null; // No index needed for empty corpus
+      _indexedRecordings = [];
+      _indexBuilt = true; // Mark as built (no rebuild needed)
+      debugPrint('[BM25Search] Index built (empty) in ${stopwatch.elapsedMilliseconds}ms');
+      return;
+    }
+
     // Create searchable documents from recordings
     final documents = recordings.map((r) => _recordingToDocument(r)).toList();
 
     // Build BM25 index
     // Note: BM25 package uses isolates for parallel processing
-    _index = BM25.build(documents);
+    _index = await BM25.build(documents);
+    _indexBuilt = true;
 
     stopwatch.stop();
     debugPrint(
@@ -120,8 +131,14 @@ class BM25SearchService {
     String query, {
     int limit = 20,
   }) async {
-    if (_index == null || _indexedRecordings == null) {
+    if (!_indexBuilt) {
       throw StateError('Index not built. Call buildIndex() first.');
+    }
+
+    // Handle empty index (built with empty recordings)
+    if (_index == null || _indexedRecordings == null || _indexedRecordings!.isEmpty) {
+      debugPrint('[BM25Search] Empty index, returning empty results');
+      return [];
     }
 
     if (query.trim().isEmpty) {
@@ -133,19 +150,19 @@ class BM25SearchService {
     final stopwatch = Stopwatch()..start();
 
     // Perform BM25 search
-    final searchResults = _index!.search(query);
+    final searchResults = await _index!.search(query, limit: limit);
 
     // Convert to BM25SearchResult with matched fields
     final results = <BM25SearchResult>[];
-    for (final result in searchResults.take(limit)) {
-      if (result.docId >= _indexedRecordings!.length) {
+    for (final result in searchResults) {
+      if (result.doc.id >= _indexedRecordings!.length) {
         debugPrint(
-          '[BM25Search] Warning: Invalid docId ${result.docId}, skipping',
+          '[BM25Search] Warning: Invalid docId ${result.doc.id}, skipping',
         );
         continue;
       }
 
-      final recording = _indexedRecordings![result.docId];
+      final recording = _indexedRecordings![result.doc.id];
       final matchedFields = _findMatchedFields(recording, query);
 
       results.add(BM25SearchResult(
@@ -196,7 +213,7 @@ class BM25SearchService {
   }
 
   /// Check if index needs rebuilding
-  bool get needsRebuild => _index == null;
+  bool get needsRebuild => !_indexBuilt;
 
   /// Get number of indexed recordings
   int get indexSize => _indexedRecordings?.length ?? 0;
@@ -209,5 +226,6 @@ class BM25SearchService {
     debugPrint('[BM25Search] Clearing index');
     _index = null;
     _indexedRecordings = null;
+    _indexBuilt = false;
   }
 }

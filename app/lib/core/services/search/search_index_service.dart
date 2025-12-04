@@ -153,7 +153,12 @@ class SearchIndexService {
       await _doSyncIndexes();
       _syncCompleter!.complete();
     } catch (e) {
+      // Complete with error for any waiters
+      // Ignore the future to prevent unhandled exception reporting
+      // since we're going to rethrow anyway
       _syncCompleter!.completeError(e);
+      // ignore: unawaited_futures
+      _syncCompleter!.future.catchError((_) {});
       rethrow;
     } finally {
       _isSyncing = false;

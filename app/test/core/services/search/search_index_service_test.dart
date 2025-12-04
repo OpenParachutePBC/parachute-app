@@ -213,17 +213,19 @@ void main() {
       });
 
       test('sets error status on failure', () async {
-        when(mockStorageService.getRecordings()).thenThrow(
-          Exception('Storage error'),
+        when(mockStorageService.getRecordings()).thenAnswer(
+          (_) => Future.error(Exception('Storage error')),
         );
 
+        Object? caughtError;
         try {
           await service.syncIndexes();
           fail('Should have thrown exception');
         } catch (e) {
-          expect(e.toString(), contains('Storage error'));
+          caughtError = e;
         }
 
+        expect(caughtError.toString(), contains('Storage error'));
         expect(service.status, equals(IndexingStatus.error));
         expect(service.errorMessage, isNotNull);
       });
