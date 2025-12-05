@@ -355,19 +355,20 @@ void main() {
 
         expect(results.length, 2);
 
-        // RRF creates separate entries for vector and BM25 matches with different keys.
-        // rec1 vector: 1/60 = 0.0166, rec2 BM25: 1/60 = 0.0166 (tie, but vector comes first)
-        // After sorting and dedup, rec1 wins with highest individual score (vector rank 0)
-        expect(results[0].recording.id, 'rec1');
-        expect(results[1].recording.id, 'rec2');
+        // RRF merges results for the same recording:
+        // rec1: vector rank 0 (1/60) + BM25 rank 1 (1/61) = 0.0166 + 0.0163 = 0.0330
+        // rec2: vector rank 1 (1/61) + BM25 rank 0 (1/60) = 0.0163 + 0.0166 = 0.0330
+        // Both have same combined score, order depends on which is processed first
 
-        // rec1 matched via vector, rec2 matched via BM25 (different keys, not combined)
+        // Both recordings matched in BOTH searches
         expect(results[0].hasVectorMatch, true);
+        expect(results[0].hasKeywordMatch, true);
+        expect(results[1].hasVectorMatch, true);
         expect(results[1].hasKeywordMatch, true);
 
-        // Each has single-source RRF score (1/60 = 0.0166)
-        expect(results[0].rrfScore, closeTo(0.0166, 0.0001));
-        expect(results[1].rrfScore, closeTo(0.0166, 0.0001));
+        // Both should have combined RRF score: 1/60 + 1/61 = 0.0330
+        expect(results[0].rrfScore, closeTo(0.0330, 0.0001));
+        expect(results[1].rrfScore, closeTo(0.0330, 0.0001));
       });
 
       test('calculates correct RRF scores for single-source matches', () async {

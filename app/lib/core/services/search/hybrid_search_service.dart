@@ -5,7 +5,6 @@ import 'package:app/core/services/embedding/embedding_service.dart';
 import 'package:app/core/services/search/models/vector_search_result.dart';
 import 'package:app/core/services/search/models/bm25_search_result.dart';
 import 'package:app/core/services/search/models/search_result.dart';
-import 'package:app/features/recorder/models/recording.dart';
 import 'package:app/features/recorder/services/storage_service.dart';
 
 /// Hybrid search service combining vector and keyword search
@@ -263,19 +262,44 @@ class HybridSearchService {
   /// Deduplicate results by recording ID
   ///
   /// When the same recording appears multiple times (e.g., multiple chunks
-  /// from vector search, plus full recording from BM25), keep only the
-  /// highest-scored entry.
+  /// from vector search, plus full recording from BM25), merge the scores
+  /// and keep the best chunk text for display.
   List<_MergedResult> _deduplicateByRecording(List<_MergedResult> results) {
-    final seen = <String>{};
-    final deduplicated = <_MergedResult>[];
+    final merged = <String, _MergedResult>{};
 
     for (final result in results) {
-      if (!seen.contains(result.recordingId)) {
-        seen.add(result.recordingId);
-        deduplicated.add(result);
+      final existing = merged[result.recordingId];
+      if (existing == null) {
+        // First time seeing this recording
+        merged[result.recordingId] = result;
+      } else {
+        // Merge scores from this result into existing
+        // Keep the higher RRF score as the base
+        if (result.rrfScore > existing.rrfScore) {
+          // New result has higher RRF score - copy its chunk text
+          existing.chunkText = result.chunkText ?? existing.chunkText;
+          existing.field = result.field;
+          existing.chunkIndex = result.chunkIndex;
+        }
+        // Accumulate RRF scores from all entries for this recording
+        existing.rrfScore += result.rrfScore;
+        // Copy over vector scores if this entry has them
+        if (result.vectorScore != null && existing.vectorScore == null) {
+          existing.vectorScore = result.vectorScore;
+          existing.vectorRank = result.vectorRank;
+        }
+        // Copy over keyword scores if this entry has them
+        if (result.keywordScore != null && existing.keywordScore == null) {
+          existing.keywordScore = result.keywordScore;
+          existing.keywordRank = result.keywordRank;
+          existing.matchedFields = result.matchedFields;
+        }
       }
     }
 
+    // Sort by merged RRF score and return
+    final deduplicated = merged.values.toList();
+    deduplicated.sort((a, b) => b.rrfScore.compareTo(a.rrfScore));
     return deduplicated;
   }
 
@@ -376,9 +400,9 @@ class HybridSearchService {
 /// Internal class for merging search results before enrichment
 class _MergedResult {
   final String recordingId;
-  final String field;
-  final int chunkIndex;
-  final String? chunkText;
+  String field;
+  int chunkIndex;
+  String? chunkText;
 
   double rrfScore = 0.0;
   double? vectorScore;

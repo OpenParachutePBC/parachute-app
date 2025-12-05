@@ -15,7 +15,6 @@ import 'package:app/core/services/embedding/embedding_service.dart';
 class MobileEmbeddingService implements EmbeddingService {
   EmbeddingModel? _model;
   bool _isDisposed = false;
-  bool _isInstalled = false;
 
   /// Target dimensions (using Matryoshka truncation from 768)
   static const int _targetDimensions = 256;
@@ -48,7 +47,6 @@ class MobileEmbeddingService implements EmbeddingService {
         preferredBackend: PreferredBackend.gpu,
       );
       if (_model != null) {
-        _isInstalled = true;
         debugPrint('[MobileEmbedding] Model loaded from existing installation');
         return true;
       }
@@ -71,11 +69,9 @@ class MobileEmbeddingService implements EmbeddingService {
       final embedder = await FlutterGemma.getActiveEmbedder(
         preferredBackend: PreferredBackend.gpu,
       );
-      if (embedder != null) {
-        await embedder.close();
-        debugPrint('[MobileEmbedding] Model already installed');
-        return false;
-      }
+      await embedder.close();
+      debugPrint('[MobileEmbedding] Model already installed');
+      return false;
     } catch (e) {
       debugPrint('[MobileEmbedding] Model needs download: $e');
     }
@@ -119,7 +115,6 @@ class MobileEmbeddingService implements EmbeddingService {
       // Report combined progress (model is ~95% of download, tokenizer ~5%)
       yield (modelProgress * 0.95) + (tokenizerProgress * 0.05);
 
-      _isInstalled = true;
       debugPrint('[MobileEmbedding] ✅ Model installed successfully');
       yield 1.0;
     } catch (e, stackTrace) {

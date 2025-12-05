@@ -41,13 +41,18 @@ class DesktopEmbeddingService implements EmbeddingService {
       final modelsResponse = await _client.listModels();
 
       // Check if our embedding model is available
+      // Ollama lists models with tags (e.g., "nomic-embed-text:latest")
+      // so we check if any model starts with our base model name
       final availableModels = modelsResponse.models
               ?.map((model) => model.model ?? '')
               .where((name) => name.isNotEmpty)
               .toList() ??
           [];
 
-      final isModelAvailable = availableModels.contains(_modelType.modelName);
+      final isModelAvailable = availableModels.any(
+        (model) => model == _modelType.modelName ||
+                   model.startsWith('${_modelType.modelName}:'),
+      );
 
       if (isModelAvailable) {
         debugPrint('[DesktopEmbedding] ✅ Model ${_modelType.modelName} is ready');

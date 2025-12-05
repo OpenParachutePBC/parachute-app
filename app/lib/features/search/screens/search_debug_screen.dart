@@ -66,7 +66,7 @@ class _SearchDebugScreenState extends ConsumerState<SearchDebugScreen> {
 
     try {
       final searchIndex = ref.read(searchIndexServiceProvider);
-      await searchIndex.rebuildAllIndexes();
+      await searchIndex.forceFullReindex();
 
       setState(() {
         _statusMessage = 'Index rebuilt successfully!';

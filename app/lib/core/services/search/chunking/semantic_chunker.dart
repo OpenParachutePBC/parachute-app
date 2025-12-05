@@ -131,7 +131,6 @@ class SemanticChunker {
   ) {
     final boundaries = <int>[0]; // Always start at 0
 
-    int currentChunkStart = 0;
     int currentChunkTokens = _estimateTokens(sentences[0]);
 
     for (int i = 1; i < embeddings.length; i++) {
@@ -144,7 +143,6 @@ class SemanticChunker {
           '[SemanticChunker] Forcing boundary at sentence $i (token limit)',
         );
         boundaries.add(i);
-        currentChunkStart = i;
         currentChunkTokens = sentenceTokens;
         continue;
       }
@@ -158,7 +156,6 @@ class SemanticChunker {
           '[SemanticChunker] Boundary at sentence $i (similarity: ${similarity.toStringAsFixed(3)})',
         );
         boundaries.add(i);
-        currentChunkStart = i;
         currentChunkTokens = sentenceTokens;
       } else {
         // Continue current chunk
