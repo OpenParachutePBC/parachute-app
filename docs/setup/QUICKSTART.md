@@ -18,30 +18,26 @@ Get GitHub OAuth working in **under 5 minutes**.
 
 ```bash
 # In the project root
-cd app
-
-# Copy the example file
 cp .env.example .env
 
 # Edit .env and add your credentials
 # (Open the file and paste your Client ID and Secret)
 ```
 
-Your `app/.env` should look like:
+Your `.env` should look like:
 ```env
 GITHUB_CLIENT_ID=Iv1.abc123def456
 GITHUB_CLIENT_SECRET=your_secret_here_1234567890abcdef
 ```
 
 **Important**:
-- The `.env` file goes in the `app/` directory (not project root)
+- The `.env` file is at the project root
 - File is git-ignored automatically
 - No quotes around values needed
 
 ## Step 3: Run the App (2 minutes)
 
 ```bash
-# Still in app/ directory
 flutter run -d macos
 
 # Or for iOS/Android:

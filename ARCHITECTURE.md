@@ -1,7 +1,7 @@
 # Parachute - System Architecture
 
-**Version:** 3.0
-**Date:** November 24, 2025
+**Version:** 4.0
+**Date:** December 8, 2025
 **Status:** Active Development - Local-First, Voice-First
 
 ---
@@ -92,26 +92,17 @@ This architecture enables notes to "cross-pollinate" between spheres while remai
 │      ├── CLAUDE.md       │
 │      └── sphere.jsonl    │
 └──────────────────────────┘
-
-┌────────────────────────────────────────────────────────────┐
-│                    Go Backend (Optional)                   │
-│              FUTURE: For Agentic AI Tasks Only             │
-│                                                            │
-│  • Pulls from same Git repo                               │
-│  • Runs long-running AI workflows                         │
-│  • Commits results back to Git                            │
-│  • Not required for recording/storage                     │
-└────────────────────────────────────────────────────────────┘
 ```
+
+**Note:** AI agent functionality is provided by [parachute-agent](https://github.com/OpenParachutePBC/parachute-agent) (separate repo, Node.js).
 
 ### Key Architectural Principles
 
-1. **Flutter is Primary**: Backend is optional, not required
+1. **Flutter App is Self-Contained**: No backend required for core features
 2. **Git for Sync**: Standard Git operations to GitHub
-3. **Local Services**: Whisper, storage, Git all run in Flutter
+3. **Local Services**: Whisper, storage, Git all run locally
 4. **File-First**: All data in `~/Parachute/`, human-readable formats
-5. **Backend Role**: Future agentic AI only, not daily use
-6. **JSONL for Metadata**: Git-friendly, human-readable, no binary databases
+5. **JSONL for Metadata**: Git-friendly, human-readable, no binary databases
 
 ---
 
@@ -181,17 +172,6 @@ This architecture enables notes to "cross-pollinate" between spheres while remai
 - Platform-specific Parakeet for iOS/macOS (Apple Neural Engine)
 - `git2dart` for native Git operations
 - `flutter_gemma` for on-device title generation
-
-### Backend: Go (OPTIONAL)
-
-**Why Go?**
-
-- Single binary deployment
-- Excellent concurrency for future agentic AI tasks
-- Only needed for long-running AI workflows
-
-**Framework:** Fiber
-**Database:** SQLite (for backend metadata only)
 
 ### Data Storage: File System + JSONL
 
@@ -458,28 +438,18 @@ The term speaks to the holistic, interconnected nature of knowledge—ideas don'
 ### Local Development
 
 ```bash
-# Flutter (primary)
-cd app
-flutter run -d macos
-
-# Backend (optional - for AI chat features)
-cd backend
-go run cmd/server/main.go
+flutter pub get
+flutter run -d macos      # or android, chrome
+flutter test              # Run all tests
 ```
 
 ### Testing Strategy
 
-**Frontend:**
-
 - Unit tests for services (VAD, SmartChunker, etc.)
 - Widget tests for UI components
-- 116 tests for audio pipeline
+- 116+ tests for audio pipeline
 
-**Backend:**
-
-- Unit tests for business logic
-- Integration tests for ACP client
-- API tests for endpoints
+See [docs/development/testing.md](docs/development/testing.md) for detailed testing guide.
 
 ---
 
@@ -546,11 +516,12 @@ See [ROADMAP.md](ROADMAP.md) for detailed feature queue.
 
 ---
 
-**Last Updated:** November 24, 2025
-**Status:** Active Development - Stability Focus
+**Last Updated:** December 8, 2025
+**Status:** Active Development - Flutter App Only
 
 **Version History:**
 
+- v4.0 (Dec 8, 2025): Removed Go backend (moved to parachute-agent repo)
 - v3.0 (Nov 24, 2025): Renamed Spaces→Spheres, SQLite→JSONL, added pitch philosophy
 - v2.2 (Nov 6, 2025): Git sync implementation complete
 - v2.1 (Nov 1, 2025): Added vault-style architecture with configurable paths

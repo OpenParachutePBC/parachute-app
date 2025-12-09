@@ -122,7 +122,7 @@ App uses access token to:
 
 1. Register development GitHub App (see above)
 2. Add credentials to `.env` file (git-ignored)
-3. Run app: `cd app && flutter run`
+3. Run app: `flutter run`
 4. Go to Settings → Git Sync → Connect GitHub
 5. Authorize app for test repository
 6. Verify sync works

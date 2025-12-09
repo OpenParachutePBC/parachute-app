@@ -85,17 +85,12 @@ Automatic silence detection with intelligent noise suppression:
 ## Quick Commands
 
 ```bash
-# Flutter (primary development)
-cd app && flutter run -d macos  # Run on macOS
-cd app && flutter run -d chrome --web-port=8090  # Run in browser
-cd app && flutter test          # Run tests
-
-# Full test suite
-./test.sh                       # All tests
-
-# Backend (optional - for AI chat features)
-cd backend && make run          # Start server
-cd backend && make test         # Run tests
+flutter pub get                     # Install dependencies
+flutter run -d macos                # Run on macOS
+flutter run -d android              # Run on Android
+flutter run -d chrome --web-port=8090  # Run in browser
+flutter test                        # Run tests
+flutter clean && flutter pub get    # Clean build
 ```
 
 ---
@@ -104,7 +99,9 @@ cd backend && make test         # Run tests
 
 **Parachute**: Voice-first capture tool that exports to wherever you work. We don't compete with your note system; we feed it.
 
-**Stack:** Flutter app (Riverpod) with optional Go backend for AI features
+**Stack:** Flutter app (Riverpod) - this repo is the mobile/desktop app only
+
+**Backend:** [parachute-agent](https://github.com/OpenParachutePBC/parachute-agent) (Node.js, separate repo)
 
 **Architecture:** Local-first with Git sync to GitHub
 
@@ -146,17 +143,7 @@ cd backend && make test         # Run tests
 
 **Why:** API endpoints return `{"spheres": [...]}`, not `[...]`
 
-### ⚠️ #2: ACP Protocol Requirements (Backend only)
-
-```go
-✅ ProtocolVersion: 1           // int, not string
-✅ McpServers: []MCPServer{}    // REQUIRED, even if empty (no omitempty)
-```
-
-**Method names:** `initialize`, `session/new`, `session/prompt`, `session/update`
-**Parameters:** Use `camelCase` (`sessionId`, `cwd`), not `snake_case`
-
-### ⚠️ #3: Flutter Riverpod
+### ⚠️ #2: Flutter Riverpod
 
 **All widgets using providers MUST be wrapped in `ProviderScope`:**
 
@@ -164,18 +151,14 @@ cd backend && make test         # Run tests
 runApp(ProviderScope(child: ParachuteApp()));
 ```
 
-### ⚠️ #4: Authentication (Backend only)
-
-Backend tries `ANTHROPIC_API_KEY` env var, then falls back to `~/.claude/.credentials.json`
-
-### ⚠️ #5: File Paths
+### ⚠️ #3: File Paths
 
 - Vault location is configurable and platform-specific (see Data Architecture)
 - Use `FileSystemService` to get correct paths - NEVER hardcode paths
 - Always use `FileSystemService.capturesPath` and `FileSystemService.spheresPath`
 - NEVER assume hardcoded subfolder names in code
 
-### ⚠️ #6: Git Sync Race Conditions
+### ⚠️ #4: Git Sync Race Conditions
 
 - GitSync initialization is async - don't assume it's ready immediately
 - Check `isInitialized` before performing Git operations
@@ -207,22 +190,17 @@ Backend tries `ANTHROPIC_API_KEY` env var, then falls back to `~/.claude/.creden
 ## Common Quick Fixes
 
 ```bash
-# Port in use
-lsof -ti :8080 | xargs kill
-
 # Flutter clean build
-cd app && flutter clean && flutter pub get
-
-# Rebuild backend after Go changes
-cd backend && make build
+flutter clean && flutter pub get
 
 # Check Parachute folder structure
 ls -la ~/Parachute/
+
+# Kill Flutter process if stuck
+pkill -f flutter
 ```
 
 **Flutter package name:** `package:app/...` (not `parachute`)
-
-**WebSocket not streaming?** Check client calls `subscribe(conversationId)` after connecting.
 
 ---
 
@@ -239,19 +217,13 @@ ls -la ~/Parachute/
 
 - **[docs/development/testing.md](docs/development/testing.md)** - Testing guide
 - **[docs/development/workflow.md](docs/development/workflow.md)** - Development workflow
-- **[docs/architecture/](docs/architecture/)** - ACP, database, WebSocket details
 
-### Component-Specific Docs
+### Feature-Specific Docs
 
-- **[backend/CLAUDE.md](backend/CLAUDE.md)** - Backend-specific context (AI chat features)
-- **[app/CLAUDE.md](app/CLAUDE.md)** - Frontend-specific context
-- **[app/lib/features/recorder/CLAUDE.md](app/lib/features/recorder/CLAUDE.md)** - Voice recorder feature
-
-### Recorder & Omi Device
-
+- **[lib/features/recorder/CLAUDE.md](lib/features/recorder/CLAUDE.md)** - Voice recorder feature
 - **[docs/recorder/](docs/recorder/)** - Omi integration docs, testing guides
 - **[firmware/](firmware/)** - Omi device firmware source code (Zephyr RTOS)
-- **[app/assets/firmware/](app/assets/firmware/)** - Pre-built firmware binaries for OTA
+- **[assets/firmware/](assets/firmware/)** - Pre-built firmware binaries for OTA
 
 ---
 
@@ -321,7 +293,6 @@ Metadata stored as JSON Lines (one JSON object per line):
 **Foundation (Sep-Oct 2025)**
 
 - Flutter app with Riverpod state management
-- Backend foundation (Go + Fiber) - optional for AI features
 - Omi device integration
 
 **Recorder Integration (Oct 2025)**
@@ -465,7 +436,7 @@ Use structured sessions to maintain focus and ensure quality across context wind
 
 ### Before Declaring "Done"
 
-1. **Run unit tests**: `cd app && flutter test`
+1. **Run unit tests**: `flutter test`
 2. **Manual verification**: Actually use the feature
 3. **UI testing with Playwright MCP**: For UI changes, use Playwright to verify flows
 
@@ -475,7 +446,7 @@ For UI changes, verify with actual browser testing:
 
 1. Launch the app in web mode:
    ```bash
-   cd app && flutter run -d chrome --web-port=8090
+   flutter run -d chrome --web-port=8090
    ```
 
 2. Use Playwright MCP to:
@@ -513,12 +484,11 @@ From [Anthropic's research on long-running agents](https://www.anthropic.com/eng
 - **Architecture questions?** → [ARCHITECTURE.md](ARCHITECTURE.md)
 - **What's next?** → [ROADMAP.md](ROADMAP.md)
 - **Implementation guides?** → [docs/implementation/](docs/implementation/)
-- **Backend specifics?** → [backend/CLAUDE.md](backend/CLAUDE.md)
-- **Frontend specifics?** → [app/CLAUDE.md](app/CLAUDE.md)
+- **Recorder feature?** → [lib/features/recorder/CLAUDE.md](lib/features/recorder/CLAUDE.md)
 
 Read these files as needed for specific tasks. Context is your friend!
 
 ---
 
-**Last Updated**: December 1, 2025
-**Next Review**: After Sphere management implementation
+**Last Updated**: December 8, 2025
+**Next Review**: After package rename to parachute_app

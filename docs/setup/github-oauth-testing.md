@@ -47,7 +47,7 @@ There are two ways to provide the credentials to the app:
 Run the app with credentials passed as arguments:
 
 ```bash
-cd app
+
 
 # macOS
 flutter run -d macos \
@@ -84,7 +84,7 @@ flutter run -d android \
 
 1. **Launch the app**:
    ```bash
-   cd app
+   
    flutter run -d macos \
      --dart-define=GITHUB_CLIENT_ID=YOUR_ID \
      --dart-define=GITHUB_CLIENT_SECRET=YOUR_SECRET

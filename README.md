@@ -67,8 +67,8 @@ Works with your existing tools:
 
 ## Technology
 
-- **Frontend:** Flutter (macOS, Android primary; iOS coming soon)
-- **Backend:** Go (optional, for AI chat features)
+- **App:** Flutter (macOS, Android primary; iOS coming soon)
+- **Backend:** [parachute-agent](https://github.com/OpenParachutePBC/parachute-agent) (Node.js, separate repo)
 - **Transcription:** Whisper (on-device)
 - **Title Generation:** Gemma (on-device)
 - **Sync:** Git via git2dart (native libgit2)
@@ -78,13 +78,8 @@ Works with your existing tools:
 ## Quick Start
 
 ```bash
-# Run the Flutter app
-cd app
+flutter pub get
 flutter run -d macos  # or android, chrome
-
-# Backend (optional - for AI chat features)
-cd backend
-go run cmd/server/main.go
 ```
 
 The app includes three main tabs:
@@ -161,25 +156,27 @@ Parachute: Local-first with your actual context. Open source = you can leave any
 - **[Architecture](ARCHITECTURE.md)** - System design and technical decisions
 - **[Roadmap](ROADMAP.md)** - Implementation progress and future plans
 - **[Developer Guide](CLAUDE.md)** - Working with the codebase
-
-### Component Docs
-
-- **Backend:** `backend/CLAUDE.md`
-- **Frontend:** `app/CLAUDE.md`
-- **Recorder:** `docs/recorder/`
+- **[Recorder Docs](docs/recorder/)** - Voice recording and Omi integration
 
 ---
 
 ## Project Structure
 
 ```
-parachute/
-├── app/              # Flutter frontend (primary)
-├── backend/          # Go backend (optional, for AI chat)
+parachute-app/
+├── lib/              # Flutter source code
+├── test/             # Unit tests
+├── ios/              # iOS platform code
+├── android/          # Android platform code
+├── macos/            # macOS platform code
+├── assets/           # Firmware and models
 ├── docs/             # Documentation
-├── firmware/         # Omi device firmware
-└── README.md         # This file
+└── firmware/         # Omi device firmware source
 ```
+
+## Related Repos
+
+- **[parachute-agent](https://github.com/OpenParachutePBC/parachute-agent)** - AI agent backend (Node.js)
 
 ---
 
@@ -217,4 +214,4 @@ Whisper models for transcription under MIT License.
 
 ---
 
-**Status:** Active Development - Last Updated: November 24, 2025
+**Status:** Active Development - Last Updated: December 8, 2025
