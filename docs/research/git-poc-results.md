@@ -251,8 +251,8 @@ All operations were **instantaneous** on macOS with modern hardware. No performa
 
 ## Code Locations
 
-- **GitService**: `app/lib/core/services/git/git_service.dart`
-- **Tests**: `app/test/core/services/git/git_service_test.dart`
+- **GitService**: `lib/core/services/git/git_service.dart`
+- **Tests**: `test/core/services/git/git_service_test.dart`
 - **POC Results**: `docs/research/git-poc-results.md` (this file)
 - **Library Research**: `docs/research/git-libraries-comparison.md`
 - **Strategy Doc**: `docs/architecture/git-sync-strategy.md`

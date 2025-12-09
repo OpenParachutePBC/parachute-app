@@ -64,12 +64,12 @@ This directory contains documentation specific to the voice recorder feature of 
 - See `/firmware/README.md` for build instructions
 
 **App Code**
-- Location: `/app/lib/features/recorder/`
+- Location: `/lib/features/recorder/`
 - Flutter implementation
-- See `/app/lib/features/recorder/CLAUDE.md` for context
+- See `/lib/features/recorder/CLAUDE.md` for context
 
 **Firmware Assets**
-- Location: `/app/assets/firmware/`
+- Location: `/assets/firmware/`
 - Pre-built firmware binaries
 - OTA update instructions
 

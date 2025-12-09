@@ -20,7 +20,7 @@ git --no-pager log --oneline -10
 **Run the test suite** to ensure we're leaving things in a good state:
 
 ```bash
-cd app && flutter test
+flutter test
 ```
 
 If tests fail:
@@ -70,8 +70,8 @@ If user-facing features changed:
 
 ### Component-specific docs
 If you modified a specific feature area, check for component docs:
-- `app/CLAUDE.md` - Frontend-specific context
-- `app/lib/features/*/CLAUDE.md` - Feature-specific docs
+- `CLAUDE.md` - Frontend-specific context
+- `lib/features/*/CLAUDE.md` - Feature-specific docs
 - `docs/` subdirectories for relevant guides
 
 ## Step 5: Update Session State

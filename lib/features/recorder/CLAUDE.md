@@ -8,7 +8,7 @@
 
 The recorder feature provides voice recording capabilities with Omi hardware device support and local Whisper transcription.
 
-**Location**: `app/lib/features/recorder/`
+**Location**: `lib/features/recorder/`
 
 **Key Features**:
 - Local audio recording (microphone)
@@ -182,7 +182,6 @@ The recorder will integrate with Parachute backend:
 
 **Manual Testing**:
 ```bash
-cd app
 flutter run -d macos
 # Navigate to "Recorder" tab
 # Test recording, playback, transcription
@@ -200,7 +199,6 @@ flutter run -d macos
 
 **Project Documentation:**
 - Main `CLAUDE.md` - Project-wide context
-- `docs/archive/merger-plan.md` - Historical: Integration roadmap (completed)
 
 **Recorder-Specific:**
 - `docs/recorder/` - Omi integration guides, testing procedures, dev notes
@@ -214,4 +212,4 @@ flutter run -d macos
   - `firmware/README.md` - How to build and flash firmware
   - `firmware/devkit/` - Development kit firmware
   - `firmware/scripts/` - Build and utility scripts
-- `app/assets/firmware/` - Pre-built firmware binaries for OTA updates
+- `assets/firmware/` - Pre-built firmware binaries for OTA updates

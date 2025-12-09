@@ -276,9 +276,9 @@ The threshold affects semantic coherence vs chunk count:
 
 ## Related Files
 
-- `app/lib/core/services/embedding/embedding_service.dart` - Embedding interface
-- `app/lib/core/services/search/models/indexed_chunk.dart` - Chunk model
-- `app/lib/features/recorder/models/recording.dart` - Recording model
+- `lib/core/services/embedding/embedding_service.dart` - Embedding interface
+- `lib/core/services/search/models/indexed_chunk.dart` - Chunk model
+- `lib/features/recorder/models/recording.dart` - Recording model
 - `docs/rag-search-orchestration.md` - Overall RAG architecture
 
 ## Support

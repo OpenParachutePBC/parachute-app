@@ -28,7 +28,7 @@ Updated `git2dart` and `git2dart_binaries` packages to include:
 
 ### Implementation
 
-**Dependencies** (`app/pubspec.yaml`):
+**Dependencies** (`pubspec.yaml`):
 
 ```yaml
 git2dart:
@@ -41,7 +41,7 @@ git2dart_binaries:
     ref: android-openssl-support
 ```
 
-**App Initialization** (`app/lib/main.dart`):
+**App Initialization** (`lib/main.dart`):
 
 ```dart
 if (Platform.isAndroid) {
@@ -67,7 +67,7 @@ if (Platform.isAndroid) {
 - Commit with timestamp message
 - Then push to remote
 
-**Code Location**: `app/lib/core/providers/git_sync_provider.dart` lines ~274-310
+**Code Location**: `lib/core/providers/git_sync_provider.dart` lines ~274-310
 
 ---
 
@@ -84,8 +84,8 @@ if (Platform.isAndroid) {
 
 **Code Locations**:
 
-- `app/lib/features/recorder/services/storage_service.dart` lines ~20, ~38, ~353-373
-- `app/lib/features/recorder/providers/service_providers.dart` line ~38
+- `lib/features/recorder/services/storage_service.dart` lines ~20, ~38, ~353-373
+- `lib/features/recorder/providers/service_providers.dart` line ~38
 
 ---
 
@@ -101,7 +101,7 @@ if (Platform.isAndroid) {
 - Automatically enabled when Git sync is set up
 - Properly disposed when disabled
 
-**Code Location**: `app/lib/core/providers/git_sync_provider.dart` lines ~361-392
+**Code Location**: `lib/core/providers/git_sync_provider.dart` lines ~361-392
 
 ---
 
@@ -123,8 +123,8 @@ if (Platform.isAndroid) {
 - Tap to manually trigger sync
 - Toast notification on sync completion
 
-**Code Location**: `app/lib/core/widgets/git_sync_status_indicator.dart`
-**Added to UI**: `app/lib/features/recorder/screens/home_screen.dart` (app bar)
+**Code Location**: `lib/core/widgets/git_sync_status_indicator.dart`
+**Added to UI**: `lib/features/recorder/screens/home_screen.dart` (app bar)
 
 ---
 
@@ -146,8 +146,8 @@ if (Platform.isAndroid) {
 - Tap to manually trigger sync
 - Toast notification on sync completion
 
-**Code Location**: `app/lib/core/widgets/git_sync_status_indicator.dart`
-**Added to UI**: `app/lib/features/recorder/screens/home_screen.dart` (app bar)
+**Code Location**: `lib/core/widgets/git_sync_status_indicator.dart`
+**Added to UI**: `lib/features/recorder/screens/home_screen.dart` (app bar)
 
 ---
 
@@ -168,8 +168,8 @@ if (Platform.isAndroid) {
 
 **Code Locations**:
 
-- `app/lib/core/providers/git_sync_provider.dart` lines ~86-114 (restore method)
-- `app/lib/core/providers/git_sync_provider.dart` line ~461 (auto-initialize)
+- `lib/core/providers/git_sync_provider.dart` lines ~86-114 (restore method)
+- `lib/core/providers/git_sync_provider.dart` line ~461 (auto-initialize)
 
 ---
 
@@ -298,30 +298,30 @@ sync() method:
 
 ### Core Services
 
-- ✅ `app/lib/core/services/git/git_service.dart` - Already had push/pull
-- ✅ `app/lib/core/providers/git_sync_provider.dart` - Fixed sync logic, added periodic timer, **added settings persistence**
-- ✅ `app/lib/features/recorder/services/storage_service.dart` - Added auto-sync hook
-- ✅ `app/lib/features/recorder/providers/service_providers.dart` - Pass Ref to StorageService
+- ✅ `lib/core/services/git/git_service.dart` - Already had push/pull
+- ✅ `lib/core/providers/git_sync_provider.dart` - Fixed sync logic, added periodic timer, **added settings persistence**
+- ✅ `lib/features/recorder/services/storage_service.dart` - Added auto-sync hook
+- ✅ `lib/features/recorder/providers/service_providers.dart` - Pass Ref to StorageService
 
 ### GitHub OAuth Integration (Nov 15, 2025)
 
-- ✨ `app/lib/core/services/github/github_oauth_service.dart` - NEW: GitHub App OAuth flow with installation support
-- ✨ `app/lib/core/services/github/github_api_service.dart` - NEW: GitHub API operations (list/create repos)
-- ✨ `app/lib/core/providers/github_auth_provider.dart` - NEW: Authentication state management
-- ✨ `app/lib/features/settings/widgets/github/github_connect_wizard.dart` - NEW: 3-step OAuth wizard
-- ✨ `app/lib/features/settings/widgets/github/repository_selector.dart` - NEW: Browse and select repositories
-- ✨ `app/lib/features/settings/widgets/github/repository_creator.dart` - NEW: Create new repositories
-- ✅ `app/lib/main.dart` - Added `.env` file loading support
-- ✅ `app/pubspec.yaml` - Added `oauth2`, `app_links`, `crypto`, `flutter_dotenv` packages
-- ✅ `app/ios/Runner/Info.plist` - Added `open-parachute://` URL scheme
-- ✅ `app/macos/Runner/Info.plist` - Added `open-parachute://` URL scheme
-- ✅ `app/android/app/src/main/AndroidManifest.xml` - Added deep link intent filter
+- ✨ `lib/core/services/github/github_oauth_service.dart` - NEW: GitHub App OAuth flow with installation support
+- ✨ `lib/core/services/github/github_api_service.dart` - NEW: GitHub API operations (list/create repos)
+- ✨ `lib/core/providers/github_auth_provider.dart` - NEW: Authentication state management
+- ✨ `lib/features/settings/widgets/github/github_connect_wizard.dart` - NEW: 3-step OAuth wizard
+- ✨ `lib/features/settings/widgets/github/repository_selector.dart` - NEW: Browse and select repositories
+- ✨ `lib/features/settings/widgets/github/repository_creator.dart` - NEW: Create new repositories
+- ✅ `lib/main.dart` - Added `.env` file loading support
+- ✅ `pubspec.yaml` - Added `oauth2`, `app_links`, `crypto`, `flutter_dotenv` packages
+- ✅ `ios/Runner/Info.plist` - Added `open-parachute://` URL scheme
+- ✅ `macos/Runner/Info.plist` - Added `open-parachute://` URL scheme
+- ✅ `android/app/src/main/AndroidManifest.xml` - Added deep link intent filter
 
 ### UI
 
-- ✨ `app/lib/core/widgets/git_sync_status_indicator.dart` - NEW: Sync status widget
-- ✅ `app/lib/features/recorder/screens/home_screen.dart` - Added sync indicator to app bar
-- ✅ `app/lib/features/settings/widgets/git_sync_settings_card.dart` - Updated with "Connect with GitHub" button
+- ✨ `lib/core/widgets/git_sync_status_indicator.dart` - NEW: Sync status widget
+- ✅ `lib/features/recorder/screens/home_screen.dart` - Added sync indicator to app bar
+- ✅ `lib/features/settings/widgets/git_sync_settings_card.dart` - Updated with "Connect with GitHub" button
 
 ---
 

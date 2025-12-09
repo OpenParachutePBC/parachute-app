@@ -48,7 +48,7 @@ Implemented a **pure Dart audio compression service** using the existing `opus_d
 
 ### Implementation Details
 
-**File**: `app/lib/core/services/audio_compression_service_dart.dart`
+**File**: `lib/core/services/audio_compression_service_dart.dart`
 
 **Frame Size Calculation**:
 ```dart
@@ -76,13 +76,13 @@ final encoder = SimpleOpusEncoder(
 
 Updated to use `AudioCompressionServiceDart`:
 
-1. **Git Sync** (`app/lib/core/providers/git_sync_provider.dart:67`)
+1. **Git Sync** (`lib/core/providers/git_sync_provider.dart:67`)
    - Converts WAV files to Opus during sync
 
-2. **Simple Recording** (`app/lib/features/recorder/screens/simple_recording_screen.dart:697`)
+2. **Simple Recording** (`lib/features/recorder/screens/simple_recording_screen.dart:697`)
    - Compresses after successful transcription
 
-3. **Omi Capture** (`app/lib/features/recorder/services/omi/omi_capture_service.dart:404`)
+3. **Omi Capture** (`lib/features/recorder/services/omi/omi_capture_service.dart:404`)
    - Compresses Omi device recordings
 
 ### Benefits

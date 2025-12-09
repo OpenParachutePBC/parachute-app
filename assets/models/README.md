@@ -17,7 +17,7 @@ Visit: https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct-GGUF/tree/main
 
 Download: `smollm2-360m-instruct-q4_k_m.gguf` (~200MB)
 
-Place it in: `app/assets/models/smollm2-360m-instruct-q4_k_m.gguf`
+Place it in: `assets/models/smollm2-360m-instruct-q4_k_m.gguf`
 
 ### Option 2: Using Hugging Face CLI
 
@@ -26,14 +26,14 @@ Place it in: `app/assets/models/smollm2-360m-instruct-q4_k_m.gguf`
 pip install huggingface_hub
 
 # Download the model
-cd app/assets/models
+cd assets/models
 huggingface-cli download HuggingFaceTB/SmolLM2-360M-Instruct-GGUF smollm2-360m-instruct-q4_k_m.gguf --local-dir .
 ```
 
 ### Option 3: Using wget
 
 ```bash
-cd app/assets/models
+cd assets/models
 wget https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct-GGUF/resolve/main/smollm2-360m-instruct-q4_k_m.gguf
 ```
 

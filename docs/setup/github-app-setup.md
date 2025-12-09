@@ -113,10 +113,10 @@ App uses access token to:
 
 ## Implementation Files
 
-- `app/lib/core/services/github/github_oauth_service.dart` - OAuth flow
-- `app/lib/core/services/github/github_api_service.dart` - Repository API
-- `app/lib/features/settings/screens/github_connect_wizard.dart` - UI flow
-- `app/lib/core/providers/github_auth_provider.dart` - State management
+- `lib/core/services/github/github_oauth_service.dart` - OAuth flow
+- `lib/core/services/github/github_api_service.dart` - Repository API
+- `lib/features/settings/screens/github_connect_wizard.dart` - UI flow
+- `lib/core/providers/github_auth_provider.dart` - State management
 
 ## Testing Locally
 

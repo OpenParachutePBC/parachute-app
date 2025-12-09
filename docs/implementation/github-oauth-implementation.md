@@ -82,16 +82,16 @@ User Flow:
 ### New Files Created
 
 **Services**:
-- `app/lib/core/services/github/github_oauth_service.dart` - OAuth flow
-- `app/lib/core/services/github/github_api_service.dart` - Repository API
+- `lib/core/services/github/github_oauth_service.dart` - OAuth flow
+- `lib/core/services/github/github_api_service.dart` - Repository API
 
 **Providers**:
-- `app/lib/core/providers/github_auth_provider.dart` - Auth state management
+- `lib/core/providers/github_auth_provider.dart` - Auth state management
 
 **UI Components**:
-- `app/lib/features/settings/widgets/github/github_connect_wizard.dart` - Main wizard
-- `app/lib/features/settings/widgets/github/repository_selector.dart` - Repo selection
-- `app/lib/features/settings/widgets/github/create_repository_dialog.dart` - Repo creation
+- `lib/features/settings/widgets/github/github_connect_wizard.dart` - Main wizard
+- `lib/features/settings/widgets/github/repository_selector.dart` - Repo selection
+- `lib/features/settings/widgets/github/create_repository_dialog.dart` - Repo creation
 
 **Documentation**:
 - `docs/setup/github-app-setup.md` - GitHub App registration guide
@@ -114,7 +114,7 @@ dependencies:
 
 ### Platform Configuration
 
-**iOS** (`app/ios/Runner/Info.plist`):
+**iOS** (`ios/Runner/Info.plist`):
 ```xml
 <key>CFBundleURLTypes</key>
 <array>
@@ -127,10 +127,10 @@ dependencies:
 </array>
 ```
 
-**macOS** (`app/macos/Runner/Info.plist`):
+**macOS** (`macos/Runner/Info.plist`):
 - Same as iOS
 
-**Android** (`app/android/app/src/main/AndroidManifest.xml`):
+**Android** (`android/app/src/main/AndroidManifest.xml`):
 ```xml
 <intent-filter>
   <action android:name="android.intent.action.VIEW" />

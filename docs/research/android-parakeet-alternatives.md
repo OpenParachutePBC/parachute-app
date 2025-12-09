@@ -61,7 +61,7 @@ For Android devices, we cannot use FluidAudio (iOS/macOS only). After extensive 
    ```
 
 2. **Download Parakeet ONNX model** (v2 or exported v3):
-   - Place in `app/assets/models/parakeet/`
+   - Place in `assets/models/parakeet/`
    - INT8 quantized version recommended for mobile (~200MB vs ~500MB)
 
 3. **Create Android adapter** in `transcription_service_adapter.dart`:

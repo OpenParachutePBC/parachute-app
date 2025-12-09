@@ -33,7 +33,7 @@ Works like any modern OAuth app
 
 ### 2. Environment Variables: `.env` File Support
 - **No more `--dart-define` required!**
-- Create `app/.env` with GitHub credentials
+- Create `.env` with GitHub credentials
 - Automatically loads on app start
 - Falls back to `--dart-define` for CI/CD
 - Git-ignored by default
@@ -43,9 +43,9 @@ Works like any modern OAuth app
 **Developer workflow:**
 ```bash
 # 1. Register OAuth app on GitHub
-# 2. Copy credentials to app/.env
-cp app/.env.example app/.env
-# Edit app/.env with your Client ID and Secret
+# 2. Copy credentials to .env
+cp .env.example .env
+# Edit .env with your Client ID and Secret
 
 # 3. Run - that's it!
 cd app && flutter run
@@ -60,14 +60,14 @@ cd app && flutter run
 ## Files Created/Modified
 
 ### New Services
-- `app/lib/core/services/github/github_oauth_service.dart` - OAuth flow
-- `app/lib/core/services/github/github_api_service.dart` - Repository API
-- `app/lib/core/providers/github_auth_provider.dart` - Auth state
+- `lib/core/services/github/github_oauth_service.dart` - OAuth flow
+- `lib/core/services/github/github_api_service.dart` - Repository API
+- `lib/core/providers/github_auth_provider.dart` - Auth state
 
 ### New UI
-- `app/lib/features/settings/widgets/github/github_connect_wizard.dart` - 3-step wizard
-- `app/lib/features/settings/widgets/github/repository_selector.dart` - Repo browser
-- `app/lib/features/settings/widgets/github/create_repository_dialog.dart` - Repo creation
+- `lib/features/settings/widgets/github/github_connect_wizard.dart` - 3-step wizard
+- `lib/features/settings/widgets/github/repository_selector.dart` - Repo browser
+- `lib/features/settings/widgets/github/create_repository_dialog.dart` - Repo creation
 
 ### Documentation
 - `docs/setup/QUICKSTART.md` - **Start here!** 5-minute setup guide
@@ -76,12 +76,12 @@ cd app && flutter run
 - `docs/implementation/github-oauth-implementation.md` - Technical details
 
 ### Configuration
-- `app/.env.example` - Environment variable template
-- `app/lib/main.dart` - Loads .env file on startup
-- `app/ios/Runner/Info.plist` - iOS deep linking (`open-parachute://`)
-- `app/macos/Runner/Info.plist` - macOS deep linking
-- `app/android/app/src/main/AndroidManifest.xml` - Android deep linking
-- `app/pubspec.yaml` - Added `flutter_dotenv` package
+- `.env.example` - Environment variable template
+- `lib/main.dart` - Loads .env file on startup
+- `ios/Runner/Info.plist` - iOS deep linking (`open-parachute://`)
+- `macos/Runner/Info.plist` - macOS deep linking
+- `android/app/src/main/AndroidManifest.xml` - Android deep linking
+- `pubspec.yaml` - Added `flutter_dotenv` package
 
 ## Security Features
 
@@ -110,7 +110,7 @@ cd app && flutter run
 
 ### Method 1: `.env` File (Recommended for Development)
 ```bash
-# app/.env
+# .env
 GITHUB_CLIENT_ID=Iv1.abc123def456
 GITHUB_CLIENT_SECRET=your_secret_here
 ```
@@ -141,7 +141,7 @@ static String get _clientId {
 ## Testing Checklist
 
 - [ ] Register GitHub OAuth App
-- [ ] Add credentials to `app/.env`
+- [ ] Add credentials to `.env`
 - [ ] Run on macOS: `cd app && flutter run -d macos`
 - [ ] Test OAuth flow (Settings → Connect with GitHub)
 - [ ] Verify deep linking works (browser → app)
@@ -186,7 +186,7 @@ static String get _clientId {
 
 ### Before Testing
 1. **Register OAuth App** on GitHub
-2. **Copy credentials** to `app/.env`
+2. **Copy credentials** to `.env`
 3. **Run app** and test flow
 
 ### Before Production

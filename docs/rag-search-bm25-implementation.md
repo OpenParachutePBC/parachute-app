@@ -15,35 +15,35 @@ Implemented BM25 keyword search service for recordings using the `bm25` Dart pac
 
 #### Core Services
 
-1. **`app/lib/core/services/search/models/bm25_search_result.dart`**
+1. **`lib/core/services/search/models/bm25_search_result.dart`**
    - Result model containing recording, BM25 score, and matched fields
    - Used for highlighting matched fields in UI
 
-2. **`app/lib/core/services/search/bm25_search_service.dart`**
+2. **`lib/core/services/search/bm25_search_service.dart`**
    - Main search interface with BM25 algorithm
    - Index building from recordings list
    - Keyword search with relevance scoring
    - Field weighting (title 2x, transcript 1x)
    - In-memory index with fast rebuild
 
-3. **`app/lib/core/services/search/bm25_index_manager.dart`**
+3. **`lib/core/services/search/bm25_index_manager.dart`**
    - Index lifecycle management
    - Ensures index is ready for searching
    - Handles rebuild triggers and invalidation
    - Prevents concurrent rebuild race conditions
 
-4. **`app/lib/core/providers/bm25_provider.dart`**
+4. **`lib/core/providers/bm25_provider.dart`**
    - Riverpod providers for BM25SearchService and BM25IndexManager
    - Integrates with existing StorageService
 
 #### Tests
 
-5. **`app/test/core/services/search/bm25_search_service_test.dart`**
+5. **`test/core/services/search/bm25_search_service_test.dart`**
    - Comprehensive unit tests for BM25SearchService
    - Tests for index building, search, field matching, weighting
    - 30+ test cases covering all functionality
 
-6. **`app/test/core/services/search/bm25_index_manager_test.dart`**
+6. **`test/core/services/search/bm25_index_manager_test.dart`**
    - Unit tests for BM25IndexManager
    - Tests for lifecycle management, concurrent builds, error handling
    - Uses mocks for isolated testing

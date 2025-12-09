@@ -45,29 +45,29 @@ This branch implements **automatic pause detection** for voice recording using V
 ## Files Added (New Functionality)
 
 ### Core VAD Components
-1. **`app/lib/features/recorder/services/vad/simple_vad.dart`** (173 lines)
+1. **`lib/features/recorder/services/vad/simple_vad.dart`** (173 lines)
    - Direct port of RichardTate's VAD
    - RMS energy calculation
    - 21 comprehensive tests
 
-2. **`app/lib/features/recorder/services/vad/smart_chunker.dart`** (246 lines)
+2. **`lib/features/recorder/services/vad/smart_chunker.dart`** (246 lines)
    - VAD-based audio segmentation
    - 1s silence detection
    - 19 comprehensive tests
 
-3. **`app/lib/features/recorder/services/audio_processing/resampler.dart`** (137 lines)
+3. **`lib/features/recorder/services/audio_processing/resampler.dart`** (137 lines)
    - 16kHz ↔ 48kHz conversion
    - For future RNNoise integration
    - 24 comprehensive tests
 
 ### Noise Suppression
-4. **`app/lib/features/recorder/services/audio_processing/simple_noise_filter.dart`** (87 lines)
+4. **`lib/features/recorder/services/audio_processing/simple_noise_filter.dart`** (87 lines)
    - High-pass filter (80Hz cutoff)
    - Pure Dart implementation
    - 7 comprehensive tests
 
 ### Auto-Pause Service
-5. **`app/lib/features/recorder/services/live_transcription_service_v3.dart`** (572 lines)
+5. **`lib/features/recorder/services/live_transcription_service_v3.dart`** (572 lines)
    - Complete auto-pause recording service
    - Combines VAD + SmartChunker + Whisper
    - Non-blocking transcription queue

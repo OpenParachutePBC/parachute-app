@@ -138,7 +138,7 @@ if (manager.status.isReady) {
 
 ## Testing
 
-Tests are located in `app/test/core/services/embedding/`:
+Tests are located in `test/core/services/embedding/`:
 
 - `embedding_models_test.dart` - Model enums and status
 - `embedding_dimension_helper_test.dart` - Dimension truncation
@@ -146,7 +146,7 @@ Tests are located in `app/test/core/services/embedding/`:
 
 Run tests:
 ```bash
-cd app && flutter test test/core/services/embedding/
+flutter test test/core/services/embedding/
 ```
 
 ## Next Steps

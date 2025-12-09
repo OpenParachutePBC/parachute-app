@@ -149,7 +149,7 @@ git push --force-with-lease origin rag-search
 ```
 
 **Expected conflicts:**
-- `app/lib/main.dart` — reconcile app initialization
+- `lib/main.dart` — reconcile app initialization
 - Provider files — remove references to deleted features
 - Minor import cleanup
 
@@ -363,10 +363,10 @@ Implement GitHub issue #XX for the Parachute RAG search feature.
 - Use `debugPrint('[ServiceName] message')` for logging
 
 ## Key Files to Reference
-- `app/lib/core/services/gemma_model_manager.dart` - Model download pattern
-- `app/lib/core/services/title_generation_service.dart` - Service pattern
-- `app/lib/features/recorder/services/storage_service.dart` - Storage pattern
-- `app/lib/core/providers/` - Provider patterns
+- `lib/core/services/gemma_model_manager.dart` - Model download pattern
+- `lib/core/services/title_generation_service.dart` - Service pattern
+- `lib/features/recorder/services/storage_service.dart` - Storage pattern
+- `lib/core/providers/` - Provider patterns
 
 ## PR Guidelines
 - Target branch: `rag-search` (NOT main)
@@ -487,7 +487,7 @@ Merge with RRF ──► Deduplicate ──► Top 20 Results
 ### File Structure (Expected After Implementation)
 
 ```
-app/lib/core/
+lib/core/
 ├── services/
 │   ├── embedding/
 │   │   ├── embedding_service.dart           # Abstract interface (#19)
