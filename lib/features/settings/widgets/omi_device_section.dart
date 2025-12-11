@@ -337,6 +337,25 @@ class OmiDeviceSection extends ConsumerWidget {
                   ),
                 ],
               ),
+              SizedBox(height: Spacing.sm),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        _forceReflashFirmware(context, ref);
+                      },
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Force Re-flash'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: BrandColors.driftwood,
+                        side: BorderSide(color: BrandColors.stone),
+                        padding: EdgeInsets.symmetric(vertical: Spacing.md),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ],
           ],
         ],
@@ -458,6 +477,116 @@ class OmiDeviceSection extends ConsumerWidget {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error checking for updates: $e'),
+            backgroundColor: BrandColors.error,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _forceReflashFirmware(BuildContext context, WidgetRef ref) async {
+    final connectedDeviceAsync = ref.read(connectedOmiDeviceProvider);
+    final connectedDevice = connectedDeviceAsync.value;
+
+    if (connectedDevice == null) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('No device connected'),
+            backgroundColor: BrandColors.warning,
+          ),
+        );
+      }
+      return;
+    }
+
+    final firmwareService = ref.read(omiFirmwareServiceProvider);
+
+    if (context.mounted) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Force Re-flash Firmware'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Current version: ${connectedDevice.firmwareRevision ?? "Unknown"}',
+              ),
+              Text(
+                'Bundled version: ${firmwareService.getLatestFirmwareVersion()}',
+              ),
+              SizedBox(height: Spacing.lg),
+              const Text(
+                'This will re-flash the firmware even if your device reports '
+                'the same version. Use this if:\n\n'
+                '• Button is not working\n'
+                '• LED behavior is incorrect\n'
+                '• Previous update may have failed\n'
+                '• Device is behaving unexpectedly',
+                style: TextStyle(fontSize: 14),
+              ),
+              SizedBox(height: Spacing.lg),
+              const Text(
+                'Keep your device nearby and do not disconnect during the update process (2-5 minutes).',
+                style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: FilledButton.styleFrom(
+                backgroundColor: BrandColors.warning,
+              ),
+              child: const Text('Force Re-flash'),
+            ),
+          ],
+        ),
+      );
+
+      if (confirmed != true) return;
+    }
+
+    try {
+      await firmwareService.startFirmwareUpdate(
+        device: connectedDevice,
+        onProgress: (progress) {},
+        onComplete: () {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text(
+                  'Firmware re-flash completed successfully! Device will reboot.',
+                ),
+                backgroundColor: BrandColors.success,
+                duration: const Duration(seconds: 5),
+              ),
+            );
+          }
+        },
+        onError: (error) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Firmware re-flash failed: $error'),
+                backgroundColor: BrandColors.error,
+                duration: const Duration(seconds: 5),
+              ),
+            );
+          }
+        },
+      );
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error during re-flash: $e'),
             backgroundColor: BrandColors.error,
           ),
         );
