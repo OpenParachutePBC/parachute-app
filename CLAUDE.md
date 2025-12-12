@@ -1,6 +1,6 @@
-# CLAUDE.md
+# Parachute App - Development Guide
 
-**Essential guidance for Claude Code when working with Parachute.**
+**Essential guidance for Claude Code when working with the Parachute Flutter app.**
 
 ---
 
@@ -17,110 +17,211 @@ We build local-first, voice-first AI tooling that gives people agency over their
 - **Prosocial, Not Surveillance** - You control what's captured and where it goes
 - **Thoughtful AI** - Enhance thinking, don't replace it
 
-**Key Insight:** "The AI that knows you best wins. But people won't share their real context with tools they don't trust. Local-first + voice-first = more honest, richer context = better AI = stronger lock-in through value, not coercion."
-
 ---
 
-## Current Development Focus
+## Architecture
 
-**🎯 Status**: Sphere management in progress (Dec 1, 2025)
-
-**Primary Platforms:** macOS and Android (iOS coming soon with additional team members)
-
-### Recently Completed
-
-**Bug Fixes & Sphere Improvements (Dec 1, 2025)**: ✅ Complete
-- Fixed transcription UI not updating after background processing
-- Added orphan link detection for spheres (shows deleted recordings)
-- Added "Clean up broken links" bulk action in sphere detail
-
-**Reliability Improvements (Nov 20-24, 2025)**: ✅ Complete
-- Critical memory leak fixes and dead code removal
-- Stylistic lint fixes
-- Async bug fixes and race condition prevention
-- GitSync initialization race condition fix
-- Standardized FileSystemService usage
-
-**Auto-Pause Voice Recording (Nov 10, 2025)**: ✅ Complete
-
-Automatic silence detection with intelligent noise suppression:
-
-- ✅ VAD (Voice Activity Detection) - RMS energy-based speech detection
-- ✅ SmartChunker - Auto-segment on 1s silence
-- ✅ OS-level noise suppression (echoCancel, autoGain, noiseSuppress)
-- ✅ High-pass filter (80Hz cutoff) - Removes low-frequency rumble
-- ✅ Visual debug overlay with real-time audio graphs
-- ✅ 116 comprehensive tests covering all components
-
-**Audio Pipeline**: `Mic → OS Suppression → High-Pass Filter → VAD → SmartChunker → Whisper`
-
-**Recording UI Polish (Nov 6-13, 2025)**: ✅ Complete
-
-- ✅ Context field with voice input (record → transcribe → insert)
-- ✅ Background transcription service (continues when app backgrounded)
-- ✅ Immediate recording persistence (no data loss on exit)
-- ✅ Google Keep-inspired notes grid/list view
-
-**Git Sync (Nov 6-17, 2025)**: ✅ Complete
-
-- Local-first architecture with Git-based sync to GitHub
-- Auto-commit on recording save, periodic background sync
-- Native Git on macOS/Android (iOS pending)
-
-### Next Up
-
-**Sphere Management** - Core functionality complete, polish remaining:
-- Cross-sphere search
-- Tag suggestions and autocomplete
-- UI refinements
-
-**Focus Areas:**
-- Export/integration with external AI tools (ChatGPT, Claude, etc.)
-- Stability and reliability improvements
-
-**Deferred:** AI chat features (backend-dependent) - will return once core capture is rock-solid
-
----
-
-## Quick Commands
-
-```bash
-flutter pub get                     # Install dependencies
-flutter run -d macos                # Run on macOS
-flutter run -d android              # Run on Android
-flutter run -d chrome --web-port=8090  # Run in browser
-flutter test                        # Run tests
-flutter clean && flutter pub get    # Clean build
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                         FLUTTER APP                                  │
+│                                                                      │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
+│  │   Recorder   │  │    Chat      │  │   Settings   │              │
+│  │   Feature    │  │   Feature    │  │   Feature    │              │
+│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘              │
+│         │                 │                 │                       │
+│         └─────────────────┼─────────────────┘                       │
+│                           ▼                                         │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │                    RIVERPOD PROVIDERS                        │   │
+│  │  storageServiceProvider, chatServiceProvider, etc.          │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                           │                                         │
+│         ┌─────────────────┼─────────────────┐                       │
+│         ▼                 ▼                 ▼                       │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
+│  │ StorageService│  │ ChatService  │  │AudioService  │              │
+│  │ (local files) │  │ (HTTP/SSE)   │  │ (recording)  │              │
+│  └──────────────┘  └──────────────┘  └──────────────┘              │
+└─────────────────────────────────────────────────────────────────────┘
+         │                 │
+         ▼                 ▼
+┌─────────────────┐  ┌─────────────────┐
+│  Local Vault    │  │  Agent Backend  │
+│  ~/Parachute/   │  │  localhost:3333 │
+│                 │  │                 │
+│  ├─ captures/   │  │  /api/chat      │
+│  ├─ spheres/    │  │  /api/agents    │
+│  └─ .git/       │  │  /api/captures  │
+└─────────────────┘  └─────────────────┘
 ```
 
 ---
 
-## Project Overview
+## Key Files
 
-**Parachute**: Voice-first capture tool that exports to wherever you work. We don't compete with your note system; we feed it.
+| File | Purpose |
+|------|---------|
+| `lib/main.dart` | App entry point, navigation setup |
+| `lib/core/config/app_config.dart` | Centralized configuration constants |
+| `lib/core/services/logger_service.dart` | Structured logging with levels |
+| `lib/core/errors/app_error.dart` | Custom error classes |
+| `lib/core/services/file_system_service.dart` | Platform-aware file operations |
+| `lib/features/recorder/services/storage_service.dart` | Recording persistence |
+| `lib/features/recorder/services/audio_service.dart` | Microphone recording |
+| `lib/features/recorder/services/live_transcription_service_v3.dart` | VAD + transcription |
+| `lib/features/chat/services/chat_service.dart` | Agent backend API client |
+| `lib/features/chat/providers/chat_providers.dart` | Chat state management |
 
-**Stack:** Flutter app (Riverpod) - this repo is the mobile/desktop app only
+---
 
-**Backend:** [parachute-agent](https://github.com/OpenParachutePBC/parachute-agent) (Node.js, separate repo)
+## Commands
 
-**Architecture:** Local-first with Git sync to GitHub
+```bash
+flutter pub get                        # Install dependencies
+flutter run -d macos                   # Run on macOS
+flutter run -d android                 # Run on Android
+flutter run -d chrome --web-port=8090  # Run in browser
+flutter test                           # Run tests
+flutter analyze                        # Check for issues
+flutter clean && flutter pub get       # Clean build
+```
 
-**Data Architecture:**
+---
 
-- All data in configurable vault (default location varies by platform)
-- `{vault}/{captures}/` - Voice recordings (subfolder name configurable)
-- `{vault}/{spheres}/` - Themed spheres with CLAUDE.md system prompts
-- **Platform-specific defaults:**
-  - macOS/Linux: `~/Parachute/`
-  - Android: External storage `/storage/emulated/0/Android/data/.../files/Parachute`
-  - iOS: App Documents directory
-- **Compatibility:** Works with Obsidian, Logseq, and other markdown vaults
+## Agent Backend API
 
-**App Structure:** Three main tabs in bottom navigation:
+The app communicates with [parachute-agent](https://github.com/OpenParachutePBC/parachute-agent) backend.
 
-- **Spheres** - Organize and browse themed knowledge spheres
-- **Recorder** - Voice recording with Omi device support and local Whisper transcription
-- **Files** - Browse entire `~/Parachute/` directory structure
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/health` | GET | Health check |
+| `/api/agents` | GET | List available agents |
+| `/api/chat/stream` | POST | SSE streaming chat |
+| `/api/chat/sessions` | GET | List all sessions |
+| `/api/chat/session/:id` | GET | Get session with messages |
+| `/api/chat/session/:id` | DELETE | Delete session |
+| `/api/captures` | POST | Upload document |
+| `/api/captures` | GET | List captures |
+
+### SSE Stream Events
+
+The `/api/chat/stream` endpoint returns these event types:
+
+```
+session  → { sessionId, title }           # Session info at start
+init     → { tools }                       # Available tools
+text     → { content }                     # Accumulated response text
+tool_use → { tool: { name, input } }       # Tool execution
+done     → { durationMs, title }           # Stream complete
+error    → { error }                       # Error occurred
+```
+
+---
+
+## Key Patterns
+
+### Riverpod State Management
+
+All state flows through Riverpod providers:
+
+```dart
+// Service providers (singletons)
+final storageServiceProvider = Provider((ref) => StorageService(ref));
+
+// Async data providers
+final recordingsProvider = FutureProvider((ref) async {
+  final storage = ref.watch(storageServiceProvider);
+  return storage.getRecordings();
+});
+
+// State notifiers for complex state
+final chatMessagesProvider = StateNotifierProvider<ChatMessagesNotifier, ChatMessagesState>(
+  (ref) => ChatMessagesNotifier(ref),
+);
+```
+
+**Rules:**
+- Services created via Provider (singletons)
+- Async data via FutureProvider or StreamProvider
+- Complex mutable state via StateNotifierProvider
+- Always dispose subscriptions in `ref.onDispose()`
+
+### Structured Logging
+
+Use the logger service instead of `debugPrint()`:
+
+```dart
+import 'package:app/core/services/logger_service.dart';
+
+final log = logger.createLogger('MyComponent');
+
+log.debug('Processing started', data: {'count': 42});
+log.info('Operation complete');
+log.warn('Resource low', error: e);
+log.error('Failed', error: e, stackTrace: st);
+```
+
+### Custom Errors
+
+Use typed errors from `lib/core/errors/app_error.dart`:
+
+```dart
+throw StorageError.notFound(path);
+throw NetworkError.timeout(url);
+throw RecordingError.microphonePermissionDenied();
+throw ChatError.sessionNotFound(id);
+```
+
+### File System Operations
+
+Always use `FileSystemService` for paths:
+
+```dart
+final fs = ref.read(fileSystemServiceProvider);
+final capturesPath = await fs.capturesPath;
+final spheresPath = await fs.spheresPath;
+// NEVER hardcode: ~/Parachute/captures/
+```
+
+### Parallel I/O Pattern
+
+For bulk file operations, use parallel batches:
+
+```dart
+const batchSize = 20;
+for (int i = 0; i < files.length; i += batchSize) {
+  final batch = files.skip(i).take(batchSize);
+  final results = await Future.wait(batch.map((f) => loadFile(f)));
+  // Process results...
+}
+```
+
+### Widget Lifecycle Safety
+
+Check `mounted` before async setState:
+
+```dart
+Future<void> _loadData() async {
+  final data = await fetchData();
+  if (!mounted) return;  // Widget may have been disposed
+  setState(() => _data = data);
+}
+```
+
+---
+
+## Configuration
+
+All configuration constants are in `lib/core/config/app_config.dart`:
+
+| Category | Key Constants |
+|----------|---------------|
+| Backend | `defaultAgentServerUrl`, `apiTimeout`, `streamTimeout` |
+| Storage | `defaultVaultName`, `defaultCapturesFolder`, `recordingCacheDuration` |
+| Recording | `audioSampleRate`, `vadSilenceThreshold`, `minRecordingDurationMs` |
+| Chat | `maxMessageLength`, `searchDebounceDelay` |
+| Performance | `fileIoBatchSize`, `maxLogBufferSize` |
 
 ---
 
@@ -129,40 +230,114 @@ flutter clean && flutter pub get    # Clean build
 ### ⚠️ #1: Flutter Type Casting (MOST COMMON ERROR)
 
 **NEVER do this:**
-
 ```dart
 ❌ final List<dynamic> data = response.data as List<dynamic>;  // CRASHES!
 ```
 
 **ALWAYS do this:**
-
 ```dart
 ✅ final Map<String, dynamic> data = response.data as Map<String, dynamic>;
-   final List<dynamic> spheres = data['spheres'] as List<dynamic>;
+   final List<dynamic> items = data['items'] as List<dynamic>;
 ```
 
-**Why:** API endpoints return `{"spheres": [...]}`, not `[...]`
+### ⚠️ #2: Riverpod ProviderScope
 
-### ⚠️ #2: Flutter Riverpod
-
-**All widgets using providers MUST be wrapped in `ProviderScope`:**
-
+All widgets using providers MUST be wrapped in `ProviderScope`:
 ```dart
 runApp(ProviderScope(child: ParachuteApp()));
 ```
 
 ### ⚠️ #3: File Paths
 
-- Vault location is configurable and platform-specific (see Data Architecture)
-- Use `FileSystemService` to get correct paths - NEVER hardcode paths
-- Always use `FileSystemService.capturesPath` and `FileSystemService.spheresPath`
-- NEVER assume hardcoded subfolder names in code
+- Use `FileSystemService` for all paths - NEVER hardcode
+- Vault location varies by platform
+- Subfolder names are user-configurable
 
-### ⚠️ #4: Git Sync Race Conditions
+### ⚠️ #4: Async Lifecycle
 
-- GitSync initialization is async - don't assume it's ready immediately
-- Check `isInitialized` before performing Git operations
-- Use proper state management for sync status
+- Check `mounted` before `setState` after async operations
+- Cancel subscriptions in `dispose()`
+- Use `ref.onDispose()` for provider cleanup
+
+---
+
+## Project Structure
+
+```
+lib/
+├── core/                          # Shared infrastructure
+│   ├── config/                    # App configuration
+│   │   └── app_config.dart        # Centralized constants
+│   ├── errors/                    # Custom error classes
+│   │   └── app_error.dart         # Typed exceptions
+│   ├── services/                  # Core services
+│   │   ├── logger_service.dart    # Structured logging
+│   │   ├── file_system_service.dart
+│   │   └── api_client.dart
+│   ├── providers/                 # Shared Riverpod providers
+│   ├── models/                    # Shared data models
+│   └── theme/                     # Design tokens, colors
+│
+├── features/                      # Feature modules
+│   ├── recorder/                  # Voice recording
+│   │   ├── models/
+│   │   ├── providers/
+│   │   ├── services/
+│   │   ├── screens/
+│   │   └── widgets/
+│   ├── chat/                      # AI chat
+│   │   ├── models/
+│   │   ├── providers/
+│   │   ├── services/
+│   │   ├── screens/
+│   │   └── widgets/
+│   ├── settings/                  # App settings
+│   └── onboarding/                # First-time setup
+│
+└── main.dart                      # Entry point
+```
+
+---
+
+## Data Flow
+
+### Recording Flow
+```
+User taps record
+    ↓
+AudioService.startRecording()
+    ↓
+LiveTranscriptionService processes audio
+    ↓
+VAD detects speech/silence
+    ↓
+SmartChunker segments on silence
+    ↓
+Whisper/Parakeet transcribes segments
+    ↓
+StorageService.saveRecording()
+    ↓
+Markdown + audio saved to vault
+    ↓
+Git auto-commit (if enabled)
+```
+
+### Chat Flow
+```
+User sends message
+    ↓
+ChatService.streamChat() → POST /api/chat/stream
+    ↓
+SSE events received:
+  session → Store session ID
+  text    → Update UI with content
+  tool_use → Show tool execution
+  done    → Mark complete, capture title
+    ↓
+ChatMessagesNotifier updates state
+    ↓
+UI rebuilds via Riverpod
+```
 
 ---
 
@@ -179,316 +354,100 @@ runApp(ProviderScope(child: ParachuteApp()));
 7. **Ask permission to push**
 8. Push only after approval
 
-**Why:** Avoids messy history with reverts and bug-filled commits.
-
-**⚠️ WARNING**: Never auto-commit or auto-push. Always wait for explicit user approval for BOTH actions.
-
-**Important:** Always use `git --no-pager` when running git commands in bash (prevents pager from blocking output).
+Always use `git --no-pager` to prevent pager blocking output.
 
 ---
 
-## Common Quick Fixes
+## Testing
 
 ```bash
-# Flutter clean build
-flutter clean && flutter pub get
-
-# Check Parachute folder structure
-ls -la ~/Parachute/
-
-# Kill Flutter process if stuck
-pkill -f flutter
+flutter test                           # All tests
+flutter test test/features/recorder/   # Feature tests
+flutter test --coverage                # With coverage
 ```
 
-**Flutter package name:** `package:app/...` (not `parachute`)
+**Test Coverage Focus:**
+- Audio pipeline (VAD, SmartChunker) - 116 tests
+- Storage service operations
+- Provider state transitions
 
 ---
 
-## Documentation Structure
+## Platform Notes
 
-### Core Documentation
-
-- **[README.md](README.md)** - Project overview and quick start
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** - System design and technical decisions
-- **[ROADMAP.md](ROADMAP.md)** - Current focus + future features queue
-- **[CLAUDE.md](CLAUDE.md)** - This file - developer guidance
-
-### Development Guides
-
-- **[docs/development/testing.md](docs/development/testing.md)** - Testing guide
-- **[docs/development/workflow.md](docs/development/workflow.md)** - Development workflow
-
-### Feature-Specific Docs
-
-- **[lib/features/recorder/CLAUDE.md](lib/features/recorder/CLAUDE.md)** - Voice recorder feature
-- **[docs/recorder/](docs/recorder/)** - Omi integration docs, testing guides
-- **[firmware/](firmware/)** - Omi device firmware source code (Zephyr RTOS)
-- **[assets/firmware/](assets/firmware/)** - Pre-built firmware binaries for OTA
+| Platform | Vault Default | Notes |
+|----------|---------------|-------|
+| macOS | `~/Parachute/` | Full feature support |
+| Android | External storage | Native Git via libgit2 |
+| iOS | App Documents | Git support pending |
+| Web | N/A | Debug/demo only |
 
 ---
 
-## Sphere System (formerly "Spaces")
+## Feature Flags
 
-Spheres are themed knowledge containers. Each sphere has a `CLAUDE.md` file that serves as a **persistent system prompt** for AI conversations in that sphere.
+Toggle features via `AppConfig`:
 
-### Why "Spheres"?
-
-The term "sphere" speaks to the holistic, interconnected nature of knowledge—ideas don't live in flat boxes but in overlapping domains of thought. A capture can exist in multiple spheres simultaneously.
-
-### Sphere Structure
-
+```dart
+AppConfig.enableAiChat = true;           // AI chat feature
+AppConfig.enableOmiDevice = true;        // Omi hardware support
+AppConfig.enableGitSync = true;          // Git sync to GitHub
+AppConfig.enableSearchIndexing = true;   // RAG search indexing
 ```
-{vault}/{spheres}/
-├── work/
-│   ├── CLAUDE.md           # System prompt for this sphere
-│   ├── sphere.jsonl        # Linked captures and metadata
-│   └── files/              # Sphere-specific files
-│
-└── personal/
-    ├── CLAUDE.md
-    ├── sphere.jsonl
-    └── files/
-```
-
-### CLAUDE.md System Prompt
-
-Each sphere's CLAUDE.md defines context for AI interactions:
-
-```markdown
-# Work Sphere
-
-You are assisting with professional projects and work-related thinking.
-
-## Context
-This sphere contains work discussions, project planning, and professional development.
-
-## Guidelines
-- Keep responses focused and actionable
-- Reference past discussions when relevant
-- Suggest connections between related projects
-```
-
-### sphere.jsonl Format
-
-Metadata stored as JSON Lines (one JSON object per line):
-
-```jsonl
-{"type":"link","capture":"2025-11-24_10-30-00","linkedAt":"2025-11-24T10:35:00Z"}
-{"type":"tag","name":"project-alpha","addedAt":"2025-11-24T10:36:00Z"}
-{"type":"note","content":"Key insight about...","createdAt":"2025-11-24T10:40:00Z"}
-```
-
-**Why JSONL over SQLite:**
-- Human-readable and git-friendly
-- No binary files to merge
-- Simple append-only operations
-- Easy to parse and debug
 
 ---
 
-## Project Status
+## Debugging
 
-### ✅ Completed
+### View Logs
+```dart
+// Get recent errors
+final errors = logger.getLogs(level: LogLevel.error, limit: 50);
 
-**Foundation (Sep-Oct 2025)**
+// Get component-specific logs
+final chatLogs = logger.getLogs(component: 'ChatService');
 
-- Flutter app with Riverpod state management
-- Omi device integration
-
-**Recorder Integration (Oct 2025)**
-
-- Vault-style folder system with configurable location
-- Obsidian/Logseq compatibility
-- Local Whisper transcription (on-device models)
-- Gemma 2B title generation
-- 3-step onboarding flow
-
-**Local-First Recording (Nov 5, 2025)**
-
-- Live transcription UI with journal-style interface
-- Auto-pause VAD-based chunking
-- Recordings load from local filesystem
-- Markdown + audio files saved to vault
-
-**Git Sync (Nov 6-17, 2025)**
-
-- Native Git on macOS and Android
-- GitHub OAuth integration
-- Auto-commit on save, periodic background sync
-- iOS support pending
-
-**Reliability (Nov 20-24, 2025)**
-
-- Memory leak fixes
-- Race condition prevention
-- Code cleanup and standardization
-
-### 🔜 Next Up
-
-- Sphere management and organization
-- Export integrations (to ChatGPT, Claude, etc.)
-- iOS Git support
-- Cross-sphere knowledge linking
-
-### 🔮 Future
-
-- Personalized local LLM with deep personal context
-- MCP integrations for connecting to other tools
-- Knowledge graph visualization
-
----
-
-## Development Principles
-
-1. **Local-First** - User owns their data, always
-2. **Voice-First** - Natural capture where thinking actually happens
-3. **Open & Interoperable** - Standard formats (markdown, JSONL), no lock-in
-4. **Privacy by Default** - No tracking, no ads, you control what leaves your device
-5. **Prosocial** - Technology that serves human cognition, not extracts from it
-6. **Cross-Pollination** - Ideas flow between spheres, nothing siloed
-
----
-
-## Quick Reference: File System Layout
-
-**Note:** Vault location and subfolder names are configurable. Default structure shown below.
-
+// Get log statistics
+final stats = logger.getStats();
 ```
-{vault}/                                # Configurable location (default: ~/Parachute/)
-├── {captures}/                         # Configurable name (default: captures/)
-│   ├── YYYY-MM-DD_HH-MM-SS.md         # Transcript
-│   ├── YYYY-MM-DD_HH-MM-SS.opus       # Audio (compressed)
-│   └── YYYY-MM-DD_HH-MM-SS.json       # Metadata
-│
-└── {spheres}/                          # Configurable name (default: spheres/)
-    ├── sphere-name/
-    │   ├── CLAUDE.md                   # System prompt
-    │   ├── sphere.jsonl                # Linked captures & metadata
-    │   └── files/                      # Sphere-specific files
-    │
-    └── another-sphere/
+
+### Common Issues
+
+| Issue | Solution |
+|-------|----------|
+| "ProviderScope not found" | Wrap app in `ProviderScope` |
+| Recording not saving | Check `FileSystemService` permissions |
+| Chat not connecting | Verify agent server at localhost:3333 |
+| Transcription failing | Ensure model is downloaded |
+| Git sync stuck | Check `isInitialized` before operations |
+
+---
+
+## Related Repositories
+
+- **[parachute-agent](https://github.com/OpenParachutePBC/parachute-agent)** - Node.js backend for AI agents
+- **[parachute-firmware](firmware/)** - Omi device firmware (Zephyr RTOS)
+
+---
+
+## Quick Reference
+
+**Package name:** `package:app/...` (not `parachute`)
+
+**Server URL:** `http://localhost:3333` (configurable in settings)
+
+**Vault structure:**
+```
+~/Parachute/
+├── captures/          # Voice recordings
+│   ├── YYYY-MM-DD_HH-MM-SS.md
+│   └── YYYY-MM-DD_HH-MM-SS.opus
+└── spheres/           # Knowledge spheres
+    └── sphere-name/
         ├── CLAUDE.md
-        ├── sphere.jsonl
-        └── files/
+        └── sphere.jsonl
 ```
 
-**Customization:** Users can:
-
-- Change vault location via Settings → Parachute Folder → Change Location
-- Rename `captures/` and `spheres/` subfolders via Settings → Subfolder Names
-- Point vault to existing Obsidian/Logseq vaults for interoperability
-
 ---
 
-## First-Time Setup (Onboarding)
-
-Parachute includes a 3-step onboarding flow that runs on first launch:
-
-### Step 1: Welcome
-
-- Explains vault-based architecture
-- Shows Obsidian/Logseq compatibility
-- Displays current vault location
-
-### Step 2: Transcription Setup (Parakeet v3)
-
-- Shows Parakeet v3 model info (~500 MB on Apple, ~640 MB on Android)
-- Models download automatically on first use
-- Users can optionally download immediately or skip
-
-### Step 3: Title Generation Setup
-
-- Choose title generation mode: API (Gemini), Local (Gemma), or Disabled
-- Download Gemma models for offline title generation
-- Users can skip and configure later in Settings
-
----
-
-## Session Workflow
-
-Use structured sessions to maintain focus and ensure quality across context windows.
-
-### Session Commands
-
-- **`/session-start <objective>`** - Initialize a session with a clear goal
-- **`/session-check`** - Mid-session coherence check
-- **`/session-end`** - Clean shutdown and handoff
-
-### Session Files
-
-- **`claude-session.md`** - Current session state (objective, tasks, verification plan)
-- **`ROADMAP.md`** - Strategic view, updated when significant work completes
-- **Git history** - Source of truth for what was actually done
-
-### Session Principles
-
-1. **One feature at a time** - Don't try to do everything at once
-2. **Test as you go** - Don't wait until the end to verify
-3. **Verify before "done"** - Actually test that changes work (see below)
-4. **Keep session state current** - Update `claude-session.md` as tasks complete
-5. **Clean handoffs** - End sessions with clear state for next session
-
----
-
-## Verification Practices
-
-**Never mark a feature complete without verifying it actually works.**
-
-### Before Declaring "Done"
-
-1. **Run unit tests**: `flutter test`
-2. **Manual verification**: Actually use the feature
-3. **UI testing with Playwright MCP**: For UI changes, use Playwright to verify flows
-
-### Using Playwright MCP for Verification
-
-For UI changes, verify with actual browser testing:
-
-1. Launch the app in web mode:
-   ```bash
-   flutter run -d chrome --web-port=8090
-   ```
-
-2. Use Playwright MCP to:
-   - Navigate to the relevant screen
-   - Test the actual user flow
-   - Take screenshots if helpful
-   - Verify the feature works end-to-end
-
-3. Note: Flutter web renders to canvas, so use accessibility labels/semantics for targeting elements
-
-### Why This Matters
-
-From [Anthropic's research on long-running agents](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents):
-- Agents tend to "one-shot" projects or declare work complete prematurely
-- Real verification (not just "it compiles") catches issues early
-- Structured progress tracking prevents drift and forgotten tasks
-
----
-
-## When Working on Features
-
-1. **Start with `/session-start`** - Establish clear objectives
-2. **Read existing code first** - Understand patterns before changing
-3. **Update todos** - Use the TodoWrite tool to track implementation steps
-4. **Test incrementally** - Don't build everything before testing
-5. **Verify with Playwright MCP** - For UI changes, actually test in browser
-6. **Focus on reliability** - Stability over new features
-7. **Ask before committing** - Follow git workflow above
-8. **End with `/session-end`** - Clean handoff for next session
-
----
-
-## Need Help?
-
-- **Architecture questions?** → [ARCHITECTURE.md](ARCHITECTURE.md)
-- **What's next?** → [ROADMAP.md](ROADMAP.md)
-- **Implementation guides?** → [docs/implementation/](docs/implementation/)
-- **Recorder feature?** → [lib/features/recorder/CLAUDE.md](lib/features/recorder/CLAUDE.md)
-
-Read these files as needed for specific tasks. Context is your friend!
-
----
-
-**Last Updated**: December 8, 2025
-**Next Review**: After package rename to parachute_app
+**Last Updated**: December 12, 2025
