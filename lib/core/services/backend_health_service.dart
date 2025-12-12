@@ -16,10 +16,10 @@ class BackendHealthService {
   /// Check if backend server is reachable and healthy
   Future<ServerHealthStatus> checkHealth(String serverUrl) async {
     try {
-      debugPrint('[BackendHealth] Checking health at: $serverUrl/health');
+      debugPrint('[BackendHealth] Checking health at: $serverUrl/api/health');
 
       final response = await _dio.get(
-        '$serverUrl/health',
+        '$serverUrl/api/health',
         options: Options(
           validateStatus: (status) => status != null && status < 500,
         ),

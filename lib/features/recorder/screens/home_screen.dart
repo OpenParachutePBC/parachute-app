@@ -5,6 +5,7 @@ import 'package:app/core/providers/feature_flags_provider.dart';
 import 'package:app/core/theme/design_tokens.dart';
 import 'package:app/features/recorder/models/recording.dart';
 import 'package:app/features/recorder/providers/service_providers.dart';
+import 'package:app/features/recorder/services/storage_service.dart';
 import 'package:app/features/recorder/providers/omi_providers.dart';
 import 'package:app/features/recorder/screens/recording_detail_screen.dart';
 import 'package:app/features/recorder/screens/simple_recording_screen.dart';
@@ -30,11 +31,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   bool _isLoading = true;
   bool _isGridView = true;
   bool _showOrphaned = false;
+  // Store reference for safe access in dispose
+  StorageService? _storageService;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Capture storage service reference early for safe dispose
+    _storageService = ref.read(storageServiceProvider);
     _loadRecordings();
     _startFilesystemWatcher();
 
@@ -44,8 +49,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   Future<void> _startFilesystemWatcher() async {
-    final storageService = ref.read(storageServiceProvider);
-    await storageService.startWatchingFilesystem(
+    await _storageService?.startWatchingFilesystem(
       onChange: () {
         if (mounted) {
           debugPrint(
@@ -60,7 +64,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    ref.read(storageServiceProvider).stopWatchingFilesystem();
+    _storageService?.stopWatchingFilesystem();
     super.dispose();
   }
 
@@ -129,20 +133,37 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       includeOrphaned: _showOrphaned,
     );
     if (mounted) {
-      setState(() {
-        _recordings = recordings;
-        _isLoading = false;
+      // Use post-frame callback to avoid setState during build phase
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        // Wrap in try-catch to handle edge cases where mounted is true
+        // but element is in defunct state (can happen with IndexedStack)
+        try {
+          if (mounted) {
+            setState(() {
+              _recordings = recordings;
+              _isLoading = false;
+            });
+          }
+        } catch (e) {
+          debugPrint('[HomeScreen] setState skipped - widget lifecycle issue: $e');
+        }
       });
     }
   }
 
   void _refreshRecordings({bool forceRefresh = false}) {
+    if (!mounted) return;
     if (forceRefresh) {
       ref.read(storageServiceProvider).forceRefresh();
     }
-    setState(() {
-      _isLoading = true;
-    });
+    try {
+      setState(() {
+        _isLoading = true;
+      });
+    } catch (e) {
+      debugPrint('[HomeScreen] _refreshRecordings setState skipped: $e');
+      return;
+    }
     _loadRecordings();
   }
 

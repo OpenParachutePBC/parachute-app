@@ -9,11 +9,14 @@ import 'package:opus_flutter/opus_flutter.dart' as opus_flutter;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_gemma/flutter_gemma.dart';
 import 'core/theme/app_theme.dart';
+import 'core/theme/design_tokens.dart';
 import 'core/services/logging_service.dart';
+import 'core/providers/feature_flags_provider.dart';
 import 'features/recorder/screens/home_screen.dart';
 import 'features/recorder/providers/model_download_provider.dart';
 import 'features/recorder/services/transcription_service_adapter.dart';
 import 'features/onboarding/screens/onboarding_flow.dart';
+import 'features/chat/screens/agent_hub_screen.dart';
 
 void main() async {
   // Ensure Flutter bindings are initialized
@@ -198,6 +201,7 @@ class MainNavigationScreen extends ConsumerStatefulWidget {
 class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
   bool _hasSeenWelcome = true; // Default to true, will be updated
   bool _isCheckingWelcome = true;
+  int _currentIndex = 0;
 
   @override
   void initState() {
@@ -264,7 +268,63 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
       );
     }
 
-    // Single screen app - just show HomeScreen
-    return const HomeScreen();
+    // Watch AI chat enabled state
+    final aiChatEnabled = ref.watch(aiChatEnabledNotifierProvider);
+    final isAiChatEnabled = aiChatEnabled.valueOrNull ?? false;
+
+    // If AI chat is not enabled, show only HomeScreen
+    if (!isAiChatEnabled) {
+      return const HomeScreen();
+    }
+
+    // Show bottom navigation with Record and Chat tabs
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    return Scaffold(
+      body: IndexedStack(
+        index: _currentIndex,
+        children: const [
+          HomeScreen(),
+          AgentHubScreen(),
+        ],
+      ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _currentIndex,
+        onDestinationSelected: (index) {
+          setState(() {
+            _currentIndex = index;
+          });
+        },
+        backgroundColor: isDark ? BrandColors.nightSurface : BrandColors.softWhite,
+        indicatorColor: isDark
+            ? BrandColors.nightForest.withValues(alpha: 0.2)
+            : BrandColors.forestMist,
+        destinations: [
+          NavigationDestination(
+            icon: Icon(
+              Icons.mic_none_outlined,
+              color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
+            ),
+            selectedIcon: Icon(
+              Icons.mic,
+              color: isDark ? BrandColors.nightForest : BrandColors.forest,
+            ),
+            label: 'Record',
+          ),
+          NavigationDestination(
+            icon: Icon(
+              Icons.smart_toy_outlined,
+              color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
+            ),
+            selectedIcon: Icon(
+              Icons.smart_toy,
+              color: isDark ? BrandColors.nightForest : BrandColors.forest,
+            ),
+            label: 'Agents',
+          ),
+        ],
+      ),
+    );
   }
 }

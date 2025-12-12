@@ -18,6 +18,8 @@ import 'package:app/core/services/audio_compression_service_dart.dart';
 import 'package:app/features/settings/screens/settings_screen.dart';
 import 'package:app/features/recorder/screens/simple_recording_screen.dart';
 import 'package:app/core/providers/file_system_provider.dart';
+import 'package:app/core/providers/feature_flags_provider.dart';
+import 'package:app/features/chat/screens/chat_screen.dart';
 
 /// Unified recording detail screen with inline editing
 /// Inspired by LiveRecordingScreen design - clean, focused, contextual status
@@ -654,6 +656,29 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
         });
       }
     }
+  }
+
+  /// Open the AI chat screen with this recording's transcript as context
+  void _openAskAi() {
+    if (_recording == null || _recording!.transcript.isEmpty) return;
+
+    // Build context from recording
+    final contextParts = <String>[];
+    contextParts.add('Recording: ${_recording!.title}');
+    if (_recording!.context.isNotEmpty) {
+      contextParts.add('Context: ${_recording!.context}');
+    }
+    contextParts.add('Transcript:\n${_recording!.transcript}');
+
+    final initialContext = contextParts.join('\n\n');
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => ChatScreen(
+          initialContext: initialContext,
+        ),
+      ),
+    );
   }
 
   /// Navigate to recording screen to add more content to this recording
@@ -1311,72 +1336,91 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
             onPressed: () => setState(() => _isTitleEditing = true),
             tooltip: 'Edit title',
           ),
-          PopupMenuButton(
-            itemBuilder: (context) => [
-              if (_recording?.transcript.isNotEmpty ?? false) ...[
-                const PopupMenuItem(
-                  value: 'generate-title',
-                  child: Row(
-                    children: [
-                      Icon(Icons.title),
-                      SizedBox(width: 8),
-                      Text('Generate Title'),
-                    ],
+          Consumer(
+            builder: (context, ref, child) {
+              final aiChatEnabled = ref.watch(aiChatEnabledNotifierProvider);
+              final isAiChatEnabled = aiChatEnabled.valueOrNull ?? false;
+
+              return PopupMenuButton(
+                itemBuilder: (context) => [
+                  if (_recording?.transcript.isNotEmpty ?? false) ...[
+                    if (isAiChatEnabled)
+                      PopupMenuItem(
+                        value: 'ask-ai',
+                        child: Row(
+                          children: [
+                            Icon(Icons.chat_bubble_outline, color: BrandColors.forest),
+                            const SizedBox(width: 8),
+                            Text('Ask AI', style: TextStyle(color: BrandColors.forest)),
+                          ],
+                        ),
+                      ),
+                    const PopupMenuItem(
+                      value: 'generate-title',
+                      child: Row(
+                        children: [
+                          Icon(Icons.title),
+                          SizedBox(width: 8),
+                          Text('Generate Title'),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'generate-summary',
+                      child: Row(
+                        children: [
+                          Icon(Icons.summarize),
+                          SizedBox(width: 8),
+                          Text('Generate Summary'),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'divider-1',
+                      enabled: false,
+                      child: Divider(),
+                    ),
+                  ],
+                  const PopupMenuItem(
+                    value: 'add-more',
+                    child: Row(
+                      children: [
+                        Icon(Icons.add_circle_outline),
+                        SizedBox(width: 8),
+                        Text('Add more content'),
+                      ],
+                    ),
                   ),
-                ),
-                const PopupMenuItem(
-                  value: 'generate-summary',
-                  child: Row(
-                    children: [
-                      Icon(Icons.summarize),
-                      SizedBox(width: 8),
-                      Text('Generate Summary'),
-                    ],
+                  const PopupMenuItem(
+                    value: 're-transcribe',
+                    child: Row(
+                      children: [
+                        Icon(Icons.refresh),
+                        SizedBox(width: 8),
+                        Text('Re-transcribe'),
+                      ],
+                    ),
                   ),
-                ),
-                const PopupMenuItem(
-                  value: 'divider-1',
-                  enabled: false,
-                  child: Divider(),
-                ),
-              ],
-              const PopupMenuItem(
-                value: 'add-more',
-                child: Row(
-                  children: [
-                    Icon(Icons.add_circle_outline),
-                    SizedBox(width: 8),
-                    Text('Add more content'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem(
-                value: 're-transcribe',
-                child: Row(
-                  children: [
-                    Icon(Icons.refresh),
-                    SizedBox(width: 8),
-                    Text('Re-transcribe'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem(
-                value: 'delete',
-                child: Row(
-                  children: [
-                    Icon(Icons.delete, color: BrandColors.error),
-                    SizedBox(width: 8),
-                    Text('Delete', style: TextStyle(color: BrandColors.error)),
-                  ],
-                ),
-              ),
-            ],
-            onSelected: (value) {
-              if (value == 'add-more') _addMoreContent();
-              if (value == 'generate-title') _generateTitle();
-              if (value == 'generate-summary') _generateSummary();
-              if (value == 're-transcribe') _retranscribe();
-              if (value == 'delete') _confirmDelete();
+                  const PopupMenuItem(
+                    value: 'delete',
+                    child: Row(
+                      children: [
+                        Icon(Icons.delete, color: BrandColors.error),
+                        SizedBox(width: 8),
+                        Text('Delete', style: TextStyle(color: BrandColors.error)),
+                      ],
+                    ),
+                  ),
+                ],
+                onSelected: (value) {
+                  if (value == 'ask-ai') _openAskAi();
+                  if (value == 'add-more') _addMoreContent();
+                  if (value == 'generate-title') _generateTitle();
+                  if (value == 'generate-summary') _generateSummary();
+                  if (value == 're-transcribe') _retranscribe();
+                  if (value == 'delete') _confirmDelete();
+                },
+              );
             },
           ),
         ],

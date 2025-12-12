@@ -124,6 +124,9 @@ class BrandColors {
 class Spacing {
   Spacing._();
 
+  /// Extra extra small - 2px (hairline gaps)
+  static const double xxs = 2.0;
+
   /// Extra small - 4px (micro gaps)
   static const double xs = 4.0;
 
