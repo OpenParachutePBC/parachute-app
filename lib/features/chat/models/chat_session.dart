@@ -21,6 +21,9 @@ class ChatSession {
   });
 
   factory ChatSession.fromJson(Map<String, dynamic> json) {
+    // Handle both 'updatedAt' and 'lastAccessed' field names from backend
+    final updatedAtStr = json['updatedAt'] as String? ?? json['lastAccessed'] as String?;
+
     return ChatSession(
       id: json['id'] as String? ?? json['context']?['sessionId'] as String? ?? '',
       agentPath: json['agentPath'] as String?,
@@ -29,9 +32,7 @@ class ChatSession {
       createdAt: json['createdAt'] != null
           ? DateTime.parse(json['createdAt'] as String)
           : DateTime.now(),
-      updatedAt: json['updatedAt'] != null
-          ? DateTime.parse(json['updatedAt'] as String)
-          : null,
+      updatedAt: updatedAtStr != null ? DateTime.parse(updatedAtStr) : null,
       messageCount: json['messageCount'] as int? ?? 0,
       archived: json['archived'] as bool? ?? false,
     );

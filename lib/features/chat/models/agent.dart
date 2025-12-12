@@ -6,6 +6,7 @@ class Agent {
   final String type; // 'chatbot', 'doc', 'standalone'
   final String? model;
   final List<String> tools;
+  final Map<String, dynamic>? triggers; // Auto-trigger configuration
 
   const Agent({
     required this.name,
@@ -14,6 +15,7 @@ class Agent {
     this.type = 'chatbot',
     this.model,
     this.tools = const [],
+    this.triggers,
   });
 
   factory Agent.fromJson(Map<String, dynamic> json) {
@@ -27,6 +29,7 @@ class Agent {
               ?.map((t) => t as String)
               .toList() ??
           [],
+      triggers: json['triggers'] as Map<String, dynamic>?,
     );
   }
 
@@ -38,6 +41,7 @@ class Agent {
       'type': type,
       'model': model,
       'tools': tools,
+      if (triggers != null) 'triggers': triggers,
     };
   }
 
@@ -57,4 +61,5 @@ const vaultAgent = Agent(
   path: '',
   description: 'General assistant with access to your vault',
   type: 'chatbot',
+  triggers: null,
 );
