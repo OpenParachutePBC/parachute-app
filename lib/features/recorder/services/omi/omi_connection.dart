@@ -15,6 +15,7 @@ class OmiDeviceConnection extends DeviceConnection {
   BluetoothService? _omiService;
   BluetoothService? _buttonService;
   BluetoothService? _deviceInfoService;
+  BluetoothService? _storageService;
 
   OmiDeviceConnection({required super.device, required super.bleDevice});
 
@@ -49,6 +50,13 @@ class OmiDeviceConnection extends DeviceConnection {
       debugPrint(
         '[OmiConnection] Device Info service not found (non-critical)',
       );
+    }
+
+    _storageService = await getService(storageDataStreamServiceUuid);
+    if (_storageService == null) {
+      debugPrint('[OmiConnection] Storage service not found (non-critical)');
+    } else {
+      debugPrint('[OmiConnection] Storage service discovered');
     }
 
     debugPrint('[OmiConnection] Services discovered successfully');
@@ -380,5 +388,194 @@ class OmiDeviceConnection extends DeviceConnection {
         debugPrint('[OmiConnection] Unknown codec ID: $codecId');
         return BleAudioCodec.unknown;
     }
+  }
+
+  // ============================================================
+  // Storage Service Methods (Store-and-Forward)
+  // ============================================================
+
+  /// Check if storage service is available
+  bool get hasStorageService => _storageService != null;
+
+  /// Get storage info from device
+  /// Returns [fileSize, currentOffset] or null if unavailable
+  Future<List<int>?> getStorageInfo() async {
+    if (_storageService == null) {
+      debugPrint('[OmiConnection] Storage service not available');
+      return null;
+    }
+
+    final characteristic = getCharacteristic(
+      _storageService!,
+      storageReadControlCharacteristicUuid,
+    );
+
+    if (characteristic == null) {
+      debugPrint('[OmiConnection] Storage read characteristic not found');
+      return null;
+    }
+
+    try {
+      final value = await characteristic.read();
+      if (value.length >= 8) {
+        // Two 32-bit integers: file_size and offset
+        final fileSize = value[0] | (value[1] << 8) | (value[2] << 16) | (value[3] << 24);
+        final offset = value[4] | (value[5] << 8) | (value[6] << 16) | (value[7] << 24);
+        debugPrint('[OmiConnection] Storage info: fileSize=$fileSize, offset=$offset');
+        return [fileSize, offset];
+      } else {
+        debugPrint('[OmiConnection] Unexpected storage info length: ${value.length}');
+        return null;
+      }
+    } on PlatformException catch (e) {
+      debugPrint('[OmiConnection] Error reading storage info: ${e.code} - ${e.message}');
+    } catch (e) {
+      debugPrint('[OmiConnection] Error reading storage info: $e');
+    }
+
+    return null;
+  }
+
+  /// Send a command to the storage service
+  /// Commands: 0=READ, 1=DELETE, 2=NUKE, 3=STOP, 50=HEARTBEAT
+  Future<bool> sendStorageCommand(int command, int fileNum, [int? size]) async {
+    if (_storageService == null) {
+      debugPrint('[OmiConnection] Storage service not available');
+      return false;
+    }
+
+    final characteristic = getCharacteristic(
+      _storageService!,
+      storageDataStreamCharacteristicUuid,
+    );
+
+    if (characteristic == null) {
+      debugPrint('[OmiConnection] Storage write characteristic not found');
+      return false;
+    }
+
+    try {
+      List<int> data;
+      if (size != null) {
+        // 6-byte command with size
+        data = [
+          command,
+          fileNum,
+          (size >> 24) & 0xFF,
+          (size >> 16) & 0xFF,
+          (size >> 8) & 0xFF,
+          size & 0xFF,
+        ];
+      } else {
+        // 2-byte command
+        data = [command, fileNum];
+      }
+
+      debugPrint('[OmiConnection] Sending storage command: $data');
+      await characteristic.write(data, withoutResponse: false);
+      return true;
+    } on PlatformException catch (e) {
+      debugPrint('[OmiConnection] Error sending storage command: ${e.code} - ${e.message}');
+    } catch (e) {
+      debugPrint('[OmiConnection] Error sending storage command: $e');
+    }
+
+    return false;
+  }
+
+  /// Start downloading a recording from device storage
+  /// Returns a stream subscription that receives audio data chunks
+  Future<StreamSubscription?> startStorageDownload({
+    required int fileNum,
+    required int startOffset,
+    required void Function(List<int> data) onDataReceived,
+    required void Function() onComplete,
+    required void Function(String error) onError,
+  }) async {
+    if (_storageService == null) {
+      debugPrint('[OmiConnection] Storage service not available');
+      onError('Storage service not available');
+      return null;
+    }
+
+    final writeCharacteristic = getCharacteristic(
+      _storageService!,
+      storageDataStreamCharacteristicUuid,
+    );
+
+    if (writeCharacteristic == null) {
+      debugPrint('[OmiConnection] Storage write characteristic not found');
+      onError('Storage write characteristic not found');
+      return null;
+    }
+
+    try {
+      // Subscribe to notifications for data stream
+      await writeCharacteristic.setNotifyValue(true);
+
+      final listener = writeCharacteristic.lastValueStream.listen((value) {
+        if (value.isEmpty) return;
+
+        // Check for completion/error signals
+        if (value.length == 1) {
+          final code = value[0];
+          if (code == 0) {
+            debugPrint('[OmiConnection] Storage download complete signal');
+            onComplete();
+          } else {
+            debugPrint('[OmiConnection] Storage error code: $code');
+            onError('Storage error code: $code');
+          }
+          return;
+        }
+
+        // Regular data packet
+        onDataReceived(value);
+      });
+
+      bleDevice.cancelWhenDisconnected(listener);
+
+      // Send read command to start transfer
+      final success = await sendStorageCommand(0, fileNum, startOffset);
+      if (!success) {
+        await listener.cancel();
+        onError('Failed to send read command');
+        return null;
+      }
+
+      debugPrint('[OmiConnection] Storage download started for file $fileNum at offset $startOffset');
+      return listener;
+    } on PlatformException catch (e) {
+      debugPrint('[OmiConnection] Error starting storage download: ${e.code} - ${e.message}');
+      onError('Error starting download: ${e.message}');
+    } catch (e) {
+      debugPrint('[OmiConnection] Error starting storage download: $e');
+      onError('Error starting download: $e');
+    }
+
+    return null;
+  }
+
+  /// Delete a file from device storage
+  Future<bool> deleteStorageFile(int fileNum) async {
+    debugPrint('[OmiConnection] Deleting storage file $fileNum');
+    return await sendStorageCommand(1, fileNum);
+  }
+
+  /// Delete all files from device storage
+  Future<bool> nukeStorage() async {
+    debugPrint('[OmiConnection] Nuking all storage');
+    return await sendStorageCommand(2, 1);
+  }
+
+  /// Stop ongoing storage transfer
+  Future<bool> stopStorageTransfer() async {
+    debugPrint('[OmiConnection] Stopping storage transfer');
+    return await sendStorageCommand(3, 1);
+  }
+
+  /// Send heartbeat to keep storage connection alive
+  Future<bool> sendStorageHeartbeat() async {
+    return await sendStorageCommand(50, 1);
   }
 }

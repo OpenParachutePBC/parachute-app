@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:app/core/theme/design_tokens.dart';
 import 'package:app/features/recorder/providers/omi_providers.dart';
 import 'package:app/features/recorder/screens/device_pairing_screen.dart';
+import 'package:app/features/recorder/services/omi/omi_connection.dart';
 import './settings_section_header.dart';
 
 /// Omi Device settings section (pairing and firmware updates)
@@ -356,6 +357,25 @@ class OmiDeviceSection extends ConsumerWidget {
                   ),
                 ],
               ),
+              SizedBox(height: Spacing.sm),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        _clearDeviceStorage(context, ref);
+                      },
+                      icon: const Icon(Icons.delete_sweep),
+                      label: const Text('Clear Device Storage'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: BrandColors.error,
+                        side: BorderSide(color: BrandColors.error.withValues(alpha: 0.5)),
+                        padding: EdgeInsets.symmetric(vertical: Spacing.md),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ],
           ],
         ],
@@ -587,6 +607,119 @@ class OmiDeviceSection extends ConsumerWidget {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error during re-flash: $e'),
+            backgroundColor: BrandColors.error,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _clearDeviceStorage(BuildContext context, WidgetRef ref) async {
+    final bluetoothService = ref.read(omiBluetoothServiceProvider);
+    final connection = bluetoothService.activeConnection;
+
+    if (connection == null) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('No device connected'),
+            backgroundColor: BrandColors.warning,
+          ),
+        );
+      }
+      return;
+    }
+
+    if (connection is! OmiDeviceConnection) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Device does not support storage'),
+            backgroundColor: BrandColors.warning,
+          ),
+        );
+      }
+      return;
+    }
+
+    final omiConnection = connection;
+
+    // Get storage info first to show what will be deleted
+    final storageInfo = await omiConnection.getStorageInfo();
+    final storageSize = storageInfo != null
+        ? (storageInfo[0] > 0 ? storageInfo[0] : storageInfo[1])
+        : 0;
+    final storageMB = (storageSize / 1024 / 1024).toStringAsFixed(1);
+
+    if (context.mounted) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Clear Device Storage'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('This will delete all recordings stored on the device.'),
+              SizedBox(height: Spacing.md),
+              Text(
+                'Storage used: $storageMB MB',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: BrandColors.error,
+                ),
+              ),
+              SizedBox(height: Spacing.md),
+              const Text(
+                'This action cannot be undone.',
+                style: TextStyle(fontStyle: FontStyle.italic),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: FilledButton.styleFrom(
+                backgroundColor: BrandColors.error,
+              ),
+              child: const Text('Clear Storage'),
+            ),
+          ],
+        ),
+      );
+
+      if (confirmed != true) return;
+    }
+
+    try {
+      final success = await omiConnection.nukeStorage();
+
+      if (context.mounted) {
+        if (success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Device storage cleared'),
+              backgroundColor: BrandColors.success,
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Failed to clear storage'),
+              backgroundColor: BrandColors.error,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error clearing storage: $e'),
             backgroundColor: BrandColors.error,
           ),
         );
