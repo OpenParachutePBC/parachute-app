@@ -254,8 +254,9 @@ class OmiCaptureService {
       debugPrint('[OmiCaptureService] ⏹️  Device stopped recording');
 
       if (_useStreamingMode) {
-        // Streaming mode: save what we captured
+        // Streaming mode: stop and save what we captured
         _stopStreamingCapture();
+        _saveStreamingRecording();
       } else if (!_modeDetected) {
         // Mode not detected yet - check storage first, fall back to streaming
         _stopStreamingCapture(); // Stop streaming capture if it was running
@@ -394,8 +395,8 @@ class OmiCaptureService {
 
       _cleanupStreaming();
 
-      // Auto-transcribe
-      _autoTranscribeIfEnabled(recording).catchError((e) {
+      // Always transcribe Omi recordings
+      _transcribeRecording(recording).catchError((e) {
         debugPrint('[OmiCaptureService] Auto-transcribe error (non-fatal): $e');
       });
     } catch (e) {
@@ -584,7 +585,8 @@ class OmiCaptureService {
       onStatusMessage?.call('Recording saved!');
       onRecordingSaved?.call(recording);
 
-      _autoTranscribeIfEnabled(recording).catchError((e) {
+      // Always transcribe Omi recordings
+      _transcribeRecording(recording).catchError((e) {
         debugPrint('[OmiCaptureService] Auto-transcribe error (non-fatal): $e');
       });
     } catch (e) {
@@ -598,16 +600,10 @@ class OmiCaptureService {
     return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
   }
 
-  /// Auto-transcribe recording if enabled in settings
-  Future<void> _autoTranscribeIfEnabled(Recording recording) async {
+  /// Transcribe recording (always runs for Omi recordings)
+  Future<void> _transcribeRecording(Recording recording) async {
     try {
-      final autoTranscribe = await storageService.getAutoTranscribe();
-      if (!autoTranscribe) {
-        debugPrint('[OmiCaptureService] Auto-transcribe disabled');
-        return;
-      }
-
-      debugPrint('[OmiCaptureService] Auto-transcribe enabled, starting...');
+      debugPrint('[OmiCaptureService] Starting transcription...');
       onStatusMessage?.call('Transcribing...');
 
       final transcriptResult = await transcriptionService.transcribeAudio(
