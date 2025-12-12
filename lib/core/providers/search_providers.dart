@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:app/core/services/search/search_index_service.dart';
 import 'package:app/core/services/search/content_hasher.dart';
@@ -152,15 +153,45 @@ final hybridSearchServiceProvider = Provider<HybridSearchService>((ref) {
   );
 });
 
-/// State provider for search query
+/// State provider for search query (raw input)
 ///
-/// Holds the current search query string. Update this to trigger a search.
+/// Holds the current search query string as typed by the user.
+/// This updates immediately on every keystroke.
+/// Use [debouncedSearchQueryProvider] for the debounced version.
 final searchQueryProvider = StateProvider<String>((ref) => '');
+
+/// Debounced search query provider
+///
+/// Debounces the search query by 300ms to avoid excessive searches while typing.
+/// Only emits a new value after the user stops typing for 300ms.
+final debouncedSearchQueryProvider = StreamProvider<String>((ref) {
+  final controller = StreamController<String>();
+  Timer? debounceTimer;
+
+  // Listen to raw query changes
+  ref.listen<String>(searchQueryProvider, (previous, next) {
+    debounceTimer?.cancel();
+    debounceTimer = Timer(const Duration(milliseconds: 300), () {
+      controller.add(next);
+    });
+  });
+
+  // Emit initial value immediately
+  controller.add(ref.read(searchQueryProvider));
+
+  ref.onDispose(() {
+    debounceTimer?.cancel();
+    controller.close();
+  });
+
+  return controller.stream;
+});
 
 /// Future provider for search results
 ///
-/// Automatically runs hybrid search when [searchQueryProvider] changes.
+/// Automatically runs hybrid search when [debouncedSearchQueryProvider] changes.
 /// Returns empty list for empty queries.
+/// Uses debounced query to avoid excessive searches while typing.
 ///
 /// **Example:**
 /// ```dart
@@ -180,7 +211,11 @@ final searchQueryProvider = StateProvider<String>((ref) => '');
 /// );
 /// ```
 final searchResultsProvider = FutureProvider<List<SearchResult>>((ref) async {
-  final query = ref.watch(searchQueryProvider);
+  // Watch the debounced query instead of raw query
+  final debouncedQuery = ref.watch(debouncedSearchQueryProvider);
+
+  // Handle the async state of the debounced provider
+  final query = debouncedQuery.valueOrNull ?? '';
 
   if (query.trim().isEmpty) {
     return [];

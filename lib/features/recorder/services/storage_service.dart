@@ -196,45 +196,98 @@ class StorageService {
       }
 
       // Find all markdown files (each represents a recording)
+      // Use parallel I/O for better performance with large collections
       final recordings = <Recording>[];
       final processedIds = <String>{};
 
+      // Collect all files in a single directory scan
+      // This avoids multiple File.exists() calls later
+      final mdFiles = <File>[];
+      final audioOnlyFiles = <File>[];
+      // Map base name -> audio file path (prefer .opus over .wav)
+      final audioFileMap = <String, String>{};
+
       await for (final entity in capturesDir.list()) {
-        if (entity is File && entity.path.endsWith('.md')) {
-          try {
-            final recording = await _loadRecordingFromMarkdown(entity);
-            if (recording != null) {
-              recordings.add(recording);
-              processedIds.add(recording.id);
+        if (entity is File) {
+          final path = entity.path;
+          if (path.endsWith('.md')) {
+            mdFiles.add(entity);
+          } else if (path.endsWith('.opus')) {
+            // .opus takes precedence over .wav
+            final baseName = p.basenameWithoutExtension(path);
+            audioFileMap[baseName] = path;
+            if (includeOrphaned) {
+              audioOnlyFiles.add(entity);
             }
-          } catch (e) {
-            debugPrint(
-              '[StorageService] Error loading recording from ${entity.path}: $e',
-            );
+          } else if (path.endsWith('.wav')) {
+            final baseName = p.basenameWithoutExtension(path);
+            // Only add .wav if .opus not already found
+            if (!audioFileMap.containsKey(baseName)) {
+              audioFileMap[baseName] = path;
+            }
+            if (includeOrphaned) {
+              audioOnlyFiles.add(entity);
+            }
           }
         }
       }
 
-      // If requested, also load orphaned audio files (WAV or Opus)
-      if (includeOrphaned) {
-        await for (final entity in capturesDir.list()) {
-          if (entity is File &&
-              (entity.path.endsWith('.wav') || entity.path.endsWith('.opus'))) {
-            final filename = p.basename(entity.path);
-            final id = filename.replaceAll('.wav', '').replaceAll('.opus', '');
+      // Process markdown files in parallel batches for better performance
+      // Use batches of 20 to avoid opening too many file handles at once
+      const batchSize = 20;
+      for (int i = 0; i < mdFiles.length; i += batchSize) {
+        final batch = mdFiles.skip(i).take(batchSize).toList();
+        final futures = batch.map((file) async {
+          try {
+            return await _loadRecordingFromMarkdown(
+              file,
+              audioFileMap: audioFileMap,
+            );
+          } catch (e) {
+            debugPrint(
+              '[StorageService] Error loading recording from ${file.path}: $e',
+            );
+            return null;
+          }
+        });
 
-            // Skip if we already have a markdown file for this recording
-            if (processedIds.contains(id)) continue;
+        final results = await Future.wait(futures);
+        for (final recording in results) {
+          if (recording != null) {
+            recordings.add(recording);
+            processedIds.add(recording.id);
+          }
+        }
+      }
 
+      // If requested, also load orphaned audio files (WAV or Opus) in parallel
+      if (includeOrphaned && audioOnlyFiles.isNotEmpty) {
+        // Filter to only files without corresponding markdown
+        // Use a set of processed base names for efficient lookup
+        final processedBaseNames = processedIds.toSet();
+        final orphanedFiles = audioOnlyFiles.where((file) {
+          final baseName = p.basenameWithoutExtension(file.path);
+          return !processedBaseNames.contains(baseName);
+        }).toList();
+
+        // Process orphaned files in parallel batches
+        for (int i = 0; i < orphanedFiles.length; i += batchSize) {
+          final batch = orphanedFiles.skip(i).take(batchSize).toList();
+          final futures = batch.map((file) async {
             try {
-              final orphanedRecording = await _loadOrphanedAudioFile(entity);
-              if (orphanedRecording != null) {
-                recordings.add(orphanedRecording);
-              }
+              return await _loadOrphanedAudioFile(file);
             } catch (e) {
               debugPrint(
-                '[StorageService] Error loading orphaned audio from ${entity.path}: $e',
+                '[StorageService] Error loading orphaned audio from ${file.path}: $e',
               );
+              return null;
+            }
+          });
+
+          final results = await Future.wait(futures);
+          for (final recording in results) {
+            if (recording != null) {
+              recordings.add(recording);
             }
           }
         }
@@ -315,7 +368,14 @@ class StorageService {
   }
 
   /// Load a recording from a markdown file
-  Future<Recording?> _loadRecordingFromMarkdown(File mdFile) async {
+  ///
+  /// If [audioFileMap] is provided, uses it to look up audio file paths
+  /// without additional file system calls. This map should contain base names
+  /// (without extension) mapped to the full audio file path.
+  Future<Recording?> _loadRecordingFromMarkdown(
+    File mdFile, {
+    Map<String, String>? audioFileMap,
+  }) async {
     try {
       final content = await mdFile.readAsString();
       final filename = p.basename(mdFile.path);
@@ -498,18 +558,30 @@ class StorageService {
       }
 
       // Check if corresponding audio file exists (try .opus first, then .wav)
+      // Use pre-computed map if available to avoid file system calls
       String? audioPath;
       bool audioExists = false;
+      final baseName = filename.replaceAll('.md', '');
 
-      final opusPath = mdFile.path.replaceAll('.md', '.opus');
-      if (await File(opusPath).exists()) {
-        audioPath = opusPath;
-        audioExists = true;
-      } else {
-        final wavPath = mdFile.path.replaceAll('.md', '.wav');
-        if (await File(wavPath).exists()) {
-          audioPath = wavPath;
+      if (audioFileMap != null) {
+        // Use pre-computed map - no file system calls needed
+        final mappedPath = audioFileMap[baseName];
+        if (mappedPath != null) {
+          audioPath = mappedPath;
           audioExists = true;
+        }
+      } else {
+        // Fallback to file system checks (used by getRecording single lookup)
+        final opusPath = mdFile.path.replaceAll('.md', '.opus');
+        if (await File(opusPath).exists()) {
+          audioPath = opusPath;
+          audioExists = true;
+        } else {
+          final wavPath = mdFile.path.replaceAll('.md', '.wav');
+          if (await File(wavPath).exists()) {
+            audioPath = wavPath;
+            audioExists = true;
+          }
         }
       }
 
