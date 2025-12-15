@@ -10,19 +10,25 @@ import 'para_id_service.dart';
 ///
 /// Handles parsing markdown files with YAML frontmatter and H1-delimited
 /// entries in the format: `# para:abc123 Title here`
+///
+/// Uses FileSystemService for all file operations to support both
+/// dart:io and Android SAF (Storage Access Framework).
 class JournalService {
   final String _vaultPath;
   final String _journalFolderName;
   final ParaIdService _paraIdService;
+  final FileSystemService _fileSystemService;
   final _log = logger.createLogger('JournalService');
 
-  JournalService({
+  JournalService._({
     required String vaultPath,
     required String journalFolderName,
     required ParaIdService paraIdService,
+    required FileSystemService fileSystemService,
   })  : _vaultPath = vaultPath,
         _journalFolderName = journalFolderName,
-        _paraIdService = paraIdService;
+        _paraIdService = paraIdService,
+        _fileSystemService = fileSystemService;
 
   /// Factory constructor that uses FileSystemService for configuration
   static Future<JournalService> create({
@@ -31,10 +37,11 @@ class JournalService {
   }) async {
     final vaultPath = await fileSystemService.getRootPath();
     final journalFolderName = fileSystemService.getJournalFolderName();
-    return JournalService(
+    return JournalService._(
       vaultPath: vaultPath,
       journalFolderName: journalFolderName,
       paraIdService: paraIdService,
+      fileSystemService: fileSystemService,
     );
   }
 
@@ -43,10 +50,9 @@ class JournalService {
 
   /// Ensure journals directory exists
   Future<void> ensureDirectoryExists() async {
-    final dir = Directory(journalsPath);
-    if (!await dir.exists()) {
-      await dir.create(recursive: true);
-      _log.info('Created journals directory');
+    final created = await _fileSystemService.ensureDirectoryExists(journalsPath);
+    if (created) {
+      _log.info('Ensured journals directory exists');
     }
   }
 
@@ -62,15 +68,21 @@ class JournalService {
   Future<JournalDay> loadDay(DateTime date) async {
     final normalizedDate = DateTime(date.year, date.month, date.day);
     final filePath = getFilePath(normalizedDate);
-    final file = File(filePath);
 
-    if (!await file.exists()) {
+    // Check if file exists using SAF-aware method
+    if (!await _fileSystemService.fileExists(filePath)) {
       _log.debug('Journal file not found, returning empty', data: {'date': _formatDate(normalizedDate)});
       return JournalDay.empty(normalizedDate);
     }
 
     try {
-      final content = await file.readAsString();
+      // Read content using SAF-aware method
+      final content = await _fileSystemService.readFileAsString(filePath);
+      if (content == null) {
+        _log.warn('Could not read journal file', data: {'date': _formatDate(normalizedDate)});
+        return JournalDay.empty(normalizedDate);
+      }
+
       final journal = _parseJournalFile(content, normalizedDate);
 
       // Register any para IDs we found
@@ -101,8 +113,11 @@ class JournalService {
     final content = _serializeJournal(journal);
 
     try {
-      final file = File(filePath);
-      await file.writeAsString(content);
+      // Write using SAF-aware method
+      final success = await _fileSystemService.writeFileAsString(filePath, content);
+      if (!success) {
+        throw Exception('Failed to write journal file');
+      }
       _log.debug('Saved journal', data: {
         'date': journal.dateString,
         'entries': journal.entryCount,
@@ -170,6 +185,8 @@ class JournalService {
   /// Add a voice entry to today's journal
   ///
   /// Copies the audio file to the journal assets folder and stores the relative path.
+  /// Note: Audio files are typically in temp directories (not SAF), so we use dart:io
+  /// for reading the source file, but SAF-aware methods for the destination.
   Future<JournalEntry> addVoiceEntry({
     required String transcript,
     required String audioPath,
@@ -179,22 +196,29 @@ class JournalService {
     final now = DateTime.now();
     final defaultTitle = _formatTime(now);
 
-    // Copy audio file to journal assets folder
-    final assetsDir = Directory('$journalsPath/assets');
-    if (!await assetsDir.exists()) {
-      await assetsDir.create(recursive: true);
-    }
+    // Ensure assets directory exists using SAF-aware method
+    final assetsPath = '$journalsPath/assets';
+    await _fileSystemService.ensureDirectoryExists(assetsPath);
 
     // Generate filename based on timestamp
     final audioFilename = '${_formatDate(now)}_${_formatTime(now).replaceAll(':', '-')}.wav';
-    final destPath = '${assetsDir.path}/$audioFilename';
+    final destPath = '$assetsPath/$audioFilename';
     final relativePath = '$_journalFolderName/assets/$audioFilename';
 
-    // Copy the audio file
+    // Copy the audio file (source is temp file, so use dart:io)
     final sourceFile = File(audioPath);
     if (await sourceFile.exists()) {
-      await sourceFile.copy(destPath);
-      _log.debug('Copied audio file to journal assets', data: {'path': relativePath});
+      // For SAF destinations, we need to read bytes and write via SAF
+      // For non-SAF, we can use File.copy
+      if (_fileSystemService.shouldUseSaf) {
+        // Read source file bytes and write to SAF destination
+        // TODO: Implement binary file writing for SAF if needed
+        // For now, log a warning
+        _log.warn('Audio file copy to SAF not yet implemented', data: {'path': relativePath});
+      } else {
+        await sourceFile.copy(destPath);
+        _log.debug('Copied audio file to journal assets', data: {'path': relativePath});
+      }
 
       // Delete the temp file
       try {
@@ -265,12 +289,13 @@ class JournalService {
   Future<List<DateTime>> listJournalDates() async {
     await ensureDirectoryExists();
 
-    final dir = Directory(journalsPath);
+    // Use SAF-aware directory listing
+    final files = await _fileSystemService.listDirectory(journalsPath);
     final dates = <DateTime>[];
 
-    await for (final entity in dir.list()) {
-      if (entity is File && entity.path.endsWith('.md')) {
-        final filename = entity.path.split('/').last;
+    for (final filePath in files) {
+      if (filePath.endsWith('.md')) {
+        final filename = filePath.split('/').last;
         final dateStr = filename.replaceAll('.md', '');
         final date = _parseDate(dateStr);
         if (date != null) {

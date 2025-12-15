@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:docman/docman.dart';
 
 /// Unified file system service for Parachute
 ///
@@ -714,6 +715,312 @@ class FileSystemService {
       }
     }
   }
+
+  // ============================================================
+  // SAF-aware File Operations (for Android external storage)
+  // ============================================================
+
+  /// Check if we should use SAF for file access
+  bool get shouldUseSaf => Platform.isAndroid && _rootFolderUri != null;
+
+  DocumentFile? _rootDocumentFile;
+  final Map<String, DocumentFile> _safDocumentCache = {};
+
+  /// Get DocumentFile for root folder (cached)
+  Future<DocumentFile?> _getRootDocumentFile() async {
+    if (_rootDocumentFile != null) return _rootDocumentFile;
+
+    final rootUri = _rootFolderUri;
+    if (rootUri == null) return null;
+
+    try {
+      final persistedDocs = await DocMan.perms.listDocuments(directories: true, files: false);
+      for (final doc in persistedDocs) {
+        if (doc.uri.toString() == rootUri) {
+          _rootDocumentFile = doc;
+          return doc;
+        }
+      }
+    } catch (e) {
+      debugPrint('[FileSystemService] Error getting root DocumentFile: $e');
+    }
+    return null;
+  }
+
+  /// Get DocumentFile for a directory path (navigating from root)
+  Future<DocumentFile?> _getDirectoryDocumentFile(String path) async {
+    if (_safDocumentCache.containsKey(path)) {
+      return _safDocumentCache[path];
+    }
+
+    final rootPath = _rootFolderPath;
+    if (rootPath == null || !path.startsWith(rootPath)) return null;
+
+    if (path == rootPath) {
+      final root = await _getRootDocumentFile();
+      if (root != null) _safDocumentCache[path] = root;
+      return root;
+    }
+
+    // Navigate from root to target directory
+    final relativePath = path.substring(rootPath.length);
+    final segments = relativePath.split('/').where((s) => s.isNotEmpty).toList();
+
+    DocumentFile? current = await _getRootDocumentFile();
+    String currentPath = rootPath;
+
+    for (final segment in segments) {
+      if (current == null) return null;
+
+      final children = await current.listDocuments();
+      current = children.where((f) => f.name == segment && f.isDirectory == true).firstOrNull;
+
+      if (current != null) {
+        currentPath = '$currentPath/$segment';
+        _safDocumentCache[currentPath] = current;
+      }
+    }
+
+    return current;
+  }
+
+  /// Read a file's contents as string, using SAF on Android when appropriate
+  Future<String?> readFileAsString(String filePath) async {
+    if (shouldUseSaf) {
+      return _readFileAsStringSaf(filePath);
+    }
+    return _readFileAsStringDartIo(filePath);
+  }
+
+  Future<String?> _readFileAsStringDartIo(String filePath) async {
+    try {
+      final file = File(filePath);
+      if (!await file.exists()) {
+        return null;
+      }
+      return await file.readAsString();
+    } catch (e) {
+      debugPrint('[FileSystemService] Error reading file: $e');
+      return null;
+    }
+  }
+
+  Future<String?> _readFileAsStringSaf(String filePath) async {
+    try {
+      final dirPath = filePath.substring(0, filePath.lastIndexOf('/'));
+      final fileName = filePath.split('/').last;
+
+      final dirDoc = await _getDirectoryDocumentFile(dirPath);
+      if (dirDoc == null) {
+        debugPrint('[FileSystemService] SAF: Could not get directory for $dirPath');
+        return null;
+      }
+
+      // Find the file in the directory
+      final children = await dirDoc.listDocuments();
+      final fileDoc = children.where((f) => f.name == fileName && f.isDirectory != true).firstOrNull;
+
+      if (fileDoc == null) {
+        debugPrint('[FileSystemService] SAF: File not found: $fileName');
+        return null;
+      }
+
+      // Read the file content
+      final buffer = StringBuffer();
+      await for (final chunk in fileDoc.readAsString()) {
+        buffer.write(chunk);
+      }
+      return buffer.toString();
+    } catch (e) {
+      debugPrint('[FileSystemService] SAF error reading file: $e');
+      return null;
+    }
+  }
+
+  /// Write string content to a file, using SAF on Android when appropriate
+  Future<bool> writeFileAsString(String filePath, String content) async {
+    if (shouldUseSaf) {
+      return _writeFileAsStringSaf(filePath, content);
+    }
+    return _writeFileAsStringDartIo(filePath, content);
+  }
+
+  Future<bool> _writeFileAsStringDartIo(String filePath, String content) async {
+    try {
+      final file = File(filePath);
+      final dir = file.parent;
+      if (!await dir.exists()) {
+        await dir.create(recursive: true);
+      }
+      await file.writeAsString(content);
+      return true;
+    } catch (e) {
+      debugPrint('[FileSystemService] Error writing file: $e');
+      return false;
+    }
+  }
+
+  Future<bool> _writeFileAsStringSaf(String filePath, String content) async {
+    try {
+      final dirPath = filePath.substring(0, filePath.lastIndexOf('/'));
+      final fileName = filePath.split('/').last;
+
+      // Ensure directory exists
+      var dirDoc = await _getDirectoryDocumentFile(dirPath);
+      if (dirDoc == null) {
+        // Try to create the directory hierarchy
+        dirDoc = await _ensureSafDirectoryExists(dirPath);
+        if (dirDoc == null) {
+          debugPrint('[FileSystemService] SAF: Could not create directory $dirPath');
+          return false;
+        }
+      }
+
+      // Check if file already exists
+      final children = await dirDoc.listDocuments();
+      final existingFile = children.where((f) => f.name == fileName && f.isDirectory != true).firstOrNull;
+
+      if (existingFile != null) {
+        // Delete existing file first (SAF doesn't support overwrite)
+        await existingFile.delete();
+      }
+
+      // Create new file with content
+      await dirDoc.createFile(name: fileName, content: content);
+      return true;
+    } catch (e) {
+      debugPrint('[FileSystemService] SAF error writing file: $e');
+      return false;
+    }
+  }
+
+  /// Check if a file exists, using SAF on Android when appropriate
+  Future<bool> fileExists(String filePath) async {
+    if (shouldUseSaf) {
+      return _fileExistsSaf(filePath);
+    }
+    return File(filePath).exists();
+  }
+
+  Future<bool> _fileExistsSaf(String filePath) async {
+    try {
+      final dirPath = filePath.substring(0, filePath.lastIndexOf('/'));
+      final fileName = filePath.split('/').last;
+
+      final dirDoc = await _getDirectoryDocumentFile(dirPath);
+      if (dirDoc == null) return false;
+
+      final children = await dirDoc.listDocuments();
+      return children.any((f) => f.name == fileName && f.isDirectory != true);
+    } catch (e) {
+      debugPrint('[FileSystemService] SAF error checking file exists: $e');
+      return false;
+    }
+  }
+
+  /// Ensure a directory exists via SAF (creates it if needed)
+  Future<DocumentFile?> _ensureSafDirectoryExists(String dirPath) async {
+    final rootPath = _rootFolderPath;
+    if (rootPath == null || !dirPath.startsWith(rootPath)) return null;
+
+    if (dirPath == rootPath) {
+      return _getRootDocumentFile();
+    }
+
+    final relativePath = dirPath.substring(rootPath.length);
+    final segments = relativePath.split('/').where((s) => s.isNotEmpty).toList();
+
+    DocumentFile? current = await _getRootDocumentFile();
+    String currentPath = rootPath;
+
+    for (final segment in segments) {
+      if (current == null) return null;
+
+      final children = await current.listDocuments();
+      var child = children.where((f) => f.name == segment && f.isDirectory == true).firstOrNull;
+
+      if (child == null) {
+        // Create the directory
+        child = await current.createDirectory(segment);
+        debugPrint('[FileSystemService] SAF: Created directory $segment');
+      }
+
+      current = child;
+      if (current != null) {
+        currentPath = '$currentPath/$segment';
+        _safDocumentCache[currentPath] = current;
+      }
+    }
+
+    return current;
+  }
+
+  /// List files in a directory, using SAF on Android when appropriate
+  Future<List<String>> listDirectory(String dirPath) async {
+    if (shouldUseSaf) {
+      return _listDirectorySaf(dirPath);
+    }
+    return _listDirectoryDartIo(dirPath);
+  }
+
+  Future<List<String>> _listDirectoryDartIo(String dirPath) async {
+    try {
+      final dir = Directory(dirPath);
+      if (!await dir.exists()) return [];
+
+      final files = <String>[];
+      await for (final entity in dir.list()) {
+        if (entity is File) {
+          files.add(entity.path);
+        }
+      }
+      return files;
+    } catch (e) {
+      debugPrint('[FileSystemService] Error listing directory: $e');
+      return [];
+    }
+  }
+
+  Future<List<String>> _listDirectorySaf(String dirPath) async {
+    try {
+      final dirDoc = await _getDirectoryDocumentFile(dirPath);
+      if (dirDoc == null) return [];
+
+      final files = <String>[];
+      await for (final child in dirDoc.listDocumentsStream()) {
+        if (child.isDirectory != true) {
+          files.add('$dirPath/${child.name}');
+        }
+      }
+      return files;
+    } catch (e) {
+      debugPrint('[FileSystemService] SAF error listing directory: $e');
+      return [];
+    }
+  }
+
+  /// Ensure a directory exists (creates if needed), using SAF on Android when appropriate
+  Future<bool> ensureDirectoryExists(String dirPath) async {
+    if (shouldUseSaf) {
+      final doc = await _ensureSafDirectoryExists(dirPath);
+      return doc != null;
+    }
+
+    try {
+      final dir = Directory(dirPath);
+      if (!await dir.exists()) {
+        await dir.create(recursive: true);
+      }
+      return true;
+    } catch (e) {
+      debugPrint('[FileSystemService] Error creating directory: $e');
+      return false;
+    }
+  }
+
+  // ============================================================
+  // End SAF-aware File Operations
+  // ============================================================
 
   /// Format timestamp for use in filenames (filesystem-safe)
   static String formatTimestampForFilename(DateTime timestamp) {
