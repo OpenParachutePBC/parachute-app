@@ -123,9 +123,14 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
 
         // Try to extract a readable file path from the URI
         // SAF URIs look like: content://com.android.externalstorage.documents/tree/primary%3ADocuments%2FMyVault
+        // Or with document part: .../tree/primary%3ADocuments%2FMyVault/document/primary%3ADocuments%2FMyVault
         if (safUri.contains('/tree/')) {
-          final encoded = safUri.split('/tree/').last;
-          final decoded = Uri.decodeComponent(encoded);
+          var treePart = safUri.split('/tree/').last;
+          // Remove any /document/ suffix if present
+          if (treePart.contains('/document/')) {
+            treePart = treePart.split('/document/').first;
+          }
+          final decoded = Uri.decodeComponent(treePart);
           // Convert "primary:Documents/MyVault" to "/storage/emulated/0/Documents/MyVault"
           if (decoded.startsWith('primary:')) {
             selectedDirectory = '/storage/emulated/0/${decoded.substring(8)}';

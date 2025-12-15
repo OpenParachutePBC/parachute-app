@@ -82,20 +82,24 @@ class FileBrowserService {
 
   /// List directory contents using SAF
   Future<List<FileItem>> _listFolderSaf(String path) async {
+    final stopwatch = Stopwatch()..start();
     debugPrint('[FileBrowserService] Listing via SAF: $path');
 
     final docFile = await _getDocumentFileForPath(path);
+    debugPrint('[FileBrowserService] Got DocumentFile in ${stopwatch.elapsedMilliseconds}ms');
+
     if (docFile == null) {
       debugPrint('[FileBrowserService] Could not get DocumentFile for $path');
       return [];
     }
 
     try {
-      final children = await docFile.listDocuments();
-      debugPrint('[FileBrowserService] SAF found ${children.length} items');
-
+      // Use stream for better performance with large directories
       final items = <FileItem>[];
-      for (final child in children) {
+      int totalCount = 0;
+
+      await for (final child in docFile.listDocumentsStream()) {
+        totalCount++;
         // Skip hidden files and files without names
         final name = child.name;
         if (name.isEmpty || name.startsWith('.')) continue;
@@ -118,6 +122,8 @@ class FileBrowserService {
         ));
       }
 
+      debugPrint('[FileBrowserService] SAF streamed $totalCount items in ${stopwatch.elapsedMilliseconds}ms');
+
       // Sort: folders first, then alphabetically
       items.sort((a, b) {
         if (a.isFolder && !b.isFolder) return -1;
@@ -125,7 +131,7 @@ class FileBrowserService {
         return a.name.toLowerCase().compareTo(b.name.toLowerCase());
       });
 
-      debugPrint('[FileBrowserService] SAF listed ${items.length} visible items');
+      debugPrint('[FileBrowserService] SAF listed ${items.length} visible items (total: ${stopwatch.elapsedMilliseconds}ms)');
       return items;
     } catch (e) {
       debugPrint('[FileBrowserService] SAF listing error: $e');
