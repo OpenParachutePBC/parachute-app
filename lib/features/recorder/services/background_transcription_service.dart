@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:app/features/recorder/services/live_transcription_service_v3.dart';
+import 'package:app/core/services/file_system_service.dart';
 import 'package:path/path.dart' as path;
 
 /// Background transcription manager
@@ -88,7 +89,18 @@ class BackgroundTranscriptionService {
     }
 
     try {
-      final markdownPath = path.join(_capturesPath!, '$_timestamp.md');
+      // Calculate month folder path from timestamp
+      final month = FileSystemService.getMonthFromRecordingId(_timestamp!);
+      final monthPath = path.join(_capturesPath!, month);
+
+      // Ensure month folder exists
+      final monthDir = Directory(monthPath);
+      if (!await monthDir.exists()) {
+        await monthDir.create(recursive: true);
+        debugPrint('[BackgroundTranscription] Created month folder: $monthPath');
+      }
+
+      final markdownPath = path.join(monthPath, '$_timestamp.md');
 
       // Read existing file to preserve created timestamp and title
       DateTime createdTime = DateTime.now();

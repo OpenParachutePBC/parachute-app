@@ -77,6 +77,49 @@ class FileSystemService {
     return '$root/$_capturesFolderName';
   }
 
+  /// Get the month folder path for a timestamp
+  /// Returns path like: ~/Parachute/captures/2025-12
+  Future<String> getCapturesMonthPath(DateTime timestamp) async {
+    final capturesPath = await getCapturesPath();
+    final month = '${timestamp.year}-${timestamp.month.toString().padLeft(2, '0')}';
+    return '$capturesPath/$month';
+  }
+
+  /// Get the audio subfolder path for a timestamp
+  /// Returns path like: ~/Parachute/captures/2025-12/_audio
+  Future<String> getAudioFolderPath(DateTime timestamp) async {
+    final monthPath = await getCapturesMonthPath(timestamp);
+    return '$monthPath/_audio';
+  }
+
+  /// Ensure month and audio folders exist for a timestamp
+  Future<void> ensureMonthFoldersExist(DateTime timestamp) async {
+    final monthPath = await getCapturesMonthPath(timestamp);
+    final audioPath = await getAudioFolderPath(timestamp);
+
+    final monthDir = Directory(monthPath);
+    if (!await monthDir.exists()) {
+      await monthDir.create(recursive: true);
+      debugPrint('[FileSystemService] Created month folder: $monthPath');
+    }
+
+    final audioDir = Directory(audioPath);
+    if (!await audioDir.exists()) {
+      await audioDir.create(recursive: true);
+      debugPrint('[FileSystemService] Created audio folder: $audioPath');
+    }
+  }
+
+  /// Extract month string from recording ID
+  /// Input: "2025-12-15_10-30-22" → Output: "2025-12"
+  static String getMonthFromRecordingId(String recordingId) {
+    final parts = recordingId.split('_')[0].split('-');
+    if (parts.length >= 2) {
+      return '${parts[0]}-${parts[1]}';
+    }
+    return '';
+  }
+
   // ============================================================
   // Temporary Audio File Management
   // ============================================================
@@ -533,6 +576,19 @@ class FileSystemService {
     }
 
     debugPrint('[FileSystemService] Folder structure ready');
+  }
+
+  /// Set a custom root folder path (alias for setRootPath)
+  /// Used by vault picker during onboarding
+  Future<bool> setCustomRootPath(String path) async {
+    return setRootPath(path);
+  }
+
+  /// Reset to the platform default path
+  /// Used by vault picker during onboarding
+  Future<bool> resetToDefaultPath() async {
+    final defaultPath = await _getDefaultRootPath();
+    return setRootPath(defaultPath);
   }
 
   /// Set a custom root folder path and migrate existing files

@@ -12,7 +12,6 @@ import 'package:app/features/recorder/services/recording_post_processing_service
 import 'package:app/features/recorder/services/storage_service.dart';
 import 'package:app/features/recorder/services/audio_service.dart';
 import 'package:app/core/services/file_system_service.dart';
-import 'package:app/core/services/audio_compression_service_dart.dart';
 import 'package:app/core/providers/file_system_provider.dart';
 import 'package:app/features/recorder/widgets/model_download_banner.dart';
 import 'package:path/path.dart' as path;
@@ -274,7 +273,6 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
   }) async {
     try {
       final existingId = widget.appendToRecordingId!;
-      final capturesPath = await fileSystemService.getCapturesPath();
 
       // Get existing recording
       final existing = await storageService.getRecording(existingId);
@@ -282,23 +280,38 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
         throw Exception('Recording not found: $existingId');
       }
 
-      // Find the existing WAV file
-      final existingWavPath = path.join(capturesPath, '$existingId.wav');
-      final existingOpusPath = path.join(capturesPath, '$existingId.opus');
+      // Find the existing WAV file (checking multiple locations for backward compat)
+      String? targetWavPath;
 
-      String targetWavPath = existingWavPath;
-      if (!await File(existingWavPath).exists()) {
-        if (await File(existingOpusPath).exists()) {
-          debugPrint('[SimpleRecording] Decompressing opus to wav for append...');
-          final compressionService = AudioCompressionServiceDart();
-          await compressionService.decompressToWav(
-            opusPath: existingOpusPath,
-            outputPath: existingWavPath,
-          );
-          targetWavPath = existingWavPath;
+      // Parse timestamp to find the recording's location
+      final timestamp = FileSystemService.parseTimestampFromFilename('$existingId.md');
+      if (timestamp != null) {
+        // Check month folder _audio subfolder first (new structure)
+        final audioFolderPath = await fileSystemService.getAudioFolderPath(timestamp);
+        final newStructureWavPath = path.join(audioFolderPath, '$existingId.wav');
+        if (await File(newStructureWavPath).exists()) {
+          targetWavPath = newStructureWavPath;
         } else {
-          throw Exception('No audio file found for recording: $existingId');
+          // Check month folder same directory (legacy within month)
+          final monthPath = await fileSystemService.getCapturesMonthPath(timestamp);
+          final monthWavPath = path.join(monthPath, '$existingId.wav');
+          if (await File(monthWavPath).exists()) {
+            targetWavPath = monthWavPath;
+          }
         }
+      }
+
+      // Check flat captures folder (old legacy)
+      if (targetWavPath == null) {
+        final capturesPath = await fileSystemService.getCapturesPath();
+        final legacyWavPath = path.join(capturesPath, '$existingId.wav');
+        if (await File(legacyWavPath).exists()) {
+          targetWavPath = legacyWavPath;
+        }
+      }
+
+      if (targetWavPath == null) {
+        throw Exception('No WAV file found for recording: $existingId. Cannot append to opus files.');
       }
 
       // Append the new audio to the existing WAV
@@ -331,14 +344,6 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
       if (!success) {
         throw Exception('Failed to update recording metadata');
       }
-
-      // Re-compress to opus after successful append
-      debugPrint('[SimpleRecording] Re-compressing to opus after append...');
-      final compressionService = AudioCompressionServiceDart();
-      await compressionService.compressToOpus(
-        wavPath: targetWavPath,
-        deleteOriginal: false,
-      );
 
       // Clean up temp audio file
       try {
@@ -916,24 +921,18 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
         audioPath: audioDestPath,
       );
 
-      // Compress WAV to Opus after successful transcription
-      debugPrint(
-        '[SimpleRecording] Transcription complete, compressing to Opus...',
-      );
-      final compressionService = AudioCompressionServiceDart();
-      final opusPath = await compressionService.compressToOpus(
-        wavPath: audioDestPath,
-        deleteOriginal: false,
-      );
-      debugPrint('[SimpleRecording] Compression complete: $opusPath');
+      debugPrint('[SimpleRecording] Transcription complete');
 
-      // Update recording with transcript and new Opus file path
+      // Get WAV file size
+      final wavFileSizeKB = await File(audioDestPath).length() / 1024;
+
+      // Update recording with transcript (keeping WAV file)
       final updatedRecording = recording.copyWith(
         transcript: result.transcript,
         transcriptionStatus: ProcessingStatus.completed,
         liveTranscriptionStatus: 'completed',
-        filePath: opusPath,
-        fileSizeKB: await File(opusPath).length() / 1024,
+        filePath: audioDestPath,
+        fileSizeKB: wavFileSizeKB,
       );
 
       // Save updated recording

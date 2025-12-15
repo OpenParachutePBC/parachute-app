@@ -1,13 +1,12 @@
 import 'dart:ffi';
-import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart' as flutter_blue_plus;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:opus_dart/opus_dart.dart' as opus_dart;
-import 'package:opus_flutter/opus_flutter.dart' as opus_flutter;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_gemma/flutter_gemma.dart';
+import 'package:opus_dart/opus_dart.dart' as opus_dart;
+import 'package:opus_flutter/opus_flutter.dart' as opus_flutter;
 import 'core/theme/app_theme.dart';
 import 'core/theme/design_tokens.dart';
 import 'core/services/logging_service.dart';
@@ -44,6 +43,22 @@ void main() async {
     release: 'parachute@1.0.0', // Update this with your version
   );
 
+  // Initialize Opus codec for Omi BLE audio decoding
+  // This must be done before any Opus operations
+  try {
+    debugPrint('[Main] Initializing Opus codec...');
+    // Load the native opus library via opus_flutter
+    final opusLib = await opus_flutter.load();
+    // Initialize opus_dart with the loaded library
+    opus_dart.initOpus(opusLib as DynamicLibrary);
+    debugPrint('[Main] ✅ Opus codec initialized successfully');
+  } catch (e, stackTrace) {
+    debugPrint('[Main] ⚠️  Failed to initialize Opus codec: $e');
+    debugPrint('[Main] Stack trace: $stackTrace');
+    debugPrint('[Main] Omi device audio decoding will not work');
+    // Continue anyway - only affects Omi device integration
+  }
+
   // Disable verbose FlutterBluePlus logs (reduces spam from onCharacteristicChanged)
   flutter_blue_plus.FlutterBluePlus.setLogLevel(
     flutter_blue_plus.LogLevel.none,
@@ -63,79 +78,6 @@ void main() async {
       stackTrace: stackTrace,
     );
     // Continue anyway - only affects title generation feature
-  }
-
-  // Initialize Opus codec for audio decoding (required for Omi device recordings)
-  try {
-    logger.info('Main', 'Loading Opus library...');
-
-    // opus_flutter doesn't support macOS, so we need to manually load the library
-    if (Platform.isMacOS) {
-      logger.debug('Main', 'Platform: macOS - loading Opus library manually');
-
-      // Try to load from bundled library first, then fall back to other paths
-      // During development, the library may be in the project's macos/Frameworks folder
-      final possiblePaths = [
-        '@executable_path/../Frameworks/libopus.dylib', // Bundled with app (release)
-        'libopus.dylib', // Relative to app
-        // Homebrew paths (try both symlink and versioned file)
-        '/opt/homebrew/opt/opus/lib/libopus.0.dylib', // Homebrew keg-only (versioned)
-        '/opt/homebrew/opt/opus/lib/libopus.dylib', // Homebrew keg-only (symlink)
-        '/opt/homebrew/lib/libopus.0.dylib', // Apple Silicon Homebrew (versioned)
-        '/opt/homebrew/lib/libopus.dylib', // Apple Silicon Homebrew (symlink)
-        '/usr/local/opt/opus/lib/libopus.0.dylib', // Intel Homebrew keg-only (versioned)
-        '/usr/local/opt/opus/lib/libopus.dylib', // Intel Homebrew keg-only (symlink)
-        '/usr/local/lib/libopus.0.dylib', // Intel Homebrew (versioned)
-        '/usr/local/lib/libopus.dylib', // Intel Homebrew (symlink)
-      ];
-
-      DynamicLibrary? loadedLib;
-      for (final path in possiblePaths) {
-        try {
-          logger.debug('Main', 'Trying to load Opus from: $path');
-          loadedLib = DynamicLibrary.open(path);
-          logger.info('Main', 'Successfully loaded Opus from: $path');
-          break;
-        } catch (e) {
-          logger.debug('Main', 'Failed to load from $path: $e');
-        }
-      }
-
-      if (loadedLib == null) {
-        throw Exception(
-          'Could not find libopus.dylib in app bundle. The library should be bundled with the app.',
-        );
-      }
-
-      logger.debug('Main', 'Initializing Opus codec...');
-      // Cast to dynamic to work around static analysis issue with conditional exports
-      opus_dart.initOpus(loadedLib as dynamic);
-      logger.info('Main', 'Opus codec initialized successfully');
-    } else {
-      // Use opus_flutter for supported platforms (Android, iOS, Windows)
-      final library = await opus_flutter.load();
-      logger.debug('Main', 'Opus library loaded via opus_flutter: $library');
-
-      logger.debug('Main', 'Initializing Opus codec...');
-      opus_dart.initOpus(library);
-      logger.info('Main', 'Opus codec initialized successfully');
-    }
-
-    // Verify initialization by getting version
-    try {
-      final version = opus_dart.getOpusVersion();
-      logger.debug('Main', 'Opus version: $version');
-    } catch (e) {
-      logger.warning('Main', 'Could not get Opus version', error: e);
-    }
-  } catch (e, stackTrace) {
-    logger.error(
-      'Main',
-      'Failed to initialize Opus codec',
-      error: e,
-      stackTrace: stackTrace,
-    );
-    // Continue anyway - only affects Omi device recordings with Opus codec
   }
 
   // Set up global error handling with Sentry integration

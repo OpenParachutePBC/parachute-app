@@ -14,7 +14,6 @@ import 'package:app/features/recorder/services/background_transcription_service.
 import 'package:app/features/recorder/widgets/model_download_banner.dart';
 import 'package:app/features/recorder/widgets/playback_controls.dart';
 import 'package:app/core/providers/title_generation_provider.dart';
-import 'package:app/core/services/audio_compression_service_dart.dart';
 import 'package:app/features/settings/screens/settings_screen.dart';
 import 'package:app/features/recorder/screens/simple_recording_screen.dart';
 import 'package:app/core/providers/file_system_provider.dart';
@@ -997,44 +996,29 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
   Future<void> _retranscribe() async {
     if (_recording == null) return;
 
-    // Parakeet requires WAV files for transcription
-    // Check if WAV file exists, if not check for Opus
-    final wavPath = _recording!.filePath.replaceAll('.opus', '.wav');
-    final wavFile = File(wavPath);
-    final opusFile = File(_recording!.filePath);
+    // Check if WAV file exists (opus files no longer supported)
+    String audioPathToTranscribe = _recording!.filePath;
 
-    String audioPathToTranscribe;
-
-    if (await wavFile.exists()) {
-      // Use existing WAV file
-      audioPathToTranscribe = wavPath;
-      debugPrint('[RecordingDetail] Using WAV file for re-transcription');
-    } else if (await opusFile.exists() &&
-        _recording!.filePath.endsWith('.opus')) {
-      // Opus file exists but no WAV - decode Opus to temporary WAV
-      debugPrint(
-        '[RecordingDetail] WAV not found, decoding Opus to temporary WAV',
-      );
-
-      try {
-        audioPathToTranscribe = await _decodeOpusToWav(_recording!.filePath);
-        debugPrint(
-          '[RecordingDetail] Created temporary WAV at: $audioPathToTranscribe',
-        );
-      } catch (e) {
-        debugPrint('[RecordingDetail] Failed to decode Opus to WAV: $e');
+    // If the stored path is opus, check for a wav version
+    if (audioPathToTranscribe.endsWith('.opus')) {
+      final wavPath = audioPathToTranscribe.replaceAll('.opus', '.wav');
+      if (await File(wavPath).exists()) {
+        audioPathToTranscribe = wavPath;
+      } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Failed to decode Opus file: $e'),
-              backgroundColor: BrandColors.error,
+            const SnackBar(
+              content: Text('Cannot re-transcribe opus files. WAV file not found.'),
+              backgroundColor: BrandColors.warning,
             ),
           );
         }
         return;
       }
-    } else {
-      // Neither file exists
+    }
+
+    // Verify the audio file exists
+    if (!await File(audioPathToTranscribe).exists()) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -1045,6 +1029,8 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
       }
       return;
     }
+
+    debugPrint('[RecordingDetail] Using WAV file for re-transcription: $audioPathToTranscribe');
 
     // Start transcription
     setState(() {
@@ -1113,26 +1099,6 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
           debugPrint('[RecordingDetail] Failed to delete temporary WAV: $e');
         }
       }
-    }
-  }
-
-  /// Decode Opus file to temporary WAV file for transcription
-  Future<String> _decodeOpusToWav(String opusPath) async {
-    debugPrint('[RecordingDetail] Decoding Opus to WAV: $opusPath');
-
-    try {
-      // Use AudioCompressionServiceDart to decode Opus to WAV
-      final compressionService = AudioCompressionServiceDart();
-      final wavPath = await compressionService.decompressToWav(
-        opusPath: opusPath,
-      );
-
-      debugPrint('[RecordingDetail] Created temporary WAV: $wavPath');
-      return wavPath;
-    } catch (e, stackTrace) {
-      debugPrint('[RecordingDetail] Opus decode error: $e');
-      debugPrint('[RecordingDetail] Stack trace: $stackTrace');
-      rethrow;
     }
   }
 

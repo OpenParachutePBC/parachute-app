@@ -27,7 +27,7 @@ class WavBytesUtil {
   WavBytesUtil({required this.codec}) {
     debugPrint('[WavBytesUtil] Creating with codec: $codec');
 
-    // Initialize Opus decoder if needed
+    // Initialize Opus decoder if needed (for Omi BLE audio)
     if (codec == BleAudioCodec.opus) {
       try {
         debugPrint('[WavBytesUtil] Creating Opus decoder...');
@@ -178,7 +178,7 @@ class WavBytesUtil {
     return _convertToLittleEndianBytes(pcmSamples);
   }
 
-  /// Process Opus frames
+  /// Process Opus frames (for Omi BLE audio)
   Uint8List _processOpus() {
     if (_opusDecoder == null) {
       throw StateError('Opus decoder not initialized');

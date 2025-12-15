@@ -10,10 +10,11 @@ import 'package:just_audio/just_audio.dart';
 
 /// Local-first storage service for recording management
 ///
-/// All recordings are stored in ~/Parachute/captures/ as:
-/// - Audio file (.opus for new recordings, .wav for legacy)
-/// - Markdown transcript file (.md)
-/// - JSON metadata file (.json)
+/// New recordings are stored in ~/Parachute/captures/YYYY-MM/ as:
+/// - Markdown file (.md) in month folder
+/// - Audio file (.wav) in month/_audio/ subfolder
+///
+/// Legacy recordings in flat captures/ folder are also supported for backward compatibility.
 class StorageService {
   final Ref? _ref; // Optional ref for accessing providers (like Git sync)
 
@@ -157,16 +158,20 @@ class StorageService {
     }
   }
 
-  /// Get the path for a recording's audio file
+  /// Get the path for a recording's audio file (in month/_audio folder)
   Future<String> _getAudioPath(String recordingId, DateTime timestamp) async {
-    final capturesPath = await _fileSystem.getCapturesPath();
+    final audioPath = await _fileSystem.getAudioFolderPath(timestamp);
     final timestampStr = FileSystemService.formatTimestampForFilename(
       timestamp,
     );
-    return '$capturesPath/$timestampStr.opus';
+    return '$audioPath/$timestampStr.wav';
   }
 
   /// Load all recordings from local filesystem (LOCAL-FIRST)
+  ///
+  /// Scans both:
+  /// - Month folders (new structure): captures/YYYY-MM/*.md with _audio/*.wav
+  /// - Flat captures folder (legacy): captures/*.md with captures/*.wav
   ///
   /// If [includeOrphaned] is true, also includes WAV files without markdown
   Future<List<Recording>> getRecordings({bool includeOrphaned = false}) async {
@@ -195,53 +200,161 @@ class StorageService {
         return [];
       }
 
-      // Find all markdown files (each represents a recording)
-      // Use parallel I/O for better performance with large collections
       final recordings = <Recording>[];
       final processedIds = <String>{};
+      final monthFolderPattern = RegExp(r'^\d{4}-\d{2}$');
+      const batchSize = 20;
 
-      // Collect all files in a single directory scan
-      // This avoids multiple File.exists() calls later
-      final mdFiles = <File>[];
-      final audioOnlyFiles = <File>[];
-      // Map base name -> audio file path (prefer .opus over .wav)
-      final audioFileMap = <String, String>{};
-
+      // === SCAN MONTH FOLDERS (new structure) ===
       await for (final entity in capturesDir.list()) {
-        if (entity is File) {
-          final path = entity.path;
-          if (path.endsWith('.md')) {
-            mdFiles.add(entity);
-          } else if (path.endsWith('.opus')) {
-            // .opus takes precedence over .wav
-            final baseName = p.basenameWithoutExtension(path);
-            audioFileMap[baseName] = path;
-            if (includeOrphaned) {
-              audioOnlyFiles.add(entity);
+        if (entity is Directory) {
+          final folderName = p.basename(entity.path);
+          if (monthFolderPattern.hasMatch(folderName)) {
+            // This is a month folder (e.g., "2025-12")
+            final mdFiles = <File>[];
+            final audioFileMap = <String, String>{};
+            final audioOnlyFiles = <File>[];
+
+            // Check for _audio subfolder
+            final audioSubfolder = Directory('${entity.path}/_audio');
+            final hasAudioSubfolder = await audioSubfolder.exists();
+
+            // Scan month folder for markdown files
+            await for (final monthEntity in entity.list()) {
+              if (monthEntity is File) {
+                final path = monthEntity.path;
+                if (path.endsWith('.md')) {
+                  mdFiles.add(monthEntity);
+                } else if (path.endsWith('.wav') || path.endsWith('.opus')) {
+                  // Legacy: audio in same folder as markdown
+                  final baseName = p.basenameWithoutExtension(path);
+                  if (!audioFileMap.containsKey(baseName)) {
+                    audioFileMap[baseName] = path;
+                  }
+                  if (includeOrphaned) {
+                    audioOnlyFiles.add(monthEntity);
+                  }
+                }
+              }
             }
-          } else if (path.endsWith('.wav')) {
-            final baseName = p.basenameWithoutExtension(path);
-            // Only add .wav if .opus not already found
-            if (!audioFileMap.containsKey(baseName)) {
-              audioFileMap[baseName] = path;
+
+            // Scan _audio subfolder if it exists
+            if (hasAudioSubfolder) {
+              await for (final audioEntity in audioSubfolder.list()) {
+                if (audioEntity is File) {
+                  final path = audioEntity.path;
+                  if (path.endsWith('.wav') || path.endsWith('.opus')) {
+                    final baseName = p.basenameWithoutExtension(path);
+                    // _audio/ takes precedence
+                    audioFileMap[baseName] = path;
+                    if (includeOrphaned) {
+                      audioOnlyFiles.add(audioEntity);
+                    }
+                  }
+                }
+              }
             }
-            if (includeOrphaned) {
-              audioOnlyFiles.add(entity);
+
+            // Process markdown files from this month folder
+            for (int i = 0; i < mdFiles.length; i += batchSize) {
+              final batch = mdFiles.skip(i).take(batchSize).toList();
+              final futures = batch.map((file) async {
+                try {
+                  return await _loadRecordingFromMarkdown(
+                    file,
+                    audioFileMap: audioFileMap,
+                  );
+                } catch (e) {
+                  debugPrint(
+                    '[StorageService] Error loading recording from ${file.path}: $e',
+                  );
+                  return null;
+                }
+              });
+
+              final results = await Future.wait(futures);
+              for (final recording in results) {
+                if (recording != null) {
+                  recordings.add(recording);
+                  processedIds.add(recording.id);
+                }
+              }
+            }
+
+            // Process orphaned audio files from this month
+            if (includeOrphaned && audioOnlyFiles.isNotEmpty) {
+              final orphanedFiles = audioOnlyFiles.where((file) {
+                final baseName = p.basenameWithoutExtension(file.path);
+                return !processedIds.contains(baseName);
+              }).toList();
+
+              for (int i = 0; i < orphanedFiles.length; i += batchSize) {
+                final batch = orphanedFiles.skip(i).take(batchSize).toList();
+                final futures = batch.map((file) async {
+                  try {
+                    return await _loadOrphanedAudioFile(file);
+                  } catch (e) {
+                    debugPrint(
+                      '[StorageService] Error loading orphaned audio from ${file.path}: $e',
+                    );
+                    return null;
+                  }
+                });
+
+                final results = await Future.wait(futures);
+                for (final recording in results) {
+                  if (recording != null) {
+                    recordings.add(recording);
+                    processedIds.add(recording.id);
+                  }
+                }
+              }
             }
           }
         }
       }
 
-      // Process markdown files in parallel batches for better performance
-      // Use batches of 20 to avoid opening too many file handles at once
-      const batchSize = 20;
-      for (int i = 0; i < mdFiles.length; i += batchSize) {
-        final batch = mdFiles.skip(i).take(batchSize).toList();
+      // === SCAN FLAT CAPTURES FOLDER (legacy) ===
+      final legacyMdFiles = <File>[];
+      final legacyAudioFileMap = <String, String>{};
+      final legacyAudioOnlyFiles = <File>[];
+
+      await for (final entity in capturesDir.list()) {
+        if (entity is File) {
+          final path = entity.path;
+          final baseName = p.basenameWithoutExtension(path);
+
+          // Skip if already processed from month folders
+          if (processedIds.contains(baseName)) continue;
+
+          if (path.endsWith('.md')) {
+            legacyMdFiles.add(entity);
+          } else if (path.endsWith('.opus')) {
+            // Legacy: .opus takes precedence over .wav
+            legacyAudioFileMap[baseName] = path;
+            if (includeOrphaned) {
+              legacyAudioOnlyFiles.add(entity);
+            }
+          } else if (path.endsWith('.wav')) {
+            // Only add .wav if .opus not already found
+            if (!legacyAudioFileMap.containsKey(baseName)) {
+              legacyAudioFileMap[baseName] = path;
+            }
+            if (includeOrphaned) {
+              legacyAudioOnlyFiles.add(entity);
+            }
+          }
+        }
+      }
+
+      // Process legacy markdown files
+      for (int i = 0; i < legacyMdFiles.length; i += batchSize) {
+        final batch = legacyMdFiles.skip(i).take(batchSize).toList();
         final futures = batch.map((file) async {
           try {
             return await _loadRecordingFromMarkdown(
               file,
-              audioFileMap: audioFileMap,
+              audioFileMap: legacyAudioFileMap,
             );
           } catch (e) {
             debugPrint(
@@ -260,17 +373,13 @@ class StorageService {
         }
       }
 
-      // If requested, also load orphaned audio files (WAV or Opus) in parallel
-      if (includeOrphaned && audioOnlyFiles.isNotEmpty) {
-        // Filter to only files without corresponding markdown
-        // Use a set of processed base names for efficient lookup
-        final processedBaseNames = processedIds.toSet();
-        final orphanedFiles = audioOnlyFiles.where((file) {
+      // Process legacy orphaned audio files
+      if (includeOrphaned && legacyAudioOnlyFiles.isNotEmpty) {
+        final orphanedFiles = legacyAudioOnlyFiles.where((file) {
           final baseName = p.basenameWithoutExtension(file.path);
-          return !processedBaseNames.contains(baseName);
+          return !processedIds.contains(baseName);
         }).toList();
 
-        // Process orphaned files in parallel batches
         for (int i = 0; i < orphanedFiles.length; i += batchSize) {
           final batch = orphanedFiles.skip(i).take(batchSize).toList();
           final futures = batch.map((file) async {
@@ -397,6 +506,7 @@ class StorageService {
       String? contextFromFrontmatter;
       String? summaryFromFrontmatter;
       List<RecordingSegment>? segments;
+      List<String>? parsedTags;
 
       final lines = content.split('\n');
       if (lines.isNotEmpty && lines[0] == '---') {
@@ -412,11 +522,27 @@ class StorageService {
         if (endIndex > 0) {
           // Parse frontmatter fields
           bool inSegments = false;
+          bool inTags = false;
           double? currentSegmentEnd;
           DateTime? currentSegmentRecorded;
 
           for (int i = 1; i < endIndex; i++) {
             final line = lines[i];
+
+            // Check for tag list items
+            if (inTags) {
+              if (line.startsWith('  - ')) {
+                final tag = line.substring('  - '.length).trim();
+                // Filter out the default tag to avoid duplication
+                if (tag.isNotEmpty && tag != 'parachute/capture') {
+                  parsedTags ??= [];
+                  parsedTags!.add(tag);
+                }
+              } else if (!line.startsWith('  ')) {
+                // End of tags section
+                inTags = false;
+              }
+            }
 
             // Check for segment list items
             if (inSegments) {
@@ -467,6 +593,11 @@ class StorageService {
               }
               if (key == 'segments') {
                 inSegments = true;
+              }
+              if (key == 'tags') {
+                // Tags are parsed as list items below
+                inTags = true;
+                parsedTags = [];
               }
               if (key == 'context') {
                 // Unescape the context value (remove quotes and unescape)
@@ -530,6 +661,15 @@ class StorageService {
           int i = 0;
           while (i < bodyLines.length && bodyLines[i].trim().isEmpty) {
             i++;
+          }
+
+          // Skip wikilink line if present (format: [[id|title]])
+          if (i < bodyLines.length && bodyLines[i].trim().startsWith('[[')) {
+            i++;
+            // Skip any empty lines after wikilink
+            while (i < bodyLines.length && bodyLines[i].trim().isEmpty) {
+              i++;
+            }
           }
 
           // Rest is transcript (no more sections)
@@ -618,7 +758,7 @@ class StorageService {
         filePath: audioExists ? audioPath! : mdFile.path,
         timestamp: timestamp,
         duration: duration,
-        tags: [],
+        tags: parsedTags ?? [],
         transcript: transcript,
         context: context,
         summary: summary,
@@ -651,8 +791,9 @@ class StorageService {
   /// Save a recording - LOCAL-FIRST
   /// Returns the recording ID (timestamp-based for local files)
   ///
-  /// All recordings are saved to ~/Parachute/captures/ as .opus, .md, and .json files.
-  /// Git sync handles multi-device synchronization.
+  /// All recordings are saved to ~/Parachute/captures/YYYY-MM/ as:
+  /// - Markdown file (.md) in month folder
+  /// - Audio file (.wav) in month/_audio/ subfolder
   Future<String?> saveRecording(Recording recording) async {
     if (!_isInitialized && _initializationFuture == null) {
       await initialize();
@@ -668,14 +809,16 @@ class StorageService {
         return null;
       }
 
-      // Ensure the recording is saved to captures folder
-      final capturesPath = await _fileSystem.getCapturesPath();
+      // Ensure month folders exist
+      await _fileSystem.ensureMonthFoldersExist(recording.timestamp);
+
       final timestamp = FileSystemService.formatTimestampForFilename(
         recording.timestamp,
       );
 
-      // Save markdown file with transcript
-      final mdPath = p.join(capturesPath, '$timestamp.md');
+      // Save markdown file to month folder
+      final monthPath = await _fileSystem.getCapturesMonthPath(recording.timestamp);
+      final mdPath = p.join(monthPath, '$timestamp.md');
       final mdFile = File(mdPath);
 
       if (!await mdFile.exists()) {
@@ -684,10 +827,10 @@ class StorageService {
         debugPrint('[StorageService] Saved recording locally: $mdPath');
       }
 
-      // Copy audio file if not already in captures folder
-      // Preserve the original extension (.opus or .wav)
-      final audioExtension = p.extension(recording.filePath);
-      final audioDestPath = p.join(capturesPath, '$timestamp$audioExtension');
+      // Copy audio file to _audio/ subfolder
+      // Use .wav extension (opus removed)
+      final audioFolderPath = await _fileSystem.getAudioFolderPath(recording.timestamp);
+      final audioDestPath = p.join(audioFolderPath, '$timestamp.wav');
       if (recording.filePath != audioDestPath &&
           !await File(audioDestPath).exists()) {
         await audioFile.copy(audioDestPath);
@@ -745,11 +888,11 @@ class StorageService {
       buffer.writeln('summary: "$escapedSummary"');
     }
 
-    if (recording.tags.isNotEmpty) {
-      buffer.writeln('tags:');
-      for (final tag in recording.tags) {
-        buffer.writeln('  - $tag');
-      }
+    // Always include default tag, plus any user tags
+    final allTags = <String>['parachute/capture', ...recording.tags];
+    buffer.writeln('tags:');
+    for (final tag in allTags) {
+      buffer.writeln('  - $tag');
     }
 
     if (recording.liveTranscriptionStatus != null) {
@@ -770,6 +913,10 @@ class StorageService {
     buffer.writeln('---');
     buffer.writeln();
 
+    // Wikilink for Obsidian interoperability
+    buffer.writeln('[[${recording.id}|${recording.title}]]');
+    buffer.writeln();
+
     // Content - just the transcript (no sections)
     if (recording.transcript.isNotEmpty) {
       buffer.writeln(recording.transcript);
@@ -780,32 +927,51 @@ class StorageService {
 
   /// Update an existing recording (LOCAL-FIRST)
   /// Updates the markdown file with new title, transcript, and context
+  /// Handles both month folder (new) and flat captures (legacy) structures
   Future<bool> updateRecording(Recording updatedRecording) async {
     try {
       debugPrint(
         '[StorageService] 📝 Updating recording: ${updatedRecording.id}',
       );
 
-      // Get the captures folder path
-      final capturesPath = await _fileSystem.getCapturesPath();
+      // Parse timestamp from recording ID to determine month folder
+      final timestamp = FileSystemService.parseTimestampFromFilename(
+        '${updatedRecording.id}.md',
+      );
 
-      // The recordingId is the timestamp (e.g., "2025-11-06_12-30-45")
-      final mdPath = p.join(capturesPath, '${updatedRecording.id}.md');
-      final mdFile = File(mdPath);
+      String mdPath;
 
-      if (!await mdFile.exists()) {
-        debugPrint(
-          '[StorageService] ℹ️ Markdown file not found, creating new one for orphaned recording: $mdPath',
-        );
-        // For orphaned recordings, create the markdown file
-        // This allows transcription results to be saved
+      if (timestamp != null) {
+        // Try month folder first (new structure)
+        final monthPath = await _fileSystem.getCapturesMonthPath(timestamp);
+        final monthMdPath = p.join(monthPath, '${updatedRecording.id}.md');
+
+        if (await File(monthMdPath).exists()) {
+          mdPath = monthMdPath;
+        } else {
+          // Fall back to flat captures folder (legacy)
+          final capturesPath = await _fileSystem.getCapturesPath();
+          final legacyMdPath = p.join(capturesPath, '${updatedRecording.id}.md');
+
+          if (await File(legacyMdPath).exists()) {
+            mdPath = legacyMdPath;
+          } else {
+            // New recording - use month folder structure
+            await _fileSystem.ensureMonthFoldersExist(timestamp);
+            mdPath = monthMdPath;
+          }
+        }
+      } else {
+        // Can't parse timestamp, use flat captures folder
+        final capturesPath = await _fileSystem.getCapturesPath();
+        mdPath = p.join(capturesPath, '${updatedRecording.id}.md');
       }
 
       // Generate updated markdown content
       final markdown = _generateMarkdown(updatedRecording);
 
       // Write updated content to file (creates if doesn't exist)
-      await mdFile.writeAsString(markdown);
+      await File(mdPath).writeAsString(markdown);
       debugPrint('[StorageService] ✅ Updated markdown file: $mdPath');
 
       // Invalidate cache since we modified a recording
@@ -902,53 +1068,57 @@ class StorageService {
   }
 
   /// Delete a recording from local filesystem (LOCAL-FIRST)
+  /// Handles both month folder (new) and flat captures (legacy) structures
   Future<bool> deleteRecording(String recordingId) async {
     try {
       debugPrint('[StorageService] 🗑️  Deleting recording: $recordingId');
 
-      // Get the captures folder path
-      final capturesPath = await _fileSystem.getCapturesPath();
-
-      // The recordingId is the timestamp (e.g., "2025-11-06_12-30-45")
-      // We need to delete audio (.opus or .wav), .md, and .json files
-      final basePath = p.join(capturesPath, recordingId);
-      final opusPath = '$basePath.opus';
-      final wavPath = '$basePath.wav';
-      final mdPath = '$basePath.md';
-      final jsonPath = '$basePath.json';
-
       int deletedCount = 0;
 
-      // Delete .opus file if exists
-      final opusFile = File(opusPath);
-      if (await opusFile.exists()) {
-        await opusFile.delete();
-        debugPrint('[StorageService] ✅ Deleted audio file: $opusPath');
-        deletedCount++;
+      // Parse timestamp from recording ID to determine month folder
+      final timestamp = FileSystemService.parseTimestampFromFilename(
+        '$recordingId.md',
+      );
+
+      if (timestamp != null) {
+        // Try month folder structure first (new)
+        final monthPath = await _fileSystem.getCapturesMonthPath(timestamp);
+        final audioFolderPath = await _fileSystem.getAudioFolderPath(timestamp);
+
+        // Delete from month folder
+        final monthMdPath = p.join(monthPath, '$recordingId.md');
+        final monthJsonPath = p.join(monthPath, '$recordingId.json');
+        final audioWavPath = p.join(audioFolderPath, '$recordingId.wav');
+        final audioOpusPath = p.join(audioFolderPath, '$recordingId.opus');
+
+        // Also check for audio in same folder as markdown (legacy within month)
+        final monthWavPath = p.join(monthPath, '$recordingId.wav');
+        final monthOpusPath = p.join(monthPath, '$recordingId.opus');
+
+        for (final path in [monthMdPath, monthJsonPath, audioWavPath, audioOpusPath, monthWavPath, monthOpusPath]) {
+          final file = File(path);
+          if (await file.exists()) {
+            await file.delete();
+            debugPrint('[StorageService] ✅ Deleted: $path');
+            deletedCount++;
+          }
+        }
       }
 
-      // Delete .wav file if exists (legacy)
-      final wavFile = File(wavPath);
-      if (await wavFile.exists()) {
-        await wavFile.delete();
-        debugPrint('[StorageService] ✅ Deleted audio file: $wavPath');
-        deletedCount++;
-      }
+      // Also check flat captures folder (legacy)
+      final capturesPath = await _fileSystem.getCapturesPath();
+      final legacyOpusPath = p.join(capturesPath, '$recordingId.opus');
+      final legacyWavPath = p.join(capturesPath, '$recordingId.wav');
+      final legacyMdPath = p.join(capturesPath, '$recordingId.md');
+      final legacyJsonPath = p.join(capturesPath, '$recordingId.json');
 
-      // Delete .md file if exists
-      final mdFile = File(mdPath);
-      if (await mdFile.exists()) {
-        await mdFile.delete();
-        debugPrint('[StorageService] ✅ Deleted markdown file: $mdPath');
-        deletedCount++;
-      }
-
-      // Delete .json file if exists
-      final jsonFile = File(jsonPath);
-      if (await jsonFile.exists()) {
-        await jsonFile.delete();
-        debugPrint('[StorageService] ✅ Deleted JSON file: $jsonPath');
-        deletedCount++;
+      for (final path in [legacyOpusPath, legacyWavPath, legacyMdPath, legacyJsonPath]) {
+        final file = File(path);
+        if (await file.exists()) {
+          await file.delete();
+          debugPrint('[StorageService] ✅ Deleted legacy: $path');
+          deletedCount++;
+        }
       }
 
       if (deletedCount > 0) {

@@ -130,7 +130,9 @@ When modifying storage:
 
 ### AI
 - `whisper_ggml: ^1.7.0` - Local transcription
-- `opus_dart` / `opus_flutter` - Audio codec for Omi
+
+### Audio Codecs
+- `opus_dart` / `opus_flutter` - Opus codec for Omi BLE audio decoding
 
 ### Utilities
 - `permission_handler` - Microphone/Bluetooth permissions
@@ -149,7 +151,7 @@ Ensure macOS entitlements include:
 ### Omi Connection Issues
 - Check Bluetooth permissions
 - Verify FlutterBluePlus initialization in main.dart
-- Opus codec must be initialized for audio decoding
+- Opus codec must be initialized for Omi audio decoding
 - **Auto-reconnect**: Check logs for "[HomeScreen] Attempting auto-reconnect"
 - **Firmware updates**: Don't close app during update - navigation is blocked for safety
 

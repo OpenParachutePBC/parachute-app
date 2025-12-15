@@ -65,7 +65,7 @@ dependencies:
   flutter_blue_plus: ^1.33.6
   flutter_local_notifications: ^17.0.0
 
-  # Audio Codecs (for Omi)
+  # Audio Codecs (for Omi BLE audio decoding)
   opus_dart: ^3.0.1
   opus_flutter: ^3.0.3
 

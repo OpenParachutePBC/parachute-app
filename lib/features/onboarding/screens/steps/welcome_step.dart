@@ -1,37 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:app/core/theme/design_tokens.dart';
-import 'package:app/core/providers/file_system_provider.dart';
 
 /// Welcome step - introduces Parachute with brand styling
 ///
 /// "Think naturally" - A calm, spacious welcome experience
-class WelcomeStep extends ConsumerStatefulWidget {
+class WelcomeStep extends StatelessWidget {
   final VoidCallback onNext;
   final VoidCallback onSkip;
 
   const WelcomeStep({super.key, required this.onNext, required this.onSkip});
-
-  @override
-  ConsumerState<WelcomeStep> createState() => _WelcomeStepState();
-}
-
-class _WelcomeStepState extends ConsumerState<WelcomeStep> {
-  String _folderLocation = 'Loading...';
-
-  @override
-  void initState() {
-    super.initState();
-    _loadFolderLocation();
-  }
-
-  Future<void> _loadFolderLocation() async {
-    final fileSystemService = ref.read(fileSystemServiceProvider);
-    final location = await fileSystemService.getRootPathDisplay();
-    if (mounted) {
-      setState(() => _folderLocation = location);
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -171,7 +148,7 @@ class _WelcomeStepState extends ConsumerState<WelcomeStep> {
               icon: Icons.folder_open,
               title: 'One Folder, All Your Data',
               description:
-                  'Everything lives in $_folderLocation - open, portable, and yours',
+                  'Standard markdown files - open, portable, and yours',
               isDark: isDark,
             ),
 
@@ -212,7 +189,7 @@ class _WelcomeStepState extends ConsumerState<WelcomeStep> {
             SizedBox(
               width: double.infinity,
               child: FilledButton(
-                onPressed: widget.onNext,
+                onPressed: onNext,
                 style: FilledButton.styleFrom(
                   backgroundColor:
                       isDark ? BrandColors.nightForest : BrandColors.forest,
@@ -236,27 +213,13 @@ class _WelcomeStepState extends ConsumerState<WelcomeStep> {
 
             // Skip button
             TextButton(
-              onPressed: widget.onSkip,
+              onPressed: onSkip,
               style: TextButton.styleFrom(
                 foregroundColor: isDark
                     ? BrandColors.nightTextSecondary
                     : BrandColors.driftwood,
               ),
               child: const Text('Skip setup'),
-            ),
-
-            SizedBox(height: Spacing.sm),
-
-            // Note about changing folder location
-            Text(
-              'You can change the folder location later in Settings',
-              style: TextStyle(
-                fontSize: TypographyTokens.labelSmall,
-                color: isDark
-                    ? BrandColors.nightTextSecondary.withValues(alpha: 0.7)
-                    : BrandColors.driftwood.withValues(alpha: 0.7),
-              ),
-              textAlign: TextAlign.center,
             ),
 
             SizedBox(height: Spacing.xl),

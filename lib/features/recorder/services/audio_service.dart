@@ -6,7 +6,6 @@ import 'package:just_audio/just_audio.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:app/features/recorder/services/storage_service.dart';
-import 'package:app/core/services/audio_compression_service_dart.dart';
 import 'package:app/core/services/file_system_service.dart';
 
 enum RecordingState { stopped, recording, paused }
@@ -347,47 +346,22 @@ class AudioService {
         return false;
       }
 
-      String playbackPath = filePath;
-
-      // If it's an Opus file, convert to WAV in temp folder for playback
+      // Opus files are no longer supported for playback
       if (filePath.endsWith('.opus')) {
-        final fileSystem = FileSystemService();
-        // Use deterministic temp path so we can reuse converted files
-        final wavPath = await fileSystem.getPlaybackTempPath(filePath);
-        final wavFile = File(wavPath);
-
-        if (!await wavFile.exists()) {
-          debugPrint('Converting Opus to WAV in temp folder for playback...');
-
-          // Convert Opus to WAV for playback
-          final service = AudioCompressionServiceDart();
-
-          try {
-            playbackPath = await service.decompressToWav(
-              opusPath: filePath,
-              outputPath: wavPath,
-            );
-            debugPrint('Converted Opus to WAV for playback: $playbackPath');
-          } catch (e) {
-            debugPrint('Failed to convert Opus to WAV: $e');
-            return false;
-          }
-        } else {
-          debugPrint('Using cached WAV file for playback: $wavPath');
-          playbackPath = wavPath;
-        }
-      }
-
-      final file = File(playbackPath);
-      if (!await file.exists()) {
-        debugPrint('File not found: $playbackPath');
+        debugPrint('Cannot play opus file: $filePath (opus support removed)');
         return false;
       }
 
-      await _player.setFilePath(playbackPath);
+      final file = File(filePath);
+      if (!await file.exists()) {
+        debugPrint('File not found: $filePath');
+        return false;
+      }
+
+      await _player.setFilePath(filePath);
       await _player.play();
 
-      debugPrint('Playing recording: $playbackPath');
+      debugPrint('Playing recording: $filePath');
       return true;
     } catch (e, stackTrace) {
       debugPrint('Error playing recording: $e');
