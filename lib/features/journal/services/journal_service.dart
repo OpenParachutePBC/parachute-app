@@ -326,10 +326,15 @@ class JournalService {
 
     String? currentId;
     String? currentTitle;
+    bool isPlainH1 = false;
     final contentBuffer = StringBuffer();
+    int plainEntryCounter = 0;
 
     for (final line in lines) {
-      final paraId = ParaIdService.parseFromH1(line);
+      final trimmedLine = line.trim();
+
+      // Check for para:ID format first
+      final paraId = ParaIdService.parseFromH1(trimmedLine);
 
       if (paraId != null) {
         // Save previous entry if exists
@@ -339,17 +344,54 @@ class JournalService {
             title: currentTitle ?? '',
             content: contentBuffer.toString().trim(),
             audioPath: assets[currentId],
+            isPlainMarkdown: isPlainH1,
           ));
         }
 
-        // Start new entry
+        // Start new para entry
         currentId = paraId;
-        currentTitle = ParaIdService.parseTitleFromH1(line);
+        currentTitle = ParaIdService.parseTitleFromH1(trimmedLine);
+        isPlainH1 = false;
+        contentBuffer.clear();
+      } else if (trimmedLine.startsWith('# ')) {
+        // Plain H1 without para:ID
+        // Save previous entry if exists
+        if (currentId != null) {
+          entries.add(_createEntry(
+            id: currentId,
+            title: currentTitle ?? '',
+            content: contentBuffer.toString().trim(),
+            audioPath: assets[currentId],
+            isPlainMarkdown: isPlainH1,
+          ));
+        }
+
+        // Start new plain entry with generated ID
+        plainEntryCounter++;
+        currentId = 'plain_$plainEntryCounter';
+        currentTitle = trimmedLine.substring(2).trim(); // Remove "# "
+        isPlainH1 = true;
         contentBuffer.clear();
       } else if (currentId != null) {
         // Add to current entry's content
         contentBuffer.writeln(line);
+      } else {
+        // Content before any H1 - create a "preamble" entry
+        if (trimmedLine.isNotEmpty) {
+          contentBuffer.writeln(line);
+        }
       }
+    }
+
+    // Handle content before any H1 (preamble)
+    if (currentId == null && contentBuffer.toString().trim().isNotEmpty) {
+      entries.add(_createEntry(
+        id: 'preamble',
+        title: '',
+        content: contentBuffer.toString().trim(),
+        audioPath: null,
+        isPlainMarkdown: true,
+      ));
     }
 
     // Don't forget the last entry
@@ -359,6 +401,7 @@ class JournalService {
         title: currentTitle ?? '',
         content: contentBuffer.toString().trim(),
         audioPath: assets[currentId],
+        isPlainMarkdown: isPlainH1,
       ));
     }
 
@@ -370,6 +413,7 @@ class JournalService {
     required String title,
     required String content,
     String? audioPath,
+    bool isPlainMarkdown = false,
   }) {
     // Detect entry type from content
     final linkedFile = _extractWikilink(content);
