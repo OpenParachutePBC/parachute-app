@@ -756,7 +756,8 @@ class FileSystemService {
   }
 
   /// Get DocumentFile for root folder (cached)
-  Future<DocumentFile?> _getRootDocumentFile() async {
+  /// Includes retry logic for "AlreadyRunning" errors from docman
+  Future<DocumentFile?> _getRootDocumentFile({int retryCount = 0}) async {
     if (_rootDocumentFile != null) return _rootDocumentFile;
 
     final rootUri = _rootFolderUri;
@@ -771,13 +772,21 @@ class FileSystemService {
         }
       }
     } catch (e) {
+      final errorStr = e.toString();
+      // Retry on "AlreadyRunning" errors (docman concurrency issue)
+      if (errorStr.contains('AlreadyRunning') && retryCount < 3) {
+        debugPrint('[FileSystemService] SAF busy, retrying... (attempt ${retryCount + 1})');
+        await Future.delayed(Duration(milliseconds: 100 * (retryCount + 1)));
+        return _getRootDocumentFile(retryCount: retryCount + 1);
+      }
       debugPrint('[FileSystemService] Error getting root DocumentFile: $e');
     }
     return null;
   }
 
   /// Get DocumentFile for a directory path (navigating from root)
-  Future<DocumentFile?> _getDirectoryDocumentFile(String path) async {
+  /// Includes retry logic for SAF concurrency errors
+  Future<DocumentFile?> _getDirectoryDocumentFile(String path, {int retryCount = 0}) async {
     if (_safDocumentCache.containsKey(path)) {
       return _safDocumentCache[path];
     }
@@ -791,26 +800,37 @@ class FileSystemService {
       return root;
     }
 
-    // Navigate from root to target directory
-    final relativePath = path.substring(rootPath.length);
-    final segments = relativePath.split('/').where((s) => s.isNotEmpty).toList();
+    try {
+      // Navigate from root to target directory
+      final relativePath = path.substring(rootPath.length);
+      final segments = relativePath.split('/').where((s) => s.isNotEmpty).toList();
 
-    DocumentFile? current = await _getRootDocumentFile();
-    String currentPath = rootPath;
+      DocumentFile? current = await _getRootDocumentFile();
+      String currentPath = rootPath;
 
-    for (final segment in segments) {
-      if (current == null) return null;
+      for (final segment in segments) {
+        if (current == null) return null;
 
-      final children = await current.listDocuments();
-      current = children.where((f) => f.name == segment && f.isDirectory == true).firstOrNull;
+        final children = await current.listDocuments();
+        current = children.where((f) => f.name == segment && f.isDirectory == true).firstOrNull;
 
-      if (current != null) {
-        currentPath = '$currentPath/$segment';
-        _safDocumentCache[currentPath] = current;
+        if (current != null) {
+          currentPath = '$currentPath/$segment';
+          _safDocumentCache[currentPath] = current;
+        }
       }
-    }
 
-    return current;
+      return current;
+    } catch (e) {
+      final errorStr = e.toString();
+      if (errorStr.contains('AlreadyRunning') && retryCount < 3) {
+        debugPrint('[FileSystemService] SAF directory lookup busy, retrying... (attempt ${retryCount + 1})');
+        await Future.delayed(Duration(milliseconds: 100 * (retryCount + 1)));
+        return _getDirectoryDocumentFile(path, retryCount: retryCount + 1);
+      }
+      debugPrint('[FileSystemService] Error getting directory DocumentFile: $e');
+      return null;
+    }
   }
 
   /// Read a file's contents as string, using SAF on Android when appropriate
