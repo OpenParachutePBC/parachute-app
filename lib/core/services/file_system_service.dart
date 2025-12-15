@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
@@ -726,6 +727,34 @@ class FileSystemService {
   DocumentFile? _rootDocumentFile;
   final Map<String, DocumentFile> _safDocumentCache = {};
 
+  // Lock to serialize SAF operations (docman doesn't handle concurrent calls well)
+  Completer<void>? _safOperationLock;
+
+  /// Acquire SAF operation lock (serializes SAF calls)
+  Future<void> _acquireSafLock() async {
+    while (_safOperationLock != null) {
+      await _safOperationLock!.future;
+    }
+    _safOperationLock = Completer<void>();
+  }
+
+  /// Release SAF operation lock
+  void _releaseSafLock() {
+    final lock = _safOperationLock;
+    _safOperationLock = null;
+    lock?.complete();
+  }
+
+  /// Run a SAF operation with lock to prevent concurrent access errors
+  Future<T> _runSafOperation<T>(Future<T> Function() operation) async {
+    await _acquireSafLock();
+    try {
+      return await operation();
+    } finally {
+      _releaseSafLock();
+    }
+  }
+
   /// Get DocumentFile for root folder (cached)
   Future<DocumentFile?> _getRootDocumentFile() async {
     if (_rootDocumentFile != null) return _rootDocumentFile;
@@ -787,7 +816,7 @@ class FileSystemService {
   /// Read a file's contents as string, using SAF on Android when appropriate
   Future<String?> readFileAsString(String filePath) async {
     if (shouldUseSaf) {
-      return _readFileAsStringSaf(filePath);
+      return _runSafOperation(() => _readFileAsStringSaf(filePath));
     }
     return _readFileAsStringDartIo(filePath);
   }
@@ -840,7 +869,7 @@ class FileSystemService {
   /// Write string content to a file, using SAF on Android when appropriate
   Future<bool> writeFileAsString(String filePath, String content) async {
     if (shouldUseSaf) {
-      return _writeFileAsStringSaf(filePath, content);
+      return _runSafOperation(() => _writeFileAsStringSaf(filePath, content));
     }
     return _writeFileAsStringDartIo(filePath, content);
   }
@@ -897,7 +926,7 @@ class FileSystemService {
   /// Check if a file exists, using SAF on Android when appropriate
   Future<bool> fileExists(String filePath) async {
     if (shouldUseSaf) {
-      return _fileExistsSaf(filePath);
+      return _runSafOperation(() => _fileExistsSaf(filePath));
     }
     return File(filePath).exists();
   }
@@ -958,7 +987,7 @@ class FileSystemService {
   /// List files in a directory, using SAF on Android when appropriate
   Future<List<String>> listDirectory(String dirPath) async {
     if (shouldUseSaf) {
-      return _listDirectorySaf(dirPath);
+      return _runSafOperation(() => _listDirectorySaf(dirPath));
     }
     return _listDirectoryDartIo(dirPath);
   }
@@ -1002,8 +1031,10 @@ class FileSystemService {
   /// Ensure a directory exists (creates if needed), using SAF on Android when appropriate
   Future<bool> ensureDirectoryExists(String dirPath) async {
     if (shouldUseSaf) {
-      final doc = await _ensureSafDirectoryExists(dirPath);
-      return doc != null;
+      return _runSafOperation(() async {
+        final doc = await _ensureSafDirectoryExists(dirPath);
+        return doc != null;
+      });
     }
 
     try {
