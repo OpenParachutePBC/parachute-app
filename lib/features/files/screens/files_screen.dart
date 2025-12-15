@@ -42,6 +42,10 @@ class _FilesScreenState extends ConsumerState<FilesScreen> with WidgetsBindingOb
   Future<void> _initializeOrRefresh() async {
     final service = ref.read(fileBrowserServiceProvider);
     final rootPath = await service.getInitialPath();
+
+    // Check if widget is still mounted after async operation
+    if (!mounted) return;
+
     _lastKnownRootPath = rootPath;
 
     final currentPath = ref.read(currentBrowsePathProvider);
@@ -53,6 +57,9 @@ class _FilesScreenState extends ConsumerState<FilesScreen> with WidgetsBindingOb
   Future<void> _checkForVaultChange() async {
     final service = ref.read(fileBrowserServiceProvider);
     final currentRootPath = await service.getInitialPath();
+
+    // Check if widget is still mounted after async operation
+    if (!mounted) return;
 
     if (_lastKnownRootPath != null && _lastKnownRootPath != currentRootPath) {
       // Vault changed, reset to new root
