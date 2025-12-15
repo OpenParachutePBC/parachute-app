@@ -19,6 +19,7 @@ class FileSystemService {
   FileSystemService._internal();
 
   static const String _rootFolderPathKey = 'parachute_root_folder_path';
+  static const String _rootFolderUriKey = 'parachute_root_folder_uri'; // SAF URI for Android
   static const String _capturesFolderNameKey = 'parachute_captures_folder_name';
 
   // Default subfolder names
@@ -36,6 +37,7 @@ class FileSystemService {
   static const Duration _segmentsTempMaxAge = Duration(hours: 1); // Clean segments after 1 hour
 
   String? _rootFolderPath;
+  String? _rootFolderUri; // SAF URI for Android external storage access
   String? _tempAudioPath;
   String _capturesFolderName = _defaultCapturesFolderName;
   bool _isInitialized = false;
@@ -45,6 +47,12 @@ class FileSystemService {
   Future<String> getRootPath() async {
     await initialize();
     return _rootFolderPath!;
+  }
+
+  /// Get the SAF URI for the root folder (Android only)
+  /// Returns null if not on Android or using app's internal storage
+  String? getRootUri() {
+    return _rootFolderUri;
   }
 
   /// Get a user-friendly display of the root path
@@ -452,6 +460,12 @@ class FileSystemService {
         }
       }
 
+      // Load SAF URI for Android external storage
+      _rootFolderUri = prefs.getString(_rootFolderUriKey);
+      if (_rootFolderUri != null) {
+        debugPrint('[FileSystemService] Loaded SAF URI: $_rootFolderUri');
+      }
+
       // Load custom subfolder names if set
       _capturesFolderName =
           prefs.getString(_capturesFolderNameKey) ?? _defaultCapturesFolderName;
@@ -592,18 +606,25 @@ class FileSystemService {
   }
 
   /// Set a custom root folder path and migrate existing files
-  Future<bool> setRootPath(String path) async {
+  /// [uri] is the SAF URI for Android external storage access
+  Future<bool> setRootPath(String path, {String? uri}) async {
     try {
       final oldRootPath = _rootFolderPath;
 
-      // Create new directory structure
-      final newDir = Directory(path);
-      if (!await newDir.exists()) {
-        await newDir.create(recursive: true);
+      // Create new directory structure (may fail on Android external storage, that's ok)
+      try {
+        final newDir = Directory(path);
+        if (!await newDir.exists()) {
+          await newDir.create(recursive: true);
+        }
+      } catch (e) {
+        debugPrint('[FileSystemService] Could not create directory (may be SAF): $e');
+        // Continue anyway - SAF access might still work
       }
 
       // If we have an old path and it's different from the new one, migrate files
-      if (oldRootPath != null && oldRootPath != path) {
+      // Skip migration for SAF paths as we can't easily copy between them
+      if (oldRootPath != null && oldRootPath != path && uri == null) {
         final oldDir = Directory(oldRootPath);
         if (await oldDir.exists()) {
           debugPrint(
@@ -611,7 +632,7 @@ class FileSystemService {
           );
 
           // Copy all contents from old directory to new directory
-          await _copyDirectory(oldDir, newDir);
+          await _copyDirectory(oldDir, Directory(path));
 
           debugPrint(
             '[FileSystemService] Migration complete. Old files remain at $oldRootPath (manual cleanup required)',
@@ -619,13 +640,24 @@ class FileSystemService {
         }
       }
 
-      // Update the root path
+      // Update the root path and URI
       _rootFolderPath = path;
+      _rootFolderUri = uri;
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_rootFolderPathKey, path);
+      if (uri != null) {
+        await prefs.setString(_rootFolderUriKey, uri);
+        debugPrint('[FileSystemService] Stored SAF URI: $uri');
+      } else {
+        await prefs.remove(_rootFolderUriKey);
+      }
 
-      // Ensure folder structure exists in new location
-      await _ensureFolderStructure();
+      // Ensure folder structure exists in new location (best effort for SAF)
+      try {
+        await _ensureFolderStructure();
+      } catch (e) {
+        debugPrint('[FileSystemService] Could not ensure folder structure (may be SAF): $e');
+      }
 
       return true;
     } catch (e) {

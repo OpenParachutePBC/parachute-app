@@ -16,6 +16,7 @@ import 'features/recorder/providers/model_download_provider.dart';
 import 'features/recorder/services/transcription_service_adapter.dart';
 import 'features/onboarding/screens/onboarding_flow.dart';
 import 'features/chat/screens/agent_hub_screen.dart';
+import 'features/files/screens/files_screen.dart';
 
 void main() async {
   // Ensure Flutter bindings are initialized
@@ -229,6 +230,7 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
         children: const [
           HomeScreen(),
           AgentHubScreen(),
+          FilesScreen(),
         ],
       ),
       bottomNavigationBar: NavigationBar(
@@ -264,6 +266,17 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
               color: isDark ? BrandColors.nightForest : BrandColors.forest,
             ),
             label: 'Agents',
+          ),
+          NavigationDestination(
+            icon: Icon(
+              Icons.folder_outlined,
+              color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
+            ),
+            selectedIcon: Icon(
+              Icons.folder,
+              color: isDark ? BrandColors.nightForest : BrandColors.forest,
+            ),
+            label: 'Files',
           ),
         ],
       ),

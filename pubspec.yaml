@@ -52,6 +52,9 @@ dependencies:
   file_picker: ^8.0.0+1
   archive: ^3.6.1
 
+  # Android Storage Access Framework
+  docman: ^1.2.0
+
   # Audio & Recording
   record: ^6.1.2
   just_audio: ^0.10.0

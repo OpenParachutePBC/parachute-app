@@ -1,9 +1,12 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:docman/docman.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:app/core/theme/design_tokens.dart';
 import 'package:app/core/providers/file_system_provider.dart';
+import 'package:app/features/files/providers/file_browser_provider.dart';
 import './settings_section_header.dart';
 
 /// Storage settings section (Parachute folder and subfolder names)
@@ -81,11 +84,16 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Change Parachute Folder'),
-        content: const Text(
-          'This will copy all your recordings and transcripts to the new location. '
-          'This may take a while depending on how much data you have.\n\n'
-          'Your original files will remain in the old location until you manually delete them.\n\n'
-          'Make sure you have enough space in the new location.',
+        content: Text(
+          Platform.isAndroid
+              ? 'Select your vault folder.\n\n'
+                  'This grants the app permission to access all files and subfolders '
+                  'in the selected location.\n\n'
+                  'Tip: Create a new folder or select an existing Obsidian vault.'
+              : 'This will copy all your recordings and transcripts to the new location. '
+                  'This may take a while depending on how much data you have.\n\n'
+                  'Your original files will remain in the old location until you manually delete them.\n\n'
+                  'Make sure you have enough space in the new location.',
         ),
         actions: [
           TextButton(
@@ -102,7 +110,38 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
 
     if (confirm != true) return;
 
-    String? selectedDirectory = await FilePicker.platform.getDirectoryPath();
+    String? selectedDirectory;
+    String? safUri;
+
+    // On Android, use docman to get SAF URI for proper directory access
+    if (Platform.isAndroid) {
+      final docFile = await DocMan.pick.directory();
+      if (docFile != null) {
+        // Store the SAF URI for later use
+        safUri = docFile.uri.toString();
+        debugPrint('[StorageSection] Selected SAF URI: $safUri');
+
+        // Try to extract a readable file path from the URI
+        // SAF URIs look like: content://com.android.externalstorage.documents/tree/primary%3ADocuments%2FMyVault
+        if (safUri.contains('/tree/')) {
+          final encoded = safUri.split('/tree/').last;
+          final decoded = Uri.decodeComponent(encoded);
+          // Convert "primary:Documents/MyVault" to "/storage/emulated/0/Documents/MyVault"
+          if (decoded.startsWith('primary:')) {
+            selectedDirectory = '/storage/emulated/0/${decoded.substring(8)}';
+          } else {
+            selectedDirectory = decoded;
+          }
+        } else {
+          // Fallback: use the name as a display path
+          final docName = docFile.name;
+          selectedDirectory = '/storage/emulated/0/${docName.isNotEmpty ? docName : 'Vault'}';
+        }
+        debugPrint('[StorageSection] Extracted path: $selectedDirectory');
+      }
+    } else {
+      selectedDirectory = await FilePicker.platform.getDirectoryPath();
+    }
 
     if (selectedDirectory != null) {
       // Show loading indicator
@@ -121,7 +160,9 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
                   ),
                 ),
                 SizedBox(width: Spacing.lg),
-                const Text('Migrating files to new location...'),
+                Text(Platform.isAndroid
+                    ? 'Setting up vault access...'
+                    : 'Migrating files to new location...'),
               ],
             ),
             duration: const Duration(minutes: 5),
@@ -131,7 +172,7 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
 
       final fileSystemService = ref.read(fileSystemServiceProvider);
       final oldPath = await fileSystemService.getRootPathDisplay();
-      final success = await fileSystemService.setRootPath(selectedDirectory);
+      final success = await fileSystemService.setRootPath(selectedDirectory, uri: safUri);
 
       // Clear the loading snackbar
       if (mounted) {
@@ -141,6 +182,9 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
       if (success) {
         final displayPath = await fileSystemService.getRootPathDisplay();
         setState(() => _syncFolderPath = displayPath);
+        // Reset file browser to new vault root
+        ref.read(currentBrowsePathProvider.notifier).state = '';
+        ref.read(folderRefreshTriggerProvider.notifier).state++;
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -148,20 +192,24 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Files copied successfully!',
-                    style: TextStyle(fontWeight: FontWeight.bold),
+                  Text(
+                    Platform.isAndroid
+                        ? 'Vault access configured!'
+                        : 'Files copied successfully!',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                   SizedBox(height: Spacing.xs),
                   Text(
-                    'New location: $displayPath',
+                    'Location: $displayPath',
                     style: TextStyle(fontSize: TypographyTokens.bodySmall),
                   ),
-                  SizedBox(height: Spacing.xs),
-                  Text(
-                    'Old files remain at: $oldPath',
-                    style: TextStyle(fontSize: TypographyTokens.bodySmall),
-                  ),
+                  if (!Platform.isAndroid) ...[
+                    SizedBox(height: Spacing.xs),
+                    Text(
+                      'Old files remain at: $oldPath',
+                      style: TextStyle(fontSize: TypographyTokens.bodySmall),
+                    ),
+                  ],
                 ],
               ),
               backgroundColor: BrandColors.success,
@@ -178,7 +226,7 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: const Text('Failed to migrate files to new location'),
+              content: const Text('Failed to set up vault location'),
               backgroundColor: BrandColors.error,
               duration: const Duration(seconds: 5),
             ),
