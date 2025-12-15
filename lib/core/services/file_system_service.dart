@@ -21,9 +21,11 @@ class FileSystemService {
   static const String _rootFolderPathKey = 'parachute_root_folder_path';
   static const String _rootFolderUriKey = 'parachute_root_folder_uri'; // SAF URI for Android
   static const String _capturesFolderNameKey = 'parachute_captures_folder_name';
+  static const String _journalFolderNameKey = 'parachute_journal_folder_name';
 
   // Default subfolder names
   static const String _defaultCapturesFolderName = 'captures';
+  static const String _defaultJournalFolderName = 'Daily';
   static const String _tempAudioFolderName = 'parachute_audio_temp';
 
   // Temp subfolder names with different retention policies
@@ -40,6 +42,7 @@ class FileSystemService {
   String? _rootFolderUri; // SAF URI for Android external storage access
   String? _tempAudioPath;
   String _capturesFolderName = _defaultCapturesFolderName;
+  String _journalFolderName = _defaultJournalFolderName;
   bool _isInitialized = false;
   Future<void>? _initializationFuture;
 
@@ -83,6 +86,17 @@ class FileSystemService {
   Future<String> getCapturesPath() async {
     final root = await getRootPath();
     return '$root/$_capturesFolderName';
+  }
+
+  /// Get the journal folder name
+  String getJournalFolderName() {
+    return _journalFolderName;
+  }
+
+  /// Get the journal folder path
+  Future<String> getJournalPath() async {
+    final root = await getRootPath();
+    return '$root/$_journalFolderName';
   }
 
   /// Get the month folder path for a timestamp
@@ -385,6 +399,7 @@ class FileSystemService {
   /// Set custom subfolder names (e.g., for Obsidian vault integration)
   Future<bool> setSubfolderNames({
     String? capturesFolderName,
+    String? journalFolderName,
   }) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -392,6 +407,11 @@ class FileSystemService {
       if (capturesFolderName != null && capturesFolderName.isNotEmpty) {
         _capturesFolderName = capturesFolderName;
         await prefs.setString(_capturesFolderNameKey, capturesFolderName);
+      }
+
+      if (journalFolderName != null && journalFolderName.isNotEmpty) {
+        _journalFolderName = journalFolderName;
+        await prefs.setString(_journalFolderNameKey, journalFolderName);
       }
 
       // Recreate folder structure with new names
@@ -469,8 +489,11 @@ class FileSystemService {
       // Load custom subfolder names if set
       _capturesFolderName =
           prefs.getString(_capturesFolderNameKey) ?? _defaultCapturesFolderName;
+      _journalFolderName =
+          prefs.getString(_journalFolderNameKey) ?? _defaultJournalFolderName;
 
       debugPrint('[FileSystemService] Captures folder: $_capturesFolderName');
+      debugPrint('[FileSystemService] Journal folder: $_journalFolderName');
 
       // Ensure folder structure exists
       await _ensureFolderStructure();

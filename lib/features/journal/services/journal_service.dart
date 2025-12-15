@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:yaml/yaml.dart';
 import '../../../core/services/logger_service.dart';
+import '../../../core/services/file_system_service.dart';
 import '../models/journal_day.dart';
 import '../models/journal_entry.dart';
 import 'para_id_service.dart';
@@ -11,19 +12,34 @@ import 'para_id_service.dart';
 /// entries in the format: `# para:abc123 Title here`
 class JournalService {
   final String _vaultPath;
+  final String _journalFolderName;
   final ParaIdService _paraIdService;
   final _log = logger.createLogger('JournalService');
 
-  static const String _journalsDir = 'journals';
-
   JournalService({
     required String vaultPath,
+    required String journalFolderName,
     required ParaIdService paraIdService,
   })  : _vaultPath = vaultPath,
+        _journalFolderName = journalFolderName,
         _paraIdService = paraIdService;
 
+  /// Factory constructor that uses FileSystemService for configuration
+  static Future<JournalService> create({
+    required FileSystemService fileSystemService,
+    required ParaIdService paraIdService,
+  }) async {
+    final vaultPath = await fileSystemService.getRootPath();
+    final journalFolderName = fileSystemService.getJournalFolderName();
+    return JournalService(
+      vaultPath: vaultPath,
+      journalFolderName: journalFolderName,
+      paraIdService: paraIdService,
+    );
+  }
+
   /// Path to journals directory
-  String get journalsPath => '$_vaultPath/$_journalsDir';
+  String get journalsPath => '$_vaultPath/$_journalFolderName';
 
   /// Ensure journals directory exists
   Future<void> ensureDirectoryExists() async {
@@ -172,7 +188,7 @@ class JournalService {
     // Generate filename based on timestamp
     final audioFilename = '${_formatDate(now)}_${_formatTime(now).replaceAll(':', '-')}.wav';
     final destPath = '${assetsDir.path}/$audioFilename';
-    final relativePath = 'journals/assets/$audioFilename';
+    final relativePath = '$_journalFolderName/assets/$audioFilename';
 
     // Copy the audio file
     final sourceFile = File(audioPath);
@@ -298,7 +314,7 @@ class JournalService {
       date: date,
       entries: entries,
       assets: assets,
-      filePath: 'journals/${_formatDate(date)}.md',
+      filePath: '$_journalFolderName/${_formatDate(date)}.md',
     );
   }
 

@@ -9,15 +9,17 @@ import '../services/journal_service.dart';
 /// Async provider that properly initializes the journal service
 ///
 /// Use this when you need the fully initialized service.
+/// Uses FileSystemService to get the configured journal folder name.
 final journalServiceFutureProvider = FutureProvider<JournalService>((ref) async {
   final fileSystemService = ref.watch(fileSystemServiceProvider);
+  await fileSystemService.initialize();
   final vaultPath = await fileSystemService.getRootPath();
 
   final paraIdService = ParaIdService(vaultPath: vaultPath);
   await paraIdService.initialize();
 
-  final journalService = JournalService(
-    vaultPath: vaultPath,
+  final journalService = await JournalService.create(
+    fileSystemService: fileSystemService,
     paraIdService: paraIdService,
   );
 

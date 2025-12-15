@@ -20,7 +20,10 @@ class StorageSection extends ConsumerStatefulWidget {
 class _StorageSectionState extends ConsumerState<StorageSection> {
   String _syncFolderPath = '';
   String _capturesFolderName = 'captures';
+  String _journalFolderName = 'Daily';
   final TextEditingController _capturesFolderNameController =
+      TextEditingController();
+  final TextEditingController _journalFolderNameController =
       TextEditingController();
   bool _isLoading = true;
 
@@ -33,6 +36,7 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
   @override
   void dispose() {
     _capturesFolderNameController.dispose();
+    _journalFolderNameController.dispose();
     super.dispose();
   }
 
@@ -41,7 +45,9 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
     await fileSystemService.initialize();
     _syncFolderPath = await fileSystemService.getRootPathDisplay();
     _capturesFolderName = fileSystemService.getCapturesFolderName();
+    _journalFolderName = fileSystemService.getJournalFolderName();
     _capturesFolderNameController.text = _capturesFolderName;
+    _journalFolderNameController.text = _journalFolderName;
 
     if (mounted) {
       setState(() => _isLoading = false);
@@ -243,22 +249,23 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
 
   Future<void> _saveSubfolderNames() async {
     final newCapturesName = _capturesFolderNameController.text.trim();
+    final newJournalName = _journalFolderNameController.text.trim();
 
-    // Validate folder name
-    if (newCapturesName.isEmpty) {
+    // Validate folder names
+    if (newCapturesName.isEmpty || newJournalName.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Folder name cannot be empty'),
+          content: const Text('Folder names cannot be empty'),
           backgroundColor: BrandColors.error,
         ),
       );
       return;
     }
 
-    if (newCapturesName.contains('/')) {
+    if (newCapturesName.contains('/') || newJournalName.contains('/')) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Folder name cannot contain slashes'),
+          content: const Text('Folder names cannot contain slashes'),
           backgroundColor: BrandColors.error,
         ),
       );
@@ -269,23 +276,25 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
       final fileSystemService = ref.read(fileSystemServiceProvider);
       final success = await fileSystemService.setSubfolderNames(
         capturesFolderName: newCapturesName,
+        journalFolderName: newJournalName,
       );
 
       if (success && mounted) {
         setState(() {
           _capturesFolderName = newCapturesName;
+          _journalFolderName = newJournalName;
         });
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('Folder name updated successfully!'),
+            content: const Text('Folder names updated successfully!'),
             backgroundColor: BrandColors.success,
           ),
         );
       } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('Failed to update folder name'),
+            content: const Text('Failed to update folder names'),
             backgroundColor: BrandColors.error,
           ),
         );
@@ -502,6 +511,41 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
                 ),
               ),
 
+              SizedBox(height: Spacing.xl),
+
+              // Journal folder name
+              Row(
+                children: [
+                  Icon(
+                    Icons.book,
+                    color: isDark
+                        ? BrandColors.nightTextSecondary
+                        : BrandColors.driftwood,
+                  ),
+                  SizedBox(width: Spacing.sm),
+                  Text(
+                    'Daily journal folder name',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? BrandColors.nightText : BrandColors.charcoal,
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: Spacing.sm),
+              TextField(
+                controller: _journalFolderNameController,
+                decoration: InputDecoration(
+                  hintText: 'e.g., Daily, Journal, daily-notes',
+                  border: const OutlineInputBorder(),
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: Spacing.md,
+                    vertical: Spacing.sm,
+                  ),
+                  prefixIcon: const Icon(Icons.book, size: 18),
+                ),
+              ),
+
               SizedBox(height: Spacing.lg),
 
               Row(
@@ -510,6 +554,7 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
                     child: OutlinedButton.icon(
                       onPressed: () {
                         _capturesFolderNameController.text = 'captures';
+                        _journalFolderNameController.text = 'Daily';
                       },
                       icon: const Icon(Icons.refresh, size: 18),
                       label: const Text('Reset to Default'),
@@ -520,7 +565,7 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
                     child: FilledButton.icon(
                       onPressed: _saveSubfolderNames,
                       icon: const Icon(Icons.save, size: 18),
-                      label: const Text('Save Name'),
+                      label: const Text('Save Names'),
                       style: FilledButton.styleFrom(
                         backgroundColor: BrandColors.success,
                       ),
@@ -533,8 +578,8 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
 
               SettingsInfoBanner(
                 message:
-                    'Use a custom name like "Parachute Captures" '
-                    'to avoid conflicts with your existing note folders',
+                    'The journal folder is where your daily notes are stored. '
+                    'Set this to match your existing Obsidian/Logseq daily notes folder (e.g., "Daily" or "journals").',
                 color: BrandColors.turquoise,
               ),
             ],
