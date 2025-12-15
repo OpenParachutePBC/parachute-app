@@ -17,6 +17,7 @@ import 'features/recorder/services/transcription_service_adapter.dart';
 import 'features/onboarding/screens/onboarding_flow.dart';
 import 'features/chat/screens/agent_hub_screen.dart';
 import 'features/files/screens/files_screen.dart';
+import 'features/journal/screens/journal_screen.dart';
 
 void main() async {
   // Ensure Flutter bindings are initialized
@@ -215,23 +216,79 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
     final aiChatEnabled = ref.watch(aiChatEnabledNotifierProvider);
     final isAiChatEnabled = aiChatEnabled.valueOrNull ?? false;
 
-    // If AI chat is not enabled, show only HomeScreen
-    if (!isAiChatEnabled) {
-      return const HomeScreen();
-    }
-
-    // Show bottom navigation with Record and Chat tabs
+    // Show bottom navigation with Journal, Record, and other tabs
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+
+    // Build the list of screens and destinations based on enabled features
+    final screens = <Widget>[
+      const JournalScreen(),
+      const HomeScreen(),
+    ];
+
+    final destinations = <NavigationDestination>[
+      NavigationDestination(
+        icon: Icon(
+          Icons.book_outlined,
+          color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
+        ),
+        selectedIcon: Icon(
+          Icons.book,
+          color: isDark ? BrandColors.nightForest : BrandColors.forest,
+        ),
+        label: 'Journal',
+      ),
+      NavigationDestination(
+        icon: Icon(
+          Icons.mic_none_outlined,
+          color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
+        ),
+        selectedIcon: Icon(
+          Icons.mic,
+          color: isDark ? BrandColors.nightForest : BrandColors.forest,
+        ),
+        label: 'Record',
+      ),
+    ];
+
+    // Add Agents tab if AI chat is enabled
+    if (isAiChatEnabled) {
+      screens.add(const AgentHubScreen());
+      destinations.add(
+        NavigationDestination(
+          icon: Icon(
+            Icons.smart_toy_outlined,
+            color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
+          ),
+          selectedIcon: Icon(
+            Icons.smart_toy,
+            color: isDark ? BrandColors.nightForest : BrandColors.forest,
+          ),
+          label: 'Agents',
+        ),
+      );
+    }
+
+    // Always add Files tab
+    screens.add(const FilesScreen());
+    destinations.add(
+      NavigationDestination(
+        icon: Icon(
+          Icons.folder_outlined,
+          color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
+        ),
+        selectedIcon: Icon(
+          Icons.folder,
+          color: isDark ? BrandColors.nightForest : BrandColors.forest,
+        ),
+        label: 'Files',
+      ),
+    );
 
     return Scaffold(
       body: IndexedStack(
         index: _currentIndex,
-        children: const [
-          HomeScreen(),
-          AgentHubScreen(),
-          FilesScreen(),
-        ],
+        children: screens,
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
@@ -244,41 +301,7 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
         indicatorColor: isDark
             ? BrandColors.nightForest.withValues(alpha: 0.2)
             : BrandColors.forestMist,
-        destinations: [
-          NavigationDestination(
-            icon: Icon(
-              Icons.mic_none_outlined,
-              color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
-            ),
-            selectedIcon: Icon(
-              Icons.mic,
-              color: isDark ? BrandColors.nightForest : BrandColors.forest,
-            ),
-            label: 'Record',
-          ),
-          NavigationDestination(
-            icon: Icon(
-              Icons.smart_toy_outlined,
-              color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
-            ),
-            selectedIcon: Icon(
-              Icons.smart_toy,
-              color: isDark ? BrandColors.nightForest : BrandColors.forest,
-            ),
-            label: 'Agents',
-          ),
-          NavigationDestination(
-            icon: Icon(
-              Icons.folder_outlined,
-              color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
-            ),
-            selectedIcon: Icon(
-              Icons.folder,
-              color: isDark ? BrandColors.nightForest : BrandColors.forest,
-            ),
-            label: 'Files',
-          ),
-        ],
+        destinations: destinations,
       ),
     );
   }
