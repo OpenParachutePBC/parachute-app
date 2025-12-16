@@ -78,19 +78,29 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
             if (isToday)
               JournalInputBar(
                 onTextSubmitted: (text) async {
+                  debugPrint('[JournalScreen] Submitting text entry...');
                   final service = await ref.read(journalServiceFutureProvider.future);
                   await service.addTextEntry(content: text);
+                  debugPrint('[JournalScreen] Entry saved, refreshing UI...');
+                  // Refresh to immediately re-fetch and update UI
                   ref.invalidate(selectedJournalProvider);
+                  // Use a short delay to let the provider rebuild
+                  await Future.delayed(const Duration(milliseconds: 50));
+                  debugPrint('[JournalScreen] UI refresh triggered');
                   _scrollToBottom();
                 },
                 onVoiceRecorded: (transcript, audioPath, duration) async {
+                  debugPrint('[JournalScreen] Submitting voice entry...');
                   final service = await ref.read(journalServiceFutureProvider.future);
                   await service.addVoiceEntry(
                     transcript: transcript,
                     audioPath: audioPath,
                     durationSeconds: duration,
                   );
+                  debugPrint('[JournalScreen] Voice entry saved, refreshing UI...');
                   ref.invalidate(selectedJournalProvider);
+                  await Future.delayed(const Duration(milliseconds: 50));
+                  debugPrint('[JournalScreen] UI refresh triggered');
                   _scrollToBottom();
                 },
               ),
