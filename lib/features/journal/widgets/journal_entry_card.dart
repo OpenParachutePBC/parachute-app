@@ -183,7 +183,7 @@ class JournalEntryCard extends StatelessWidget {
                           ),
                         ),
                         Text(
-                          'From Obsidian',
+                          'Pre-Parachute',
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: BrandColors.driftwood,
                             fontSize: 11,
