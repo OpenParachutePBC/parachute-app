@@ -33,6 +33,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   bool _showOrphaned = false;
   // Store reference for safe access in dispose
   StorageService? _storageService;
+  // Guards to prevent duplicate loads
+  bool _isLoadInProgress = false;
+  bool _initialLoadComplete = false;
 
   @override
   void initState() {
@@ -122,32 +125,45 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (ModalRoute.of(context)?.isCurrent == true) {
+    // Skip refresh during initial construction - initState already loads
+    if (_initialLoadComplete && ModalRoute.of(context)?.isCurrent == true) {
       _refreshRecordings();
     }
   }
 
   Future<void> _loadRecordings() async {
-    final storageService = ref.read(storageServiceProvider);
-    final recordings = await storageService.getRecordings(
-      includeOrphaned: _showOrphaned,
-    );
-    if (mounted) {
-      // Use post-frame callback to avoid setState during build phase
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        // Wrap in try-catch to handle edge cases where mounted is true
-        // but element is in defunct state (can happen with IndexedStack)
-        try {
-          if (mounted) {
-            setState(() {
-              _recordings = recordings;
-              _isLoading = false;
-            });
+    // Prevent concurrent loads
+    if (_isLoadInProgress) {
+      debugPrint('[HomeScreen] Load already in progress, skipping');
+      return;
+    }
+    _isLoadInProgress = true;
+
+    try {
+      final storageService = ref.read(storageServiceProvider);
+      final recordings = await storageService.getRecordings(
+        includeOrphaned: _showOrphaned,
+      );
+      if (mounted) {
+        // Use post-frame callback to avoid setState during build phase
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          // Wrap in try-catch to handle edge cases where mounted is true
+          // but element is in defunct state (can happen with IndexedStack)
+          try {
+            if (mounted) {
+              setState(() {
+                _recordings = recordings;
+                _isLoading = false;
+                _initialLoadComplete = true;
+              });
+            }
+          } catch (e) {
+            debugPrint('[HomeScreen] setState skipped - widget lifecycle issue: $e');
           }
-        } catch (e) {
-          debugPrint('[HomeScreen] setState skipped - widget lifecycle issue: $e');
-        }
-      });
+        });
+      }
+    } finally {
+      _isLoadInProgress = false;
     }
   }
 

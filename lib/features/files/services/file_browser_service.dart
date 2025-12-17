@@ -1,6 +1,5 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:docman/docman.dart';
 import 'package:app/core/services/file_system_service.dart';
 import 'package:app/features/files/models/file_item.dart';
 
@@ -18,144 +17,8 @@ class DirectoryPermissionException implements Exception {
 /// Service for browsing the vault folder structure
 class FileBrowserService {
   final FileSystemService _fileSystem;
-  DocumentFile? _rootDocumentFile; // Cached SAF root for Android
-  final Map<String, DocumentFile> _safDirectoryCache = {}; // Cache DocumentFiles by path
 
   FileBrowserService(this._fileSystem);
-
-  /// Check if we should use SAF for directory access
-  bool get _shouldUseSaf => Platform.isAndroid && _fileSystem.getRootUri() != null;
-
-  /// Get or create a DocumentFile for a given path using SAF
-  Future<DocumentFile?> _getDocumentFileForPath(String path) async {
-    // Check cache first
-    if (_safDirectoryCache.containsKey(path)) {
-      return _safDirectoryCache[path];
-    }
-
-    final rootUri = _fileSystem.getRootUri();
-    if (rootUri == null) return null;
-
-    final rootPath = await _fileSystem.getRootPath();
-
-    // If this is the root path, get from persisted permissions
-    if (path == rootPath) {
-      if (_rootDocumentFile == null) {
-        // Get all persisted document permissions
-        final persistedDocs = await DocMan.perms.listDocuments(directories: true, files: false);
-        debugPrint('[FileBrowserService] Found ${persistedDocs.length} persisted directories');
-
-        // Find the one matching our root URI
-        for (final doc in persistedDocs) {
-          debugPrint('[FileBrowserService] Checking: ${doc.uri} vs $rootUri');
-          if (doc.uri.toString() == rootUri) {
-            _rootDocumentFile = doc;
-            _safDirectoryCache[path] = doc;
-            debugPrint('[FileBrowserService] Found matching root DocumentFile');
-            break;
-          }
-        }
-      }
-      return _rootDocumentFile;
-    }
-
-    // For subfolders, navigate from root
-    final relativePath = path.substring(rootPath.length);
-    final segments = relativePath.split('/').where((s) => s.isNotEmpty).toList();
-
-    DocumentFile? current = await _getDocumentFileForPath(rootPath);
-    for (final segment in segments) {
-      if (current == null) return null;
-
-      // Find the child with this name
-      final children = await current.listDocuments();
-      current = children.where((f) => f.name == segment).firstOrNull;
-
-      if (current != null) {
-        final cachePath = '$rootPath/${segments.sublist(0, segments.indexOf(segment) + 1).join('/')}';
-        _safDirectoryCache[cachePath] = current;
-      }
-    }
-
-    return current;
-  }
-
-  /// List directory contents using SAF
-  Future<List<FileItem>> _listFolderSaf(String path) async {
-    final stopwatch = Stopwatch()..start();
-    debugPrint('[FileBrowserService] Listing via SAF: $path');
-
-    final docFile = await _getDocumentFileForPath(path);
-    debugPrint('[FileBrowserService] Got DocumentFile in ${stopwatch.elapsedMilliseconds}ms');
-
-    if (docFile == null) {
-      debugPrint('[FileBrowserService] Could not get DocumentFile for $path');
-      return [];
-    }
-
-    try {
-      // Use stream for better performance with large directories
-      final items = <FileItem>[];
-      int totalCount = 0;
-
-      await for (final child in docFile.listDocumentsStream()) {
-        totalCount++;
-        // Skip hidden files and files without names
-        final name = child.name;
-        if (name.isEmpty || name.startsWith('.')) continue;
-
-        // Convert lastModified (milliseconds since epoch) to DateTime if available
-        DateTime? modified;
-        final lastMod = child.lastModified;
-        if (lastMod > 0) {
-          modified = DateTime.fromMillisecondsSinceEpoch(lastMod);
-        }
-
-        items.add(FileItem(
-          name: name,
-          path: '$path/$name',
-          type: child.isDirectory == true
-              ? FileItemType.folder
-              : _getFileType(name),
-          modified: modified,
-          sizeBytes: child.isDirectory == true ? null : child.size,
-        ));
-      }
-
-      debugPrint('[FileBrowserService] SAF streamed $totalCount items in ${stopwatch.elapsedMilliseconds}ms');
-
-      // Sort: folders first, then alphabetically
-      items.sort((a, b) {
-        if (a.isFolder && !b.isFolder) return -1;
-        if (!a.isFolder && b.isFolder) return 1;
-        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
-      });
-
-      debugPrint('[FileBrowserService] SAF listed ${items.length} visible items (total: ${stopwatch.elapsedMilliseconds}ms)');
-      return items;
-    } catch (e) {
-      debugPrint('[FileBrowserService] SAF listing error: $e');
-      return [];
-    }
-  }
-
-  /// Get FileItemType from filename
-  FileItemType _getFileType(String name) {
-    final ext = name.split('.').last.toLowerCase();
-    switch (ext) {
-      case 'md':
-      case 'markdown':
-        return FileItemType.markdown;
-      case 'wav':
-      case 'mp3':
-      case 'opus':
-      case 'm4a':
-      case 'aac':
-        return FileItemType.audio;
-      default:
-        return FileItemType.other;
-    }
-  }
 
   /// Get the initial path (vault root)
   Future<String> getInitialPath() async {
@@ -200,18 +63,6 @@ class FileBrowserService {
   /// List contents of a folder
   /// Returns items sorted: folders first, then files, alphabetically
   Future<List<FileItem>> listFolder(String path) async {
-    // On Android with SAF URI, use SAF to list directories
-    if (_shouldUseSaf) {
-      debugPrint('[FileBrowserService] Using SAF for path: $path');
-      final items = await _listFolderSaf(path);
-      if (items.isNotEmpty) {
-        return items;
-      }
-      // If SAF returns empty, try dart:io as fallback (for app's own directories)
-      debugPrint('[FileBrowserService] SAF returned empty, trying dart:io fallback');
-    }
-
-    // Standard dart:io approach
     try {
       final dir = Directory(path);
       final exists = await dir.exists();
@@ -265,8 +116,7 @@ class FileBrowserService {
           throw DirectoryPermissionException(
             path,
             'Cannot access folder contents on Android.\n\n'
-            'To browse this vault, please re-select it in Settings → Storage.\n'
-            'This grants the app permission to access subfolders.',
+            'Please grant storage permission in Settings → Storage.',
           );
         }
       }
