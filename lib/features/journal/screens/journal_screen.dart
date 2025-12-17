@@ -13,6 +13,7 @@ import '../models/journal_entry.dart';
 import '../providers/journal_providers.dart';
 import '../widgets/journal_entry_row.dart';
 import '../widgets/journal_input_bar.dart';
+import '../widgets/mini_audio_player.dart';
 import '../../settings/screens/settings_screen.dart';
 
 /// Main journal screen showing today's journal entries
@@ -45,6 +46,10 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
 
   // Track entries that are actively transcribing
   final Set<String> _transcribingEntryIds = {};
+
+  // Audio playback state
+  String? _currentlyPlayingAudioPath;
+  String? _currentlyPlayingTitle;
 
   // Draft caching
   Timer? _draftSaveTimer;
@@ -170,6 +175,18 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
               ),
             ),
 
+            // Mini audio player (shows when playing)
+            MiniAudioPlayer(
+              currentAudioPath: _currentlyPlayingAudioPath,
+              entryTitle: _currentlyPlayingTitle,
+              onStop: () {
+                setState(() {
+                  _currentlyPlayingAudioPath = null;
+                  _currentlyPlayingTitle = null;
+                });
+              },
+            ),
+
             // Input bar at bottom (only show for today)
             if (isToday)
               JournalInputBar(
@@ -287,9 +304,8 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
 
   /// Play audio for a journal entry (inline in list view)
   ///
-  /// For full playback controls, users should tap the entry to open the
-  /// detail view which uses PlaybackControls.
-  Future<void> _playAudio(String relativePath) async {
+  /// Shows mini player with playback controls while audio is playing.
+  Future<void> _playAudio(String relativePath, {String? entryTitle}) async {
     // Guard against multiple rapid taps
     if (_isPlayingAudio) {
       debugPrint('[JournalScreen] Audio play already in progress, ignoring');
@@ -312,12 +328,23 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
       // Check if file exists and has content
       final file = File(fullPath);
       if (!await file.exists()) {
-        debugPrint('[JournalScreen] ERROR: Audio file does not exist!');
+        debugPrint('[JournalScreen] ERROR: Audio file does not exist at: $fullPath');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Audio file not found'),
-              duration: Duration(seconds: 2),
+            SnackBar(
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Audio file not found'),
+                  Text(
+                    relativePath,
+                    style: TextStyle(fontSize: 11, color: Colors.white70),
+                  ),
+                ],
+              ),
+              backgroundColor: BrandColors.error,
+              duration: const Duration(seconds: 3),
             ),
           );
         }
@@ -343,7 +370,13 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
       final success = await audioService.playRecording(fullPath);
       debugPrint('[JournalScreen] playRecording returned: $success');
 
-      if (!success && mounted) {
+      if (success) {
+        // Update state to show mini player
+        setState(() {
+          _currentlyPlayingAudioPath = fullPath;
+          _currentlyPlayingTitle = entryTitle ?? 'Audio';
+        });
+      } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Could not play audio file'),
@@ -544,10 +577,12 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
                   entry: entry,
                   audioPath: journal.getAudioPath(entry.id),
                   isEditing: isEditing,
-                  isTranscribing: _transcribingEntryIds.contains(entry.id),
+                  // Show transcribing for both manual transcribe and background transcription
+                  isTranscribing: _transcribingEntryIds.contains(entry.id) ||
+                      _pendingTranscriptionEntryId == entry.id,
                   onTap: () => _handleEntryTap(entry),
                   onLongPress: () => _showEntryActions(context, journal, entry),
-                  onPlayAudio: _playAudio,
+                  onPlayAudio: (path) => _playAudio(path, entryTitle: entry.title),
                   onTranscribe: () => _handleTranscribe(entry, journal),
                   onContentChanged: (content) => _handleContentChanged(entry.id, content),
                   onTitleChanged: (title) => _handleTitleChanged(entry.id, title),
