@@ -1,10 +1,14 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/design_tokens.dart';
+import '../../../core/services/file_system_service.dart';
+import '../../recorder/providers/service_providers.dart';
+import '../../recorder/widgets/playback_controls.dart';
 import '../models/journal_day.dart';
 import '../models/journal_entry.dart';
 import '../providers/journal_providers.dart';
-import '../widgets/journal_entry_card.dart';
+import '../widgets/journal_entry_row.dart';
 import '../widgets/journal_input_bar.dart';
 
 /// Main journal screen showing today's journal entries
@@ -20,6 +24,20 @@ class JournalScreen extends ConsumerStatefulWidget {
 
 class _JournalScreenState extends ConsumerState<JournalScreen> {
   final ScrollController _scrollController = ScrollController();
+
+  // Editing state
+  String? _editingEntryId;
+  String? _editingEntryContent;
+  String? _editingEntryTitle;
+
+  // Track entry pending transcription (for streaming audio)
+  String? _pendingTranscriptionEntryId;
+
+  // Guard to prevent multiple rapid audio plays
+  bool _isPlayingAudio = false;
+
+  // Flag to scroll to bottom after new entry is added
+  bool _shouldScrollToBottom = false;
 
   @override
   void dispose() {
@@ -77,37 +95,200 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
             // Input bar at bottom (only show for today)
             if (isToday)
               JournalInputBar(
-                onTextSubmitted: (text) async {
-                  debugPrint('[JournalScreen] Submitting text entry...');
-                  final service = await ref.read(journalServiceFutureProvider.future);
-                  await service.addTextEntry(content: text);
-                  debugPrint('[JournalScreen] Entry saved, refreshing UI...');
-                  // Refresh to immediately re-fetch and update UI
-                  ref.invalidate(selectedJournalProvider);
-                  // Use a short delay to let the provider rebuild
-                  await Future.delayed(const Duration(milliseconds: 50));
-                  debugPrint('[JournalScreen] UI refresh triggered');
-                  _scrollToBottom();
-                },
-                onVoiceRecorded: (transcript, audioPath, duration) async {
-                  debugPrint('[JournalScreen] Submitting voice entry...');
-                  final service = await ref.read(journalServiceFutureProvider.future);
-                  await service.addVoiceEntry(
-                    transcript: transcript,
-                    audioPath: audioPath,
-                    durationSeconds: duration,
-                  );
-                  debugPrint('[JournalScreen] Voice entry saved, refreshing UI...');
-                  ref.invalidate(selectedJournalProvider);
-                  await Future.delayed(const Duration(milliseconds: 50));
-                  debugPrint('[JournalScreen] UI refresh triggered');
-                  _scrollToBottom();
-                },
+                onTextSubmitted: (text) => _addTextEntry(text),
+                onVoiceRecorded: (transcript, audioPath, duration) =>
+                    _addVoiceEntry(transcript, audioPath, duration),
+                onTranscriptReady: (transcript) => _updatePendingTranscription(transcript),
               ),
           ],
         ),
       ),
     );
+  }
+
+  /// Add text entry
+  Future<void> _addTextEntry(String text) async {
+    debugPrint('[JournalScreen] Adding text entry...');
+
+    try {
+      final service = await ref.read(journalServiceFutureProvider.future);
+      await service.addTextEntry(content: text);
+
+      debugPrint('[JournalScreen] Entry added, refreshing...');
+
+      // Set flag to scroll after data loads
+      _shouldScrollToBottom = true;
+
+      // Refresh to show new entry
+      ref.invalidate(selectedJournalProvider);
+      ref.read(journalRefreshTriggerProvider.notifier).state++;
+    } catch (e, st) {
+      debugPrint('[JournalScreen] Error adding text entry: $e');
+      debugPrint('$st');
+    }
+  }
+
+  /// Add voice entry
+  /// With streaming: transcript may be empty initially, then updated via _updatePendingTranscription
+  Future<void> _addVoiceEntry(
+    String transcript,
+    String audioPath,
+    int duration,
+  ) async {
+    debugPrint('[JournalScreen] Adding voice entry...');
+
+    try {
+      final service = await ref.read(journalServiceFutureProvider.future);
+      final result = await service.addVoiceEntry(
+        transcript: transcript,
+        audioPath: audioPath,
+        durationSeconds: duration,
+      );
+
+      // Track if this entry needs transcription update (empty transcript)
+      if (transcript.isEmpty) {
+        _pendingTranscriptionEntryId = result.entry.id;
+        debugPrint('[JournalScreen] Entry ${result.entry.id} pending transcription');
+      }
+
+      debugPrint('[JournalScreen] Voice entry added, refreshing...');
+
+      // Set flag to scroll after data loads
+      _shouldScrollToBottom = true;
+
+      // Refresh to show new entry
+      ref.invalidate(selectedJournalProvider);
+      ref.read(journalRefreshTriggerProvider.notifier).state++;
+    } catch (e, st) {
+      debugPrint('[JournalScreen] Error adding voice entry: $e');
+      debugPrint('$st');
+    }
+  }
+
+  /// Update the pending entry with transcription result (streaming audio)
+  Future<void> _updatePendingTranscription(String transcript) async {
+    if (_pendingTranscriptionEntryId == null) {
+      debugPrint('[JournalScreen] No pending entry to update');
+      return;
+    }
+
+    final entryId = _pendingTranscriptionEntryId!;
+    _pendingTranscriptionEntryId = null; // Clear early to prevent duplicate updates
+    debugPrint('[JournalScreen] Updating entry $entryId with transcript...');
+
+    try {
+      final service = await ref.read(journalServiceFutureProvider.future);
+      final selectedDate = ref.read(selectedJournalDateProvider);
+
+      // Use surgical update - directly update the block in the file
+      // Create a minimal entry just for the update
+      final entry = JournalEntry(
+        id: entryId,
+        title: _formatTime(DateTime.now()),
+        content: transcript,
+        type: JournalEntryType.voice,
+        createdAt: DateTime.now(),
+      );
+
+      await service.updateEntry(selectedDate, entry);
+      debugPrint('[JournalScreen] Transcription update complete');
+
+      // Single refresh to show updated entry
+      ref.invalidate(selectedJournalProvider);
+    } catch (e, st) {
+      debugPrint('[JournalScreen] Error updating transcription: $e');
+      debugPrint('$st');
+    }
+  }
+
+  String _formatTime(DateTime time) {
+    final hour = time.hour.toString().padLeft(2, '0');
+    final minute = time.minute.toString().padLeft(2, '0');
+    return '$hour:$minute';
+  }
+
+  /// Play audio for a journal entry (inline in list view)
+  ///
+  /// For full playback controls, users should tap the entry to open the
+  /// detail view which uses PlaybackControls.
+  Future<void> _playAudio(String relativePath) async {
+    // Guard against multiple rapid taps
+    if (_isPlayingAudio) {
+      debugPrint('[JournalScreen] Audio play already in progress, ignoring');
+      return;
+    }
+
+    _isPlayingAudio = true;
+    debugPrint('[JournalScreen] Playing audio: $relativePath');
+
+    try {
+      final audioService = ref.read(audioServiceProvider);
+
+      // Ensure audio service is initialized
+      await audioService.initialize();
+
+      // Construct full path from relative path
+      final fullPath = await _getFullAudioPath(relativePath);
+      debugPrint('[JournalScreen] Full audio path: $fullPath');
+
+      // Check if file exists and has content
+      final file = File(fullPath);
+      if (!await file.exists()) {
+        debugPrint('[JournalScreen] ERROR: Audio file does not exist!');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Audio file not found'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+        return;
+      }
+
+      final fileSize = await file.length();
+      debugPrint('[JournalScreen] Audio file size: $fileSize bytes');
+
+      if (fileSize == 0) {
+        debugPrint('[JournalScreen] ERROR: Audio file is empty!');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Audio file is empty'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+        return;
+      }
+
+      final success = await audioService.playRecording(fullPath);
+      debugPrint('[JournalScreen] playRecording returned: $success');
+
+      if (!success && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not play audio file'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('[JournalScreen] Error playing audio: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error playing audio: $e'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } finally {
+      // Reset after a short delay to allow the audio to start
+      Future.delayed(const Duration(milliseconds: 500), () {
+        _isPlayingAudio = false;
+      });
+    }
   }
 
   Widget _buildHeader(
@@ -217,6 +398,15 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
     final isToday = selectedDate.year == now.year &&
         selectedDate.month == now.month &&
         selectedDate.day == now.day;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    // Handle scroll to bottom after new entry is added
+    if (_shouldScrollToBottom) {
+      _shouldScrollToBottom = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scrollToBottom();
+      });
+    }
 
     if (journal.isEmpty) {
       return _buildEmptyState(context, isToday);
@@ -225,23 +415,194 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
     return RefreshIndicator(
       onRefresh: _refreshJournal,
       color: BrandColors.forest,
-      child: ListView.builder(
-        controller: _scrollController,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        itemCount: journal.entries.length,
-        itemBuilder: (context, index) {
-          final entry = journal.entries[index];
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: JournalEntryCard(
-              entry: entry,
-              audioPath: journal.getAudioPath(entry.id),
-              onTap: () => _showEntryDetail(context, entry),
-              onEdit: () => _editEntry(context, entry),
-              onDelete: () => _deleteEntry(context, journal, entry),
-            ),
-          );
+      child: GestureDetector(
+        // Tap empty space to save and deselect editing
+        onTap: () {
+          if (_editingEntryId != null) {
+            _saveCurrentEdit();
+          }
         },
+        child: ListView.builder(
+          controller: _scrollController,
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          itemCount: journal.entries.length,
+          itemBuilder: (context, index) {
+            final entry = journal.entries[index];
+            final isEditing = _editingEntryId == entry.id;
+
+            return Column(
+              children: [
+                // Subtle divider between entries (except first)
+                if (index > 0)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Divider(
+                      height: 1,
+                      thickness: 0.5,
+                      color: isDark
+                          ? BrandColors.charcoal.withValues(alpha: 0.3)
+                          : BrandColors.stone.withValues(alpha: 0.3),
+                    ),
+                  ),
+
+                JournalEntryRow(
+                  entry: entry,
+                  audioPath: journal.getAudioPath(entry.id),
+                  isEditing: isEditing,
+                  onTap: () => _handleEntryTap(entry),
+                  onLongPress: () => _showEntryActions(context, journal, entry),
+                  onPlayAudio: _playAudio,
+                  onContentChanged: (content) => _handleContentChanged(entry.id, content),
+                  onTitleChanged: (title) => _handleTitleChanged(entry.id, title),
+                  onEditingComplete: _saveCurrentEdit,
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  void _handleEntryTap(JournalEntry entry) {
+    // Don't edit preamble/imported markdown
+    if (entry.id == 'preamble' || entry.id.startsWith('plain_')) {
+      _showEntryDetail(context, entry);
+      return;
+    }
+
+    // If already editing this entry, do nothing (let TextField handle taps)
+    if (_editingEntryId == entry.id) {
+      return;
+    }
+
+    // If editing another entry, save it first
+    if (_editingEntryId != null) {
+      _saveCurrentEdit();
+    }
+
+    // Start editing this entry
+    setState(() {
+      _editingEntryId = entry.id;
+      _editingEntryContent = entry.content;
+      _editingEntryTitle = entry.title;
+    });
+  }
+
+  Future<void> _saveCurrentEdit() async {
+    if (_editingEntryId == null) return;
+
+    final entryId = _editingEntryId!;
+    final newContent = _editingEntryContent;
+    final newTitle = _editingEntryTitle;
+
+    // Clear editing state first
+    setState(() {
+      _editingEntryId = null;
+      _editingEntryContent = null;
+      _editingEntryTitle = null;
+    });
+
+    // Only save if we have content changes
+    if (newContent == null && newTitle == null) return;
+
+    try {
+      final service = await ref.read(journalServiceFutureProvider.future);
+      final selectedDate = ref.read(selectedJournalDateProvider);
+
+      // Get current journal to find the entry
+      final journal = await service.loadDay(selectedDate);
+      final entry = journal.entries.firstWhere(
+        (e) => e.id == entryId,
+        orElse: () => throw Exception('Entry not found'),
+      );
+
+      // Create updated entry
+      final updatedEntry = entry.copyWith(
+        content: newContent ?? entry.content,
+        title: newTitle ?? entry.title,
+      );
+
+      await service.updateEntry(selectedDate, updatedEntry);
+      debugPrint('[JournalScreen] Saved edit for entry $entryId');
+
+      // Refresh
+      ref.invalidate(selectedJournalProvider);
+    } catch (e) {
+      debugPrint('[JournalScreen] Error saving edit: $e');
+    }
+  }
+
+  void _handleContentChanged(String entryId, String newContent) {
+    if (_editingEntryId == entryId) {
+      _editingEntryContent = newContent;
+    }
+  }
+
+  void _handleTitleChanged(String entryId, String newTitle) {
+    if (_editingEntryId == entryId) {
+      _editingEntryTitle = newTitle;
+    }
+  }
+
+  void _showEntryActions(
+    BuildContext context,
+    JournalDay journal,
+    JournalEntry entry,
+  ) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: isDark ? BrandColors.nightSurfaceElevated : BrandColors.softWhite,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Handle
+            Container(
+              margin: const EdgeInsets.only(top: 8),
+              width: 32,
+              height: 4,
+              decoration: BoxDecoration(
+                color: isDark ? BrandColors.charcoal : BrandColors.stone,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 8),
+
+            // Actions
+            ListTile(
+              leading: const Icon(Icons.visibility_outlined),
+              title: const Text('View details'),
+              onTap: () {
+                Navigator.pop(context);
+                _showEntryDetail(context, entry);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.edit_outlined),
+              title: const Text('Edit'),
+              onTap: () {
+                Navigator.pop(context);
+                setState(() => _editingEntryId = entry.id);
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.delete_outline, color: BrandColors.error),
+              title: Text('Delete', style: TextStyle(color: BrandColors.error)),
+              onTap: () {
+                Navigator.pop(context);
+                _deleteEntry(context, journal, entry);
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
       ),
     );
   }
@@ -418,6 +779,10 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
 
               const Divider(height: 1),
 
+              // Audio player for voice entries
+              if (entry.hasAudio)
+                _buildAudioPlayer(context, entry, isDark),
+
               // Content
               Expanded(
                 child: SingleChildScrollView(
@@ -453,6 +818,53 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
         ),
       ),
     );
+  }
+
+  Widget _buildAudioPlayer(BuildContext context, JournalEntry entry, bool isDark) {
+    final audioPath = entry.audioPath;
+    if (audioPath == null) return const SizedBox.shrink();
+
+    // Use FutureBuilder to resolve the full path
+    return FutureBuilder<String>(
+      future: _getFullAudioPath(audioPath),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Container(
+            padding: const EdgeInsets.all(16),
+            child: const Center(
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          );
+        }
+
+        if (!snapshot.hasData || snapshot.hasError) {
+          return Container(
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              'Audio not available',
+              style: TextStyle(color: BrandColors.driftwood),
+            ),
+          );
+        }
+
+        final fullPath = snapshot.data!;
+        final duration = Duration(seconds: entry.durationSeconds ?? 0);
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: PlaybackControls(
+            filePath: fullPath,
+            duration: duration,
+          ),
+        );
+      },
+    );
+  }
+
+  Future<String> _getFullAudioPath(String relativePath) async {
+    final fileSystem = FileSystemService();
+    final vaultPath = await fileSystem.getRootPath();
+    return '$vaultPath/$relativePath';
   }
 
   Widget _buildLinkedFileInfo(BuildContext context, String filePath) {
@@ -534,11 +946,6 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
     return '$secs sec';
   }
 
-  void _editEntry(BuildContext context, JournalEntry entry) {
-    // TODO: Show edit dialog
-    debugPrint('[JournalScreen] Edit entry: ${entry.id}');
-  }
-
   Future<void> _deleteEntry(
     BuildContext context,
     JournalDay journal,
@@ -566,9 +973,20 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
     );
 
     if (confirmed == true) {
-      final service = await ref.read(journalServiceFutureProvider.future);
-      await service.deleteEntry(journal.date, entry.id);
-      ref.invalidate(selectedJournalProvider);
+      debugPrint('[JournalScreen] Deleting entry...');
+
+      try {
+        final service = await ref.read(journalServiceFutureProvider.future);
+        await service.deleteEntry(journal.date, entry.id);
+        debugPrint('[JournalScreen] Entry deleted successfully');
+
+        // Refresh to show changes
+        ref.invalidate(selectedJournalProvider);
+        ref.read(journalRefreshTriggerProvider.notifier).state++;
+      } catch (e, st) {
+        debugPrint('[JournalScreen] Error deleting entry: $e');
+        debugPrint('$st');
+      }
     }
   }
 }

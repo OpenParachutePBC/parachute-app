@@ -42,6 +42,10 @@ class JournalEntry {
   /// Duration of the audio in seconds, if voice entry
   final int? durationSeconds;
 
+  /// Whether this entry is plain markdown (no para:ID)
+  /// Used to preserve formatting when re-serializing imported content.
+  final bool isPlainMarkdown;
+
   const JournalEntry({
     required this.id,
     required this.title,
@@ -51,6 +55,7 @@ class JournalEntry {
     this.audioPath,
     this.linkedFilePath,
     this.durationSeconds,
+    this.isPlainMarkdown = false,
   });
 
   /// Whether this entry has an associated audio file
@@ -129,6 +134,7 @@ class JournalEntry {
     String? audioPath,
     String? linkedFilePath,
     int? durationSeconds,
+    bool? isPlainMarkdown,
   }) {
     return JournalEntry(
       id: id ?? this.id,
@@ -139,6 +145,7 @@ class JournalEntry {
       audioPath: audioPath ?? this.audioPath,
       linkedFilePath: linkedFilePath ?? this.linkedFilePath,
       durationSeconds: durationSeconds ?? this.durationSeconds,
+      isPlainMarkdown: isPlainMarkdown ?? this.isPlainMarkdown,
     );
   }
 

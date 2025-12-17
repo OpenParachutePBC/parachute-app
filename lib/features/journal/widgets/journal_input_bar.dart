@@ -8,15 +8,19 @@ import '../../recorder/providers/service_providers.dart';
 /// Input bar for adding entries to the journal
 ///
 /// Supports text input and voice recording with transcription.
+/// Uses streaming pattern: creates entry immediately, transcribes in background.
 class JournalInputBar extends ConsumerStatefulWidget {
   final Future<void> Function(String text) onTextSubmitted;
   final Future<void> Function(String transcript, String audioPath, int duration)?
       onVoiceRecorded;
+  /// Called when background transcription completes - allows updating the entry
+  final Future<void> Function(String transcript)? onTranscriptReady;
 
   const JournalInputBar({
     super.key,
     required this.onTextSubmitted,
     this.onVoiceRecorded,
+    this.onTranscriptReady,
   });
 
   @override
@@ -114,7 +118,7 @@ class _JournalInputBarState extends ConsumerState<JournalInputBar> {
     _durationTimer = null;
 
     final audioService = ref.read(audioServiceProvider);
-    final postProcessingService = ref.read(recordingPostProcessingProvider);
+    final durationSeconds = _recordingDuration.inSeconds;
 
     setState(() {
       _isRecording = false;
@@ -128,39 +132,25 @@ class _JournalInputBarState extends ConsumerState<JournalInputBar> {
         throw Exception('No audio file saved');
       }
 
-      debugPrint('[JournalInputBar] Recording stopped, transcribing...');
+      debugPrint('[JournalInputBar] Recording stopped, creating entry immediately...');
 
-      // Transcribe the recording
-      final result = await postProcessingService.process(audioPath: audioPath);
-      final transcript = result.transcript;
-      final durationSeconds = _recordingDuration.inSeconds;
-
-      debugPrint('[JournalInputBar] Transcription complete: ${transcript.length} chars');
-
-      // Call the callback with transcript and audio path
-      if (widget.onVoiceRecorded != null && transcript.isNotEmpty) {
-        await widget.onVoiceRecorded!(transcript, audioPath, durationSeconds);
-      } else if (transcript.isEmpty) {
-        // If transcription is empty, delete the audio file
-        try {
-          await File(audioPath).delete();
-        } catch (_) {}
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('No speech detected. Recording discarded.'),
-              duration: Duration(seconds: 2),
-            ),
-          );
-        }
+      // Create entry immediately with placeholder (streaming approach)
+      // This gives instant feedback while transcription runs in background
+      if (widget.onVoiceRecorded != null) {
+        // Create with empty transcript - UI will show "Transcribing..."
+        await widget.onVoiceRecorded!('', audioPath, durationSeconds);
       }
+
+      // Now transcribe in background and update
+      debugPrint('[JournalInputBar] Starting background transcription...');
+      _transcribeInBackground(audioPath, durationSeconds);
+
     } catch (e) {
       debugPrint('[JournalInputBar] Failed to process recording: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to process recording: $e'),
+            content: Text('Failed to save recording: $e'),
             duration: const Duration(seconds: 3),
           ),
         );
@@ -171,6 +161,55 @@ class _JournalInputBarState extends ConsumerState<JournalInputBar> {
           _isProcessing = false;
           _recordingDuration = Duration.zero;
         });
+      }
+    }
+  }
+
+  /// Transcribe audio in background and update the entry
+  Future<void> _transcribeInBackground(String audioPath, int durationSeconds) async {
+    try {
+      final postProcessingService = ref.read(recordingPostProcessingProvider);
+      final result = await postProcessingService.process(audioPath: audioPath);
+      final transcript = result.transcript;
+
+      debugPrint('[JournalInputBar] Background transcription complete: ${transcript.length} chars');
+
+      // Clean up temp file now that transcription is done
+      try {
+        final tempFile = File(audioPath);
+        if (await tempFile.exists()) {
+          await tempFile.delete();
+          debugPrint('[JournalInputBar] Deleted temp audio file');
+        }
+      } catch (e) {
+        debugPrint('[JournalInputBar] Could not delete temp file: $e');
+      }
+
+      if (transcript.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No speech detected in recording.'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+        return;
+      }
+
+      // Update the entry with the transcript
+      if (widget.onTranscriptReady != null) {
+        await widget.onTranscriptReady!(transcript);
+      }
+    } catch (e) {
+      debugPrint('[JournalInputBar] Background transcription failed: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Transcription failed: $e'),
+            duration: const Duration(seconds: 3),
+          ),
+        );
       }
     }
   }

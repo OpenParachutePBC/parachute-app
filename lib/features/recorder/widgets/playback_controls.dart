@@ -191,7 +191,13 @@ class _PlaybackControlsState extends ConsumerState<PlaybackControls> {
               overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
             ),
             child: Slider(
-              value: _currentPosition.inMilliseconds.toDouble(),
+              // Clamp value to prevent assertion error when position exceeds duration
+              value: _currentPosition.inMilliseconds.toDouble().clamp(
+                0.0,
+                _totalDuration.inMilliseconds > 0
+                    ? _totalDuration.inMilliseconds.toDouble()
+                    : 1.0,
+              ),
               max: _totalDuration.inMilliseconds > 0
                   ? _totalDuration.inMilliseconds.toDouble()
                   : 1.0,

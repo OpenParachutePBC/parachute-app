@@ -105,22 +105,23 @@ class JournalNotifier extends StateNotifier<AsyncValue<JournalDay>> {
     await _loadJournal();
   }
 
-  /// Add a text entry
+  /// Add a text entry with optimistic UI update
+  /// Updates the UI immediately, saves in background
   Future<JournalEntry?> addTextEntry({
     required String content,
     String? title,
   }) async {
     try {
-      final entry = await _journalService.addTextEntry(
+      final result = await _journalService.addTextEntry(
         content: content,
         title: title,
       );
 
-      // Refresh to get updated journal
-      await _loadJournal();
+      // Update state immediately with the returned journal (no reload needed!)
+      state = AsyncValue.data(result.journal);
       _triggerRefresh();
 
-      return entry;
+      return result.entry;
     } catch (e, st) {
       debugPrint('[JournalNotifier] Error adding text entry: $e');
       debugPrint('$st');
@@ -128,7 +129,7 @@ class JournalNotifier extends StateNotifier<AsyncValue<JournalDay>> {
     }
   }
 
-  /// Add a voice entry
+  /// Add a voice entry with optimistic UI update
   Future<JournalEntry?> addVoiceEntry({
     required String transcript,
     required String audioPath,
@@ -136,17 +137,18 @@ class JournalNotifier extends StateNotifier<AsyncValue<JournalDay>> {
     String? title,
   }) async {
     try {
-      final entry = await _journalService.addVoiceEntry(
+      final result = await _journalService.addVoiceEntry(
         transcript: transcript,
         audioPath: audioPath,
         durationSeconds: durationSeconds,
         title: title,
       );
 
-      await _loadJournal();
+      // Update state immediately with the returned journal
+      state = AsyncValue.data(result.journal);
       _triggerRefresh();
 
-      return entry;
+      return result.entry;
     } catch (e, st) {
       debugPrint('[JournalNotifier] Error adding voice entry: $e');
       debugPrint('$st');
@@ -154,7 +156,7 @@ class JournalNotifier extends StateNotifier<AsyncValue<JournalDay>> {
     }
   }
 
-  /// Add a linked entry (for long recordings)
+  /// Add a linked entry (for long recordings) with optimistic UI update
   Future<JournalEntry?> addLinkedEntry({
     required String linkedFilePath,
     String? audioPath,
@@ -162,17 +164,18 @@ class JournalNotifier extends StateNotifier<AsyncValue<JournalDay>> {
     String? title,
   }) async {
     try {
-      final entry = await _journalService.addLinkedEntry(
+      final result = await _journalService.addLinkedEntry(
         linkedFilePath: linkedFilePath,
         audioPath: audioPath,
         durationSeconds: durationSeconds,
         title: title,
       );
 
-      await _loadJournal();
+      // Update state immediately with the returned journal
+      state = AsyncValue.data(result.journal);
       _triggerRefresh();
 
-      return entry;
+      return result.entry;
     } catch (e, st) {
       debugPrint('[JournalNotifier] Error adding linked entry: $e');
       debugPrint('$st');
