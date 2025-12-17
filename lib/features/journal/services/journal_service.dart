@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:yaml/yaml.dart';
 import '../../../core/services/logger_service.dart';
 import '../../../core/services/file_system_service.dart';
+import '../models/entry_metadata.dart';
 import '../models/journal_day.dart';
 import '../models/journal_entry.dart';
 import 'para_id_service.dart';
@@ -136,6 +137,7 @@ class JournalService {
     String? audioPath,
     String? linkedFilePath,
     int? durationSeconds,
+    bool isPendingTranscription = false,
   }) async {
     // Use surgical append - preserves external edits
     final entry = await appendEntryToFile(
@@ -146,6 +148,7 @@ class JournalService {
       audioPath: audioPath,
       linkedFilePath: linkedFilePath,
       durationSeconds: durationSeconds,
+      isPendingTranscription: isPendingTranscription,
     );
 
     // Reload the journal to get updated state
@@ -216,13 +219,17 @@ class JournalService {
       _log.warn('Audio file not found', data: {'path': audioPath});
     }
 
+    // Determine if transcription is pending (empty transcript means waiting for transcription)
+    final isPending = transcript.isEmpty;
+
     return addEntry(
       date: now,
       title: title ?? defaultTitle,
-      content: transcript,
+      content: isPending ? '*(Transcribing...)*' : transcript,
       type: JournalEntryType.voice,
       audioPath: relativePath,
       durationSeconds: durationSeconds,
+      isPendingTranscription: isPending,
     );
   }
 
@@ -253,6 +260,20 @@ class JournalService {
     await updateEntryInFile(date, entry);
   }
 
+  /// Update transcription status for an entry
+  Future<void> updateTranscriptionStatus(
+    DateTime date,
+    String entryId,
+    TranscriptionStatus status,
+  ) async {
+    await _updateMetadataStatus(date, entryId, status);
+    _log.info('Updated transcription status', data: {
+      'date': _formatDate(date),
+      'id': entryId,
+      'status': status.name,
+    });
+  }
+
   /// Delete an entry (uses surgical file edit)
   Future<void> deleteEntry(DateTime date, String entryId) async {
     await deleteEntryFromFile(date, entryId);
@@ -281,23 +302,39 @@ class JournalService {
     String? audioPath,
     String? linkedFilePath,
     int? durationSeconds,
+    bool isPendingTranscription = false,
   }) async {
     await ensureDirectoryExists();
 
     final normalizedDate = DateTime(date.year, date.month, date.day);
     final filePath = getFilePath(normalizedDate);
     final id = await _paraIdService.generate();
+    final now = DateTime.now();
 
     final entry = JournalEntry(
       id: id,
       title: title,
       content: content,
       type: type,
-      createdAt: DateTime.now(),
+      createdAt: now,
       audioPath: audioPath,
       linkedFilePath: linkedFilePath,
       durationSeconds: durationSeconds,
+      isPendingTranscription: isPendingTranscription,
     );
+
+    // Create metadata for frontmatter
+    EntryMetadata? metadata;
+    if (type == JournalEntryType.voice && audioPath != null) {
+      metadata = EntryMetadata.voice(
+        audioPath: audioPath,
+        durationSeconds: durationSeconds ?? 0,
+        createdTime: _formatTime(now),
+        hasPendingTranscription: isPendingTranscription,
+      );
+    } else if (type == JournalEntryType.text) {
+      metadata = EntryMetadata.text(createdTime: _formatTime(now));
+    }
 
     // Read existing file content (or create new)
     String existingContent = '';
@@ -309,10 +346,10 @@ class JournalService {
     String newContent;
     if (existingContent.isEmpty) {
       // New file - create with frontmatter
-      newContent = _createNewFileWithEntry(normalizedDate, entry, audioPath);
+      newContent = _createNewFileWithEntry(normalizedDate, entry, metadata);
     } else {
       // Existing file - append entry and update frontmatter if needed
-      newContent = _appendEntryToContent(existingContent, entry, audioPath);
+      newContent = _appendEntryToContent(existingContent, entry, metadata);
     }
 
     final success = await _fileSystemService.writeFileAsString(filePath, newContent);
@@ -391,15 +428,19 @@ class JournalService {
   }
 
   /// Create a new file with frontmatter and one entry
-  String _createNewFileWithEntry(DateTime date, JournalEntry entry, String? audioPath) {
+  String _createNewFileWithEntry(DateTime date, JournalEntry entry, EntryMetadata? metadata) {
     final buffer = StringBuffer();
 
     // Frontmatter
     buffer.writeln('---');
     buffer.writeln('date: ${_formatDate(date)}');
-    if (audioPath != null) {
-      buffer.writeln('assets:');
-      buffer.writeln('  ${entry.id}: $audioPath');
+    if (metadata != null) {
+      buffer.writeln('entries:');
+      buffer.writeln('  ${entry.id}:');
+      final yaml = metadata.toYaml();
+      for (final field in yaml.entries) {
+        buffer.writeln('    ${field.key}: ${field.value}');
+      }
     }
     buffer.writeln('---');
     buffer.writeln();
@@ -411,10 +452,10 @@ class JournalService {
   }
 
   /// Append an entry to existing file content
-  String _appendEntryToContent(String content, JournalEntry entry, String? audioPath) {
-    // If we have an audio path, we need to update the frontmatter
-    if (audioPath != null) {
-      content = _addAssetToFrontmatter(content, entry.id, audioPath);
+  String _appendEntryToContent(String content, JournalEntry entry, EntryMetadata? metadata) {
+    // If we have metadata, we need to update the frontmatter
+    if (metadata != null) {
+      content = _addMetadataToFrontmatter(content, entry.id, metadata);
     }
 
     // Ensure there's a newline at the end before appending
@@ -432,46 +473,53 @@ class JournalService {
     return content;
   }
 
-  /// Add an asset mapping to the frontmatter
-  String _addAssetToFrontmatter(String content, String id, String path) {
+  /// Add entry metadata to the frontmatter
+  String _addMetadataToFrontmatter(String content, String id, EntryMetadata metadata) {
     final parts = _splitFrontmatter(content);
     final frontmatter = parts.$1;
     final body = parts.$2;
+
+    final yaml = metadata.toYaml();
+    final metadataLines = StringBuffer();
+    metadataLines.writeln('  $id:');
+    for (final field in yaml.entries) {
+      metadataLines.writeln('    ${field.key}: ${field.value}');
+    }
 
     if (frontmatter.isEmpty) {
       // No frontmatter - create one
       final buffer = StringBuffer();
       buffer.writeln('---');
-      buffer.writeln('assets:');
-      buffer.writeln('  $id: $path');
+      buffer.writeln('entries:');
+      buffer.write(metadataLines);
       buffer.writeln('---');
       buffer.writeln();
       buffer.write(body);
       return buffer.toString();
     }
 
-    // Has frontmatter - check if assets section exists
+    // Has frontmatter - check if entries section exists
     final lines = frontmatter.split('\n');
     final buffer = StringBuffer();
     buffer.writeln('---');
 
-    bool hasAssets = lines.any((l) => l.trim().startsWith('assets:'));
-    bool addedAsset = false;
+    bool hasEntries = lines.any((l) => l.trim().startsWith('entries:'));
+    bool addedEntry = false;
 
     for (final line in lines) {
       buffer.writeln(line);
 
-      // Add new asset right after "assets:" line
-      if (line.trim() == 'assets:' && !addedAsset) {
-        buffer.writeln('  $id: $path');
-        addedAsset = true;
+      // Add new entry right after "entries:" line
+      if (line.trim() == 'entries:' && !addedEntry) {
+        buffer.write(metadataLines);
+        addedEntry = true;
       }
     }
 
-    // If no assets section existed, add it
-    if (!hasAssets) {
-      buffer.writeln('assets:');
-      buffer.writeln('  $id: $path');
+    // If no entries section existed, add it
+    if (!hasEntries) {
+      buffer.writeln('entries:');
+      buffer.write(metadataLines);
     }
 
     buffer.writeln('---');
@@ -486,8 +534,17 @@ class JournalService {
     final blockRange = _findEntryBlockRange(content, entry.id);
     if (blockRange == null) {
       _log.warn('Entry block not found for replacement', data: {'id': entry.id});
-      // Fall back to appending
-      return _appendEntryToContent(content, entry, entry.audioPath);
+      // Fall back to appending - create metadata if we have audio
+      EntryMetadata? metadata;
+      if (entry.audioPath != null) {
+        metadata = EntryMetadata.voice(
+          audioPath: entry.audioPath!,
+          durationSeconds: entry.durationSeconds ?? 0,
+          createdTime: _formatTime(entry.createdAt),
+          hasPendingTranscription: entry.isPendingTranscription,
+        );
+      }
+      return _appendEntryToContent(content, entry, metadata);
     }
 
     final before = content.substring(0, blockRange.$1);
@@ -496,7 +553,66 @@ class JournalService {
     // Build new block
     final newBlock = '${_serializeEntry(entry)}\n';
 
-    return '$before$newBlock$after';
+    var result = '$before$newBlock$after';
+
+    // Update frontmatter metadata transcription status if entry is a voice entry
+    // If entry has content, it's been transcribed - update status to complete
+    if (entry.type == JournalEntryType.voice && entry.content.isNotEmpty) {
+      result = _updateMetadataStatusInContent(result, entry.id, TranscriptionStatus.complete);
+    }
+
+    return result;
+  }
+
+  /// Update transcription status in the frontmatter metadata (in-memory string operation)
+  String _updateMetadataStatusInContent(String content, String entryId, TranscriptionStatus status) {
+    final parts = _splitFrontmatter(content);
+    final frontmatter = parts.$1;
+    final body = parts.$2;
+
+    if (frontmatter.isEmpty) return content;
+
+    final lines = frontmatter.split('\n');
+    final buffer = StringBuffer();
+
+    bool inTargetEntry = false;
+    int entryIndent = 0;
+    bool statusUpdated = false;
+
+    for (var i = 0; i < lines.length; i++) {
+      final line = lines[i];
+      final trimmed = line.trimLeft();
+      final indent = line.length - trimmed.length;
+
+      // Check if this line starts the target entry
+      if (trimmed.startsWith('$entryId:')) {
+        inTargetEntry = true;
+        entryIndent = indent;
+        buffer.writeln(line);
+        continue;
+      }
+
+      // Check if we've exited the target entry (same or less indent, non-empty)
+      if (inTargetEntry && trimmed.isNotEmpty && indent <= entryIndent) {
+        inTargetEntry = false;
+      }
+
+      // Update status line if in target entry
+      if (inTargetEntry && trimmed.startsWith('status:')) {
+        buffer.writeln('${' ' * (entryIndent + 2)}status: ${status.name}');
+        statusUpdated = true;
+        continue;
+      }
+
+      buffer.writeln(line);
+    }
+
+    // If status wasn't found/updated, the metadata might be in old format - that's OK
+    if (!statusUpdated) {
+      _log.debug('No status field found to update', data: {'entryId': entryId});
+    }
+
+    return '---\n${buffer.toString().trim()}\n---\n$body';
   }
 
   /// Find and remove a specific entry block from the content
@@ -510,9 +626,9 @@ class JournalService {
     final before = content.substring(0, blockRange.$1);
     final after = content.substring(blockRange.$2);
 
-    // Also remove the asset from frontmatter
+    // Also remove the metadata from frontmatter
     var result = before + after;
-    result = _removeAssetFromFrontmatter(result, entryId);
+    result = _removeMetadataFromFrontmatter(result, entryId);
 
     // Clean up excessive newlines
     result = result.replaceAll(RegExp(r'\n{3,}'), '\n\n');
@@ -548,11 +664,126 @@ class JournalService {
     return (startIndex, endIndex);
   }
 
-  /// Remove an asset mapping from the frontmatter
-  String _removeAssetFromFrontmatter(String content, String id) {
-    // Simple approach: remove the line "  id: path"
-    final pattern = RegExp(r'^\s*' + RegExp.escape(id) + r':.*\n?', multiLine: true);
-    return content.replaceAll(pattern, '');
+  /// Remove metadata for an entry from the frontmatter
+  /// Handles both old `assets:` and new `entries:` format
+  String _removeMetadataFromFrontmatter(String content, String id) {
+    final parts = _splitFrontmatter(content);
+    final frontmatter = parts.$1;
+    final body = parts.$2;
+
+    if (frontmatter.isEmpty) return content;
+
+    final lines = frontmatter.split('\n');
+    final buffer = StringBuffer();
+    buffer.writeln('---');
+
+    bool skipUntilNextEntry = false;
+    int entryIndent = 0;
+
+    for (final line in lines) {
+      // Check if this line starts an entry for the ID we want to remove
+      final trimmed = line.trimLeft();
+      final indent = line.length - trimmed.length;
+
+      // New format: entries section with nested properties
+      if (trimmed.startsWith('$id:')) {
+        // Skip this entry and all its nested properties
+        skipUntilNextEntry = true;
+        entryIndent = indent;
+        continue;
+      }
+
+      // If we're skipping and hit a line with same or less indent, stop skipping
+      if (skipUntilNextEntry) {
+        if (trimmed.isNotEmpty && indent <= entryIndent) {
+          skipUntilNextEntry = false;
+        } else {
+          continue;
+        }
+      }
+
+      buffer.writeln(line);
+    }
+
+    buffer.writeln('---');
+    buffer.writeln();
+    buffer.write(body);
+
+    return buffer.toString();
+  }
+
+  /// Update the status field in metadata for an entry
+  Future<void> _updateMetadataStatus(
+    DateTime date,
+    String entryId,
+    TranscriptionStatus status,
+  ) async {
+    final normalizedDate = DateTime(date.year, date.month, date.day);
+    final filePath = getFilePath(normalizedDate);
+
+    if (!await _fileSystemService.fileExists(filePath)) {
+      _log.warn('Journal file not found for status update', data: {'date': _formatDate(normalizedDate)});
+      return;
+    }
+
+    final content = await _fileSystemService.readFileAsString(filePath);
+    if (content == null) {
+      throw Exception('Could not read journal file');
+    }
+
+    final parts = _splitFrontmatter(content);
+    final frontmatter = parts.$1;
+    final body = parts.$2;
+
+    if (frontmatter.isEmpty) return;
+
+    final lines = frontmatter.split('\n');
+    final buffer = StringBuffer();
+    buffer.writeln('---');
+
+    bool inTargetEntry = false;
+    int entryIndent = 0;
+    bool statusUpdated = false;
+
+    for (var i = 0; i < lines.length; i++) {
+      final line = lines[i];
+      final trimmed = line.trimLeft();
+      final indent = line.length - trimmed.length;
+
+      // Check if this line starts the target entry
+      if (trimmed.startsWith('$entryId:')) {
+        inTargetEntry = true;
+        entryIndent = indent;
+        buffer.writeln(line);
+        continue;
+      }
+
+      // If we're in the target entry
+      if (inTargetEntry) {
+        // Check if we've left the entry (same or less indent)
+        if (trimmed.isNotEmpty && indent <= entryIndent) {
+          inTargetEntry = false;
+        } else if (trimmed.startsWith('status:')) {
+          // Update the status line
+          buffer.writeln('${' ' * (entryIndent + 4)}status: ${status.name}');
+          statusUpdated = true;
+          continue;
+        }
+      }
+
+      buffer.writeln(line);
+    }
+
+    buffer.writeln('---');
+    buffer.writeln();
+    buffer.write(body);
+
+    if (statusUpdated) {
+      final success = await _fileSystemService.writeFileAsString(filePath, buffer.toString());
+      if (!success) {
+        throw Exception('Failed to update metadata status');
+      }
+    }
   }
 
   /// List all available journal dates (most recent first)
@@ -586,15 +817,32 @@ class JournalService {
     final frontmatter = parts.$1;
     final body = parts.$2;
 
-    // Parse frontmatter
-    Map<String, String> assets = {};
+    // Parse frontmatter - supports both old `assets:` and new `entries:` format
+    Map<String, EntryMetadata> entryMetadata = {};
     if (frontmatter.isNotEmpty) {
       try {
         final yaml = loadYaml(frontmatter);
-        if (yaml is Map && yaml['assets'] is Map) {
-          assets = Map<String, String>.from(
-            (yaml['assets'] as Map).map((k, v) => MapEntry(k.toString(), v.toString())),
-          );
+        if (yaml is Map) {
+          // New format: entries with rich metadata
+          if (yaml['entries'] is Map) {
+            final entriesYaml = yaml['entries'] as Map;
+            for (final entry in entriesYaml.entries) {
+              final id = entry.key.toString();
+              final value = entry.value;
+              if (value is Map) {
+                entryMetadata[id] = EntryMetadata.fromYaml(value);
+              }
+            }
+          }
+          // Old format: simple assets mapping (para ID -> audio path)
+          else if (yaml['assets'] is Map) {
+            final assets = yaml['assets'] as Map;
+            for (final entry in assets.entries) {
+              final id = entry.key.toString();
+              final audioPath = entry.value.toString();
+              entryMetadata[id] = EntryMetadata.fromAudioPath(audioPath);
+            }
+          }
         }
       } catch (e) {
         _log.warn('Failed to parse frontmatter', data: {'error': e.toString()});
@@ -602,12 +850,12 @@ class JournalService {
     }
 
     // Parse entries
-    final entries = _parseEntries(body, assets);
+    final entries = _parseEntries(body, entryMetadata);
 
     return JournalDay(
       date: date,
       entries: entries,
-      assets: assets,
+      entryMetadata: entryMetadata,
       filePath: '$_journalFolderName/${_formatDate(date)}.md',
     );
   }
@@ -628,7 +876,7 @@ class JournalService {
     return (frontmatter, body);
   }
 
-  List<JournalEntry> _parseEntries(String body, Map<String, String> assets) {
+  List<JournalEntry> _parseEntries(String body, Map<String, EntryMetadata> entryMetadata) {
     if (body.isEmpty) return [];
 
     final entries = <JournalEntry>[];
@@ -656,7 +904,7 @@ class JournalService {
             id: currentId,
             title: currentTitle ?? '',
             content: contentBuffer.toString().trim(),
-            audioPath: assets[currentId],
+            metadata: entryMetadata[currentId],
             isPlainMarkdown: isPlainH1,
           ));
         } else if (hasPreamble && contentBuffer.toString().trim().isNotEmpty) {
@@ -667,7 +915,7 @@ class JournalService {
             id: 'preamble',
             title: '',
             content: preambleContent,
-            audioPath: null,
+            metadata: null,
             isPlainMarkdown: true,
           ));
         }
@@ -685,7 +933,7 @@ class JournalService {
             id: currentId,
             title: currentTitle ?? '',
             content: contentBuffer.toString().trim(),
-            audioPath: assets[currentId],
+            metadata: entryMetadata[currentId],
             isPlainMarkdown: isPlainH1,
           ));
         } else if (hasPreamble && contentBuffer.toString().trim().isNotEmpty) {
@@ -696,7 +944,7 @@ class JournalService {
             id: 'preamble',
             title: '',
             content: preambleContent,
-            audioPath: null,
+            metadata: null,
             isPlainMarkdown: true,
           ));
         }
@@ -726,7 +974,7 @@ class JournalService {
         id: 'preamble',
         title: '',
         content: contentBuffer.toString().trim(),
-        audioPath: null,
+        metadata: null,
         isPlainMarkdown: true,
       ));
     }
@@ -737,7 +985,7 @@ class JournalService {
         id: currentId,
         title: currentTitle ?? '',
         content: contentBuffer.toString().trim(),
-        audioPath: assets[currentId],
+        metadata: entryMetadata[currentId],
         isPlainMarkdown: isPlainH1,
       ));
     }
@@ -755,47 +1003,39 @@ class JournalService {
     required String id,
     required String title,
     required String content,
-    String? audioPath,
+    EntryMetadata? metadata,
     bool isPlainMarkdown = false,
   }) {
     // Strip trailing horizontal rules (---) which are used for visual separation in the file
     content = _stripTrailingHorizontalRule(content);
 
-    // Detect entry type from content
+    // Detect entry type from content or metadata
     final linkedFile = _extractWikilink(content);
 
-    if (linkedFile != null) {
-      return JournalEntry(
-        id: id,
-        title: title,
-        content: content,
-        type: JournalEntryType.linked,
-        createdAt: DateTime.now(),
-        linkedFilePath: linkedFile,
-        audioPath: audioPath,
-        isPlainMarkdown: isPlainMarkdown,
-      );
-    } else if (audioPath != null) {
-      return JournalEntry(
-        id: id,
-        title: title,
-        content: content,
-        type: JournalEntryType.voice,
-        createdAt: DateTime.now(),
-        audioPath: audioPath,
-        durationSeconds: 0, // TODO: Could parse from filename or store in frontmatter
-        isPlainMarkdown: isPlainMarkdown,
-      );
-    } else {
-      return JournalEntry(
-        id: id,
-        title: title,
-        content: content,
-        type: JournalEntryType.text,
-        createdAt: DateTime.now(),
-        isPlainMarkdown: isPlainMarkdown,
-      );
-    }
+    // Use metadata type if available, otherwise detect from content
+    final type = metadata?.type ??
+        (linkedFile != null
+            ? JournalEntryType.linked
+            : metadata?.audioPath != null
+                ? JournalEntryType.voice
+                : JournalEntryType.text);
+
+    // Check if this is a pending transcription
+    final isPending = metadata?.transcriptionStatus == TranscriptionStatus.pending ||
+        metadata?.transcriptionStatus == TranscriptionStatus.transcribing;
+
+    return JournalEntry(
+      id: id,
+      title: title,
+      content: content,
+      type: type,
+      createdAt: DateTime.now(),
+      linkedFilePath: linkedFile,
+      audioPath: metadata?.audioPath,
+      durationSeconds: metadata?.durationSeconds ?? 0,
+      isPlainMarkdown: isPlainMarkdown,
+      isPendingTranscription: isPending,
+    );
   }
 
   String? _extractWikilink(String content) {
@@ -816,10 +1056,14 @@ class JournalService {
     buffer.writeln('---');
     buffer.writeln('date: ${journal.dateString}');
 
-    if (journal.assets.isNotEmpty) {
-      buffer.writeln('assets:');
-      for (final entry in journal.assets.entries) {
-        buffer.writeln('  ${entry.key}: ${entry.value}');
+    if (journal.entryMetadata.isNotEmpty) {
+      buffer.writeln('entries:');
+      for (final entry in journal.entryMetadata.entries) {
+        buffer.writeln('  ${entry.key}:');
+        final yaml = entry.value.toYaml();
+        for (final field in yaml.entries) {
+          buffer.writeln('    ${field.key}: ${field.value}');
+        }
       }
     }
 

@@ -55,6 +55,10 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
   Timer? _draftSaveTimer;
   static const _draftKeyPrefix = 'journal_draft_';
 
+  // Local journal cache to avoid loading flash on updates
+  JournalDay? _cachedJournal;
+  DateTime? _cachedJournalDate;
+
   @override
   void initState() {
     super.initState();
@@ -134,11 +138,16 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
 
   void _scrollToBottom() {
     if (_scrollController.hasClients) {
-      _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut,
-      );
+      // Use a small delay to ensure layout is complete before scrolling
+      Future.delayed(const Duration(milliseconds: 100), () {
+        if (_scrollController.hasClients) {
+          _scrollController.animateTo(
+            _scrollController.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+          );
+        }
+      });
     }
   }
 
@@ -156,6 +165,21 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
         selectedDate.month == now.month &&
         selectedDate.day == now.day;
 
+    // Clear cache if date changed
+    if (_cachedJournalDate != null &&
+        (_cachedJournalDate!.year != selectedDate.year ||
+            _cachedJournalDate!.month != selectedDate.month ||
+            _cachedJournalDate!.day != selectedDate.day)) {
+      _cachedJournal = null;
+      _cachedJournalDate = null;
+    }
+
+    // Update cache when data is available
+    journalAsync.whenData((journal) {
+      _cachedJournal = journal;
+      _cachedJournalDate = selectedDate;
+    });
+
     return Scaffold(
       backgroundColor: isDark ? BrandColors.nightSurface : BrandColors.cream,
       body: SafeArea(
@@ -164,13 +188,17 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
             // Header
             _buildHeader(context, selectedDate, isToday, journalAsync),
 
-            // Journal entries
+            // Journal entries - use cached data during loading to avoid flash
             Expanded(
               child: journalAsync.when(
                 data: (journal) => _buildJournalContent(context, journal),
-                loading: () => const Center(
-                  child: CircularProgressIndicator(),
-                ),
+                loading: () {
+                  // Use cached journal if available to avoid loading flash
+                  if (_cachedJournal != null) {
+                    return _buildJournalContent(context, _cachedJournal!);
+                  }
+                  return const Center(child: CircularProgressIndicator());
+                },
                 error: (error, stack) => _buildErrorState(context, error),
               ),
             ),
@@ -207,14 +235,17 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
 
     try {
       final service = await ref.read(journalServiceFutureProvider.future);
-      await service.addTextEntry(content: text);
+      final result = await service.addTextEntry(content: text);
 
-      debugPrint('[JournalScreen] Entry added, refreshing...');
+      debugPrint('[JournalScreen] Entry added, updating cache...');
 
-      // Set flag to scroll after data loads
-      _shouldScrollToBottom = true;
+      // Update cache immediately for instant UI feedback
+      setState(() {
+        _cachedJournal = result.journal;
+        _shouldScrollToBottom = true;
+      });
 
-      // Refresh to show new entry
+      // Also refresh provider in background (won't cause loading flash due to cache)
       ref.invalidate(selectedJournalProvider);
       ref.read(journalRefreshTriggerProvider.notifier).state++;
     } catch (e, st) {
@@ -246,12 +277,15 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
         debugPrint('[JournalScreen] Entry ${result.entry.id} pending transcription');
       }
 
-      debugPrint('[JournalScreen] Voice entry added, refreshing...');
+      debugPrint('[JournalScreen] Voice entry added, updating cache...');
 
-      // Set flag to scroll after data loads
-      _shouldScrollToBottom = true;
+      // Update cache immediately for instant UI feedback
+      setState(() {
+        _cachedJournal = result.journal;
+        _shouldScrollToBottom = true;
+      });
 
-      // Refresh to show new entry
+      // Also refresh provider in background (won't cause loading flash due to cache)
       ref.invalidate(selectedJournalProvider);
       ref.read(journalRefreshTriggerProvider.notifier).state++;
     } catch (e, st) {
@@ -275,20 +309,29 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
       final service = await ref.read(journalServiceFutureProvider.future);
       final selectedDate = ref.read(selectedJournalDateProvider);
 
-      // Use surgical update - directly update the block in the file
-      // Create a minimal entry just for the update
+      // Find the existing entry to preserve its metadata
+      final existingEntry = _cachedJournal?.getEntry(entryId);
       final entry = JournalEntry(
         id: entryId,
-        title: _formatTime(DateTime.now()),
+        title: existingEntry?.title ?? _formatTime(DateTime.now()),
         content: transcript,
         type: JournalEntryType.voice,
-        createdAt: DateTime.now(),
+        createdAt: existingEntry?.createdAt ?? DateTime.now(),
+        audioPath: existingEntry?.audioPath,
+        durationSeconds: existingEntry?.durationSeconds,
       );
 
       await service.updateEntry(selectedDate, entry);
       debugPrint('[JournalScreen] Transcription update complete');
 
-      // Single refresh to show updated entry
+      // Update cache immediately to avoid loading flash
+      if (_cachedJournal != null) {
+        setState(() {
+          _cachedJournal = _cachedJournal!.updateEntry(entry);
+        });
+      }
+
+      // Also refresh provider in background
       ref.invalidate(selectedJournalProvider);
     } catch (e, st) {
       debugPrint('[JournalScreen] Error updating transcription: $e');
@@ -817,7 +860,14 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
         final updatedEntry = entry.copyWith(content: transcript);
         await service.updateEntry(selectedDate, updatedEntry);
 
-        // Refresh the journal
+        // Update cache immediately to show the transcription
+        if (mounted && _cachedJournal != null) {
+          setState(() {
+            _cachedJournal = _cachedJournal!.updateEntry(updatedEntry);
+          });
+        }
+
+        // Refresh the journal provider in background
         ref.invalidate(selectedJournalProvider);
 
         if (mounted) {

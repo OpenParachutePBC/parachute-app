@@ -10,7 +10,17 @@ import 'package:archive/archive.dart';
 ///
 /// Uses Parakeet v3 INT8 ONNX models for fast, offline transcription.
 /// Supports 25 European languages with automatic language detection.
+///
+/// This is a singleton to ensure pre-initialization at app startup benefits
+/// all transcription requests.
 class SherpaOnnxService {
+  // Singleton instance
+  static final SherpaOnnxService _instance = SherpaOnnxService._internal();
+
+  factory SherpaOnnxService() => _instance;
+
+  SherpaOnnxService._internal();
+
   sherpa.OfflineRecognizer? _recognizer;
   bool _isInitialized = false;
   bool _isInitializing = false;
@@ -19,6 +29,47 @@ class SherpaOnnxService {
   bool get isInitialized => _isInitialized;
   bool get isSupported =>
       true; // sherpa-onnx supports all platforms (Android, iOS, macOS, etc.)
+
+  /// Check if models are already downloaded and ready for initialization
+  Future<bool> get hasModelsDownloaded async {
+    try {
+      final appDir = await getApplicationDocumentsDirectory();
+      final modelDir = path.join(appDir.path, 'models', 'parakeet-v3');
+      final encoderFile = File(path.join(modelDir, 'encoder.int8.onnx'));
+      final tokensFile = File(path.join(modelDir, 'tokens.txt'));
+
+      if (!await encoderFile.exists() || !await tokensFile.exists()) {
+        return false;
+      }
+
+      final encoderSize = await encoderFile.length();
+      final tokensSize = await tokensFile.length();
+
+      return encoderSize > 100 * 1024 * 1024 && tokensSize > 1000;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// Pre-initialize if models are already downloaded
+  /// This should be called at app startup to avoid UI freeze during first recording
+  Future<void> preInitializeIfReady() async {
+    if (_isInitialized || _isInitializing) return;
+
+    final hasModels = await hasModelsDownloaded;
+    if (!hasModels) {
+      debugPrint('[SherpaOnnxService] Models not downloaded, skipping pre-init');
+      return;
+    }
+
+    debugPrint('[SherpaOnnxService] Pre-initializing (models found)...');
+    try {
+      await initialize();
+      debugPrint('[SherpaOnnxService] Pre-initialization complete');
+    } catch (e) {
+      debugPrint('[SherpaOnnxService] Pre-initialization failed: $e');
+    }
+  }
 
   /// Initialize Parakeet v3 models
   ///

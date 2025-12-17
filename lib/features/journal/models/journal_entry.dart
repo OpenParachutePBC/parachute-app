@@ -46,6 +46,10 @@ class JournalEntry {
   /// Used to preserve formatting when re-serializing imported content.
   final bool isPlainMarkdown;
 
+  /// Whether this entry has a pending transcription
+  /// Set explicitly when creating entry with pending transcription status.
+  final bool _isPendingTranscription;
+
   const JournalEntry({
     required this.id,
     required this.title,
@@ -56,7 +60,8 @@ class JournalEntry {
     this.linkedFilePath,
     this.durationSeconds,
     this.isPlainMarkdown = false,
-  });
+    bool isPendingTranscription = false,
+  }) : _isPendingTranscription = isPendingTranscription;
 
   /// Whether this entry has an associated audio file
   bool get hasAudio => audioPath != null;
@@ -64,9 +69,11 @@ class JournalEntry {
   /// Whether this entry links to a separate file
   bool get isLinked => linkedFilePath != null;
 
-  /// Whether this entry has a pending transcription (voice entry with empty content)
+  /// Whether this entry has a pending transcription
+  /// Uses explicit flag if set, otherwise computes from content
   bool get isPendingTranscription =>
-      type == JournalEntryType.voice && hasAudio && content.isEmpty;
+      _isPendingTranscription ||
+      (type == JournalEntryType.voice && hasAudio && (content.isEmpty || content == '*(Transcribing...)*'));
 
   /// Format the H1 line for this entry
   String get h1Line => '# para:$id $title';
@@ -139,6 +146,7 @@ class JournalEntry {
     String? linkedFilePath,
     int? durationSeconds,
     bool? isPlainMarkdown,
+    bool? isPendingTranscription,
   }) {
     return JournalEntry(
       id: id ?? this.id,
@@ -150,6 +158,7 @@ class JournalEntry {
       linkedFilePath: linkedFilePath ?? this.linkedFilePath,
       durationSeconds: durationSeconds ?? this.durationSeconds,
       isPlainMarkdown: isPlainMarkdown ?? this.isPlainMarkdown,
+      isPendingTranscription: isPendingTranscription ?? _isPendingTranscription,
     );
   }
 

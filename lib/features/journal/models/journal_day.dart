@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'journal_entry.dart';
+import 'entry_metadata.dart';
 
 /// A full day's journal containing multiple entries.
 ///
@@ -13,8 +14,8 @@ class JournalDay {
   /// All entries for this day, in chronological order
   final List<JournalEntry> entries;
 
-  /// Asset mappings from frontmatter (para ID -> relative path)
-  final Map<String, String> assets;
+  /// Rich metadata for entries from frontmatter (para ID -> metadata)
+  final Map<String, EntryMetadata> entryMetadata;
 
   /// Path to the journal file (relative to vault)
   final String filePath;
@@ -22,9 +23,21 @@ class JournalDay {
   const JournalDay({
     required this.date,
     required this.entries,
-    required this.assets,
+    required this.entryMetadata,
     required this.filePath,
   });
+
+  /// Legacy accessor for backward compatibility
+  /// Returns a map of para ID -> audio path (for entries that have audio)
+  Map<String, String> get assets {
+    final result = <String, String>{};
+    for (final entry in entryMetadata.entries) {
+      if (entry.value.audioPath != null) {
+        result[entry.key] = entry.value.audioPath!;
+      }
+    }
+    return result;
+  }
 
   /// Create an empty journal for a date
   factory JournalDay.empty(DateTime date) {
@@ -32,7 +45,7 @@ class JournalDay {
     return JournalDay(
       date: DateTime(date.year, date.month, date.day),
       entries: const [],
-      assets: const {},
+      entryMetadata: const {},
       filePath: 'journals/$dateStr.md',
     );
   }
@@ -89,30 +102,35 @@ class JournalDay {
       entries.any((e) => e.isPendingTranscription);
 
   /// Create a copy with a new entry added
-  JournalDay addEntry(JournalEntry entry, {String? audioPath}) {
+  JournalDay addEntry(JournalEntry entry, {EntryMetadata? metadata}) {
     final newEntries = [...entries, entry];
-    final newAssets = Map<String, String>.from(assets);
+    final newMetadata = Map<String, EntryMetadata>.from(entryMetadata);
 
-    if (audioPath != null) {
-      newAssets[entry.id] = audioPath;
+    if (metadata != null) {
+      newMetadata[entry.id] = metadata;
     }
 
     return JournalDay(
       date: date,
       entries: newEntries,
-      assets: newAssets,
+      entryMetadata: newMetadata,
       filePath: filePath,
     );
   }
 
   /// Create a copy with an entry updated
-  JournalDay updateEntry(JournalEntry entry) {
+  JournalDay updateEntry(JournalEntry entry, {EntryMetadata? metadata}) {
     final newEntries = entries.map((e) => e.id == entry.id ? entry : e).toList();
+    final newMetadata = Map<String, EntryMetadata>.from(entryMetadata);
+
+    if (metadata != null) {
+      newMetadata[entry.id] = metadata;
+    }
 
     return JournalDay(
       date: date,
       entries: newEntries,
-      assets: assets,
+      entryMetadata: newMetadata,
       filePath: filePath,
     );
   }
@@ -120,12 +138,12 @@ class JournalDay {
   /// Create a copy with an entry removed
   JournalDay removeEntry(String id) {
     final newEntries = entries.where((e) => e.id != id).toList();
-    final newAssets = Map<String, String>.from(assets)..remove(id);
+    final newMetadata = Map<String, EntryMetadata>.from(entryMetadata)..remove(id);
 
     return JournalDay(
       date: date,
       entries: newEntries,
-      assets: newAssets,
+      entryMetadata: newMetadata,
       filePath: filePath,
     );
   }
@@ -134,13 +152,13 @@ class JournalDay {
   JournalDay copyWith({
     DateTime? date,
     List<JournalEntry>? entries,
-    Map<String, String>? assets,
+    Map<String, EntryMetadata>? entryMetadata,
     String? filePath,
   }) {
     return JournalDay(
       date: date ?? this.date,
       entries: entries ?? this.entries,
-      assets: assets ?? this.assets,
+      entryMetadata: entryMetadata ?? this.entryMetadata,
       filePath: filePath ?? this.filePath,
     );
   }

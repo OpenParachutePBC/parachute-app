@@ -17,6 +17,7 @@ import 'features/onboarding/screens/onboarding_flow.dart';
 import 'features/chat/screens/agent_hub_screen.dart';
 import 'features/files/screens/files_screen.dart';
 import 'features/journal/screens/journal_screen.dart';
+import 'services/sherpa_onnx_service.dart';
 
 void main() async {
   // Ensure Flutter bindings are initialized
@@ -151,6 +152,17 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
     super.initState();
     _checkWelcomeScreen();
     _setupTranscriptionCallbacks();
+    _preInitializeTranscription();
+  }
+
+  /// Pre-initialize transcription model after first frame to avoid UI freeze during recording
+  void _preInitializeTranscription() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Pre-initialize Sherpa-ONNX if models are already downloaded
+      // This runs on the main thread but after the UI has rendered,
+      // so the user sees the Journal screen before any potential model loading
+      SherpaOnnxService().preInitializeIfReady();
+    });
   }
 
   /// Set up global callbacks for lazy transcription initialization
