@@ -64,6 +64,10 @@ class JournalEntry {
   /// Whether this entry links to a separate file
   bool get isLinked => linkedFilePath != null;
 
+  /// Whether this entry has a pending transcription (voice entry with empty content)
+  bool get isPendingTranscription =>
+      type == JournalEntryType.voice && hasAudio && content.isEmpty;
+
   /// Format the H1 line for this entry
   String get h1Line => '# para:$id $title';
 

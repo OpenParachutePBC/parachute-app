@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/theme/design_tokens.dart';
 import '../../../core/services/file_system_service.dart';
+import '../../../core/providers/file_system_provider.dart';
 import '../../recorder/providers/service_providers.dart';
 import '../../recorder/widgets/playback_controls.dart';
 import '../models/journal_day.dart';
@@ -10,6 +13,7 @@ import '../models/journal_entry.dart';
 import '../providers/journal_providers.dart';
 import '../widgets/journal_entry_row.dart';
 import '../widgets/journal_input_bar.dart';
+import '../../settings/screens/settings_screen.dart';
 
 /// Main journal screen showing today's journal entries
 ///
@@ -39,10 +43,84 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
   // Flag to scroll to bottom after new entry is added
   bool _shouldScrollToBottom = false;
 
+  // Track entries that are actively transcribing
+  final Set<String> _transcribingEntryIds = {};
+
+  // Draft caching
+  Timer? _draftSaveTimer;
+  static const _draftKeyPrefix = 'journal_draft_';
+
+  @override
+  void initState() {
+    super.initState();
+    // Check for any pending drafts on startup
+    _checkForPendingDrafts();
+  }
+
   @override
   void dispose() {
+    _draftSaveTimer?.cancel();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  /// Check if there are any pending drafts and offer to restore them
+  Future<void> _checkForPendingDrafts() async {
+    final prefs = await SharedPreferences.getInstance();
+    final keys = prefs.getKeys().where((k) => k.startsWith(_draftKeyPrefix));
+    if (keys.isNotEmpty) {
+      debugPrint('[JournalScreen] Found ${keys.length} pending draft(s)');
+    }
+  }
+
+  /// Save draft for an entry (debounced)
+  void _saveDraftDebounced(String entryId, String? content, String? title) {
+    _draftSaveTimer?.cancel();
+    _draftSaveTimer = Timer(const Duration(milliseconds: 500), () {
+      _saveDraft(entryId, content, title);
+    });
+  }
+
+  /// Save draft immediately
+  Future<void> _saveDraft(String entryId, String? content, String? title) async {
+    if (content == null && title == null) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    final key = '$_draftKeyPrefix$entryId';
+
+    // Store as simple format: title|||content
+    final draftValue = '${title ?? ''}|||${content ?? ''}';
+    await prefs.setString(key, draftValue);
+    debugPrint('[JournalScreen] Draft saved for entry $entryId');
+  }
+
+  /// Load draft for an entry
+  Future<({String? title, String? content})?> _loadDraft(String entryId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = '$_draftKeyPrefix$entryId';
+    final draftValue = prefs.getString(key);
+
+    if (draftValue == null) return null;
+
+    final parts = draftValue.split('|||');
+    if (parts.length != 2) return null;
+
+    final title = parts[0].isEmpty ? null : parts[0];
+    final content = parts[1].isEmpty ? null : parts[1];
+
+    // Only return if there's actual draft content
+    if (title == null && content == null) return null;
+
+    debugPrint('[JournalScreen] Draft loaded for entry $entryId');
+    return (title: title, content: content);
+  }
+
+  /// Clear draft for an entry
+  Future<void> _clearDraft(String entryId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = '$_draftKeyPrefix$entryId';
+    await prefs.remove(key);
+    debugPrint('[JournalScreen] Draft cleared for entry $entryId');
   }
 
   Future<void> _refreshJournal() async {
@@ -373,6 +451,23 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
                         selectedDate.add(const Duration(days: 1));
                   },
           ),
+
+          // Settings button
+          IconButton(
+            icon: Icon(
+              Icons.settings_outlined,
+              color: isDark ? BrandColors.driftwood : BrandColors.charcoal,
+            ),
+            tooltip: 'Settings',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const SettingsScreen(),
+                ),
+              );
+            },
+          ),
         ],
       ),
     );
@@ -449,9 +544,11 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
                   entry: entry,
                   audioPath: journal.getAudioPath(entry.id),
                   isEditing: isEditing,
+                  isTranscribing: _transcribingEntryIds.contains(entry.id),
                   onTap: () => _handleEntryTap(entry),
                   onLongPress: () => _showEntryActions(context, journal, entry),
                   onPlayAudio: _playAudio,
+                  onTranscribe: () => _handleTranscribe(entry, journal),
                   onContentChanged: (content) => _handleContentChanged(entry.id, content),
                   onTitleChanged: (title) => _handleTitleChanged(entry.id, title),
                   onEditingComplete: _saveCurrentEdit,
@@ -464,7 +561,7 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
     );
   }
 
-  void _handleEntryTap(JournalEntry entry) {
+  void _handleEntryTap(JournalEntry entry) async {
     // Don't edit preamble/imported markdown
     if (entry.id == 'preamble' || entry.id.startsWith('plain_')) {
       _showEntryDetail(context, entry);
@@ -481,16 +578,53 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
       _saveCurrentEdit();
     }
 
+    // Check for existing draft
+    final draft = await _loadDraft(entry.id);
+    final hasUnsavedDraft = draft != null &&
+        ((draft.content != null && draft.content != entry.content) ||
+         (draft.title != null && draft.title != entry.title));
+
     // Start editing this entry
     setState(() {
       _editingEntryId = entry.id;
-      _editingEntryContent = entry.content;
-      _editingEntryTitle = entry.title;
+      // Use draft content if available, otherwise use entry content
+      if (hasUnsavedDraft) {
+        _editingEntryContent = draft.content ?? entry.content;
+        _editingEntryTitle = draft.title ?? entry.title;
+      } else {
+        _editingEntryContent = entry.content;
+        _editingEntryTitle = entry.title;
+      }
     });
+
+    // Notify user if draft was restored
+    if (hasUnsavedDraft && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.restore, color: Colors.white, size: 18),
+              const SizedBox(width: 8),
+              const Text('Draft restored'),
+            ],
+          ),
+          backgroundColor: BrandColors.forest,
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+        ),
+      );
+    }
   }
 
   Future<void> _saveCurrentEdit() async {
     if (_editingEntryId == null) return;
+
+    // Cancel any pending draft save
+    _draftSaveTimer?.cancel();
 
     final entryId = _editingEntryId!;
     final newContent = _editingEntryContent;
@@ -504,7 +638,11 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
     });
 
     // Only save if we have content changes
-    if (newContent == null && newTitle == null) return;
+    if (newContent == null && newTitle == null) {
+      // Clear draft even if no changes to save
+      await _clearDraft(entryId);
+      return;
+    }
 
     try {
       final service = await ref.read(journalServiceFutureProvider.future);
@@ -526,22 +664,165 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
       await service.updateEntry(selectedDate, updatedEntry);
       debugPrint('[JournalScreen] Saved edit for entry $entryId');
 
+      // Clear the draft after successful save
+      await _clearDraft(entryId);
+
+      // Show saved indicator
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.white, size: 18),
+                const SizedBox(width: 8),
+                const Text('Saved'),
+              ],
+            ),
+            backgroundColor: BrandColors.forest,
+            duration: const Duration(seconds: 1),
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        );
+      }
+
       // Refresh
       ref.invalidate(selectedJournalProvider);
     } catch (e) {
       debugPrint('[JournalScreen] Error saving edit: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to save: $e'),
+            backgroundColor: BrandColors.error,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
     }
   }
 
   void _handleContentChanged(String entryId, String newContent) {
     if (_editingEntryId == entryId) {
       _editingEntryContent = newContent;
+      // Save draft in background (debounced)
+      _saveDraftDebounced(entryId, newContent, _editingEntryTitle);
     }
   }
 
   void _handleTitleChanged(String entryId, String newTitle) {
     if (_editingEntryId == entryId) {
       _editingEntryTitle = newTitle;
+      // Save draft in background (debounced)
+      _saveDraftDebounced(entryId, _editingEntryContent, newTitle);
+    }
+  }
+
+  /// Handle transcription request for an entry
+  Future<void> _handleTranscribe(JournalEntry entry, JournalDay journal) async {
+    if (_transcribingEntryIds.contains(entry.id)) return;
+
+    // Get the audio path from assets
+    final audioPath = journal.getAudioPath(entry.id);
+    if (audioPath == null) {
+      debugPrint('[JournalScreen] No audio path found for entry ${entry.id}');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Audio file not found'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+      return;
+    }
+
+    // Mark as transcribing
+    setState(() {
+      _transcribingEntryIds.add(entry.id);
+    });
+
+    debugPrint('[JournalScreen] Starting transcription for entry ${entry.id}');
+
+    try {
+      // Get the full audio path
+      final fileSystemService = ref.read(fileSystemServiceProvider);
+      final vaultPath = await fileSystemService.getRootPath();
+      final fullAudioPath = '$vaultPath/$audioPath';
+
+      // Check if file exists
+      final audioFile = File(fullAudioPath);
+      if (!await audioFile.exists()) {
+        throw Exception('Audio file not found at $fullAudioPath');
+      }
+
+      // Transcribe
+      final postProcessingService = ref.read(recordingPostProcessingProvider);
+      final result = await postProcessingService.process(audioPath: fullAudioPath);
+      final transcript = result.transcript;
+
+      debugPrint('[JournalScreen] Transcription complete: ${transcript.length} chars');
+
+      if (transcript.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No speech detected in recording'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      } else {
+        // Update the entry with the transcript
+        final service = await ref.read(journalServiceFutureProvider.future);
+        final selectedDate = ref.read(selectedJournalDateProvider);
+        final updatedEntry = entry.copyWith(content: transcript);
+        await service.updateEntry(selectedDate, updatedEntry);
+
+        // Refresh the journal
+        ref.invalidate(selectedJournalProvider);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  Icon(Icons.check_circle, color: Colors.white, size: 18),
+                  const SizedBox(width: 8),
+                  const Text('Transcription complete'),
+                ],
+              ),
+              backgroundColor: BrandColors.forest,
+              duration: const Duration(seconds: 2),
+              behavior: SnackBarBehavior.floating,
+              margin: const EdgeInsets.all(16),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('[JournalScreen] Transcription failed: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Transcription failed: $e'),
+            backgroundColor: BrandColors.error,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _transcribingEntryIds.remove(entry.id);
+        });
+      }
     }
   }
 

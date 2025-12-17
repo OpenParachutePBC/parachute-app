@@ -17,6 +17,8 @@ class JournalEntryRow extends StatefulWidget {
   final VoidCallback? onEditingComplete;
   final VoidCallback? onDelete;
   final Future<void> Function(String audioPath)? onPlayAudio;
+  final Future<void> Function()? onTranscribe;
+  final bool isTranscribing;
 
   const JournalEntryRow({
     super.key,
@@ -30,6 +32,8 @@ class JournalEntryRow extends StatefulWidget {
     this.onEditingComplete,
     this.onDelete,
     this.onPlayAudio,
+    this.onTranscribe,
+    this.isTranscribing = false,
   });
 
   @override
@@ -94,8 +98,24 @@ class _JournalEntryRowState extends State<JournalEntryRow> {
       onTap: widget.onTap,
       onLongPress: widget.onLongPress,
       behavior: HitTestBehavior.opaque,
-      child: Container(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        margin: widget.isEditing
+            ? const EdgeInsets.symmetric(horizontal: 8, vertical: 4)
+            : EdgeInsets.zero,
+        decoration: widget.isEditing
+            ? BoxDecoration(
+                color: isDark
+                    ? BrandColors.forestDeep.withValues(alpha: 0.2)
+                    : BrandColors.forestMist.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: BrandColors.forest.withValues(alpha: 0.3),
+                  width: 1.5,
+                ),
+              )
+            : null,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -113,8 +133,44 @@ class _JournalEntryRowState extends State<JournalEntryRow> {
             // Linked file indicator
             if (entry.isLinked && entry.linkedFilePath != null)
               _buildLinkedIndicator(context, isDark),
+
+            // Done button when editing
+            if (widget.isEditing) _buildEditActions(context, isDark),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildEditActions(BuildContext context, bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          TextButton.icon(
+            onPressed: widget.onEditingComplete,
+            icon: Icon(
+              Icons.check,
+              size: 18,
+              color: BrandColors.forest,
+            ),
+            label: Text(
+              'Done',
+              style: TextStyle(
+                color: BrandColors.forest,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            style: TextButton.styleFrom(
+              backgroundColor: BrandColors.forest.withValues(alpha: 0.1),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -261,28 +317,62 @@ class _JournalEntryRowState extends State<JournalEntryRow> {
       );
     }
 
-    // Show "Transcribing..." for voice entries with empty content
-    if (widget.entry.content.isEmpty && widget.entry.type == JournalEntryType.voice) {
-      return Row(
-        children: [
-          SizedBox(
-            width: 14,
-            height: 14,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              valueColor: AlwaysStoppedAnimation<Color>(BrandColors.turquoise),
+    // Show transcription UI for voice entries with empty content
+    if (widget.entry.isPendingTranscription) {
+      if (widget.isTranscribing) {
+        // Actively transcribing
+        return Row(
+          children: [
+            SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(BrandColors.turquoise),
+              ),
             ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            'Transcribing...',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: BrandColors.driftwood,
-              fontStyle: FontStyle.italic,
+            const SizedBox(width: 8),
+            Text(
+              'Transcribing...',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: BrandColors.turquoise,
+                fontStyle: FontStyle.italic,
+              ),
             ),
-          ),
-        ],
-      );
+          ],
+        );
+      } else {
+        // Pending - show transcribe button
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Audio recorded but not transcribed',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: BrandColors.driftwood,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+            const SizedBox(height: 8),
+            if (widget.onTranscribe != null)
+              OutlinedButton.icon(
+                onPressed: widget.onTranscribe,
+                icon: Icon(Icons.transcribe, size: 18, color: BrandColors.forest),
+                label: Text(
+                  'Transcribe',
+                  style: TextStyle(color: BrandColors.forest),
+                ),
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: BrandColors.forest),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                ),
+              ),
+          ],
+        );
+      }
     }
 
     return Text(

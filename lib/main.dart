@@ -11,7 +11,6 @@ import 'core/theme/app_theme.dart';
 import 'core/theme/design_tokens.dart';
 import 'core/services/logging_service.dart';
 import 'core/providers/feature_flags_provider.dart';
-import 'features/recorder/screens/home_screen.dart';
 import 'features/recorder/providers/model_download_provider.dart';
 import 'features/recorder/services/transcription_service_adapter.dart';
 import 'features/onboarding/screens/onboarding_flow.dart';
@@ -221,9 +220,9 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
     final isDark = theme.brightness == Brightness.dark;
 
     // Build the list of screens and destinations based on enabled features
+    // Journal is the main hub - Record tab removed in favor of inline recording
     final screens = <Widget>[
       const JournalScreen(),
-      const HomeScreen(),
     ];
 
     final destinations = <NavigationDestination>[
@@ -237,17 +236,6 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
           color: isDark ? BrandColors.nightForest : BrandColors.forest,
         ),
         label: 'Journal',
-      ),
-      NavigationDestination(
-        icon: Icon(
-          Icons.mic_none_outlined,
-          color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
-        ),
-        selectedIcon: Icon(
-          Icons.mic,
-          color: isDark ? BrandColors.nightForest : BrandColors.forest,
-        ),
-        label: 'Record',
       ),
     ];
 
@@ -285,23 +273,31 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
       ),
     );
 
+    // Get keyboard height for padding adjustment
+    final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
+
     return Scaffold(
+      resizeToAvoidBottomInset: true,
       body: IndexedStack(
         index: _currentIndex,
         children: screens,
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _currentIndex,
-        onDestinationSelected: (index) {
-          setState(() {
-            _currentIndex = index;
-          });
-        },
-        backgroundColor: isDark ? BrandColors.nightSurface : BrandColors.softWhite,
-        indicatorColor: isDark
-            ? BrandColors.nightForest.withValues(alpha: 0.2)
-            : BrandColors.forestMist,
-        destinations: destinations,
+      bottomNavigationBar: Padding(
+        padding: EdgeInsets.only(bottom: keyboardHeight),
+        child: NavigationBar(
+          selectedIndex: _currentIndex,
+          onDestinationSelected: (index) {
+            setState(() {
+              _currentIndex = index;
+            });
+          },
+          backgroundColor:
+              isDark ? BrandColors.nightSurface : BrandColors.softWhite,
+          indicatorColor: isDark
+              ? BrandColors.nightForest.withValues(alpha: 0.2)
+              : BrandColors.forestMist,
+          destinations: destinations,
+        ),
       ),
     );
   }

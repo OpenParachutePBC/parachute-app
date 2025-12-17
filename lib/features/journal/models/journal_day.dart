@@ -80,6 +80,14 @@ class JournalDay {
   /// Get audio path for an entry
   String? getAudioPath(String entryId) => assets[entryId];
 
+  /// Get all entries with pending transcriptions
+  List<JournalEntry> get pendingTranscriptions =>
+      entries.where((e) => e.isPendingTranscription).toList();
+
+  /// Whether this journal has any pending transcriptions
+  bool get hasPendingTranscriptions =>
+      entries.any((e) => e.isPendingTranscription);
+
   /// Create a copy with a new entry added
   JournalDay addEntry(JournalEntry entry, {String? audioPath}) {
     final newEntries = [...entries, entry];

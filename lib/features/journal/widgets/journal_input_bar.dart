@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/design_tokens.dart';
 import '../../recorder/providers/service_providers.dart';
+import '../../recorder/screens/simple_recording_screen.dart';
+import '../../settings/screens/settings_screen.dart';
 
 /// Input bar for adding entries to the journal
 ///
@@ -31,6 +33,7 @@ class _JournalInputBarState extends ConsumerState<JournalInputBar> {
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focusNode = FocusNode();
   bool _isRecording = false;
+  bool _isPaused = false;
   bool _isSubmitting = false;
   bool _isProcessing = false;
   Duration _recordingDuration = Duration.zero;
@@ -90,7 +93,7 @@ class _JournalInputBarState extends ConsumerState<JournalInputBar> {
 
       // Start duration timer
       _durationTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-        if (mounted && _isRecording) {
+        if (mounted && _isRecording && !_isPaused) {
           setState(() {
             _recordingDuration = _recordingDuration + const Duration(seconds: 1);
           });
@@ -111,6 +114,54 @@ class _JournalInputBarState extends ConsumerState<JournalInputBar> {
     }
   }
 
+  Future<void> _pauseRecording() async {
+    if (!_isRecording || _isPaused) return;
+
+    final audioService = ref.read(audioServiceProvider);
+    try {
+      await audioService.pauseRecording();
+      setState(() {
+        _isPaused = true;
+      });
+      debugPrint('[JournalInputBar] Recording paused');
+    } catch (e) {
+      debugPrint('[JournalInputBar] Failed to pause recording: $e');
+    }
+  }
+
+  Future<void> _resumeRecording() async {
+    if (!_isRecording || !_isPaused) return;
+
+    final audioService = ref.read(audioServiceProvider);
+    try {
+      await audioService.resumeRecording();
+      setState(() {
+        _isPaused = false;
+      });
+      debugPrint('[JournalInputBar] Recording resumed');
+    } catch (e) {
+      debugPrint('[JournalInputBar] Failed to resume recording: $e');
+    }
+  }
+
+  Future<void> _discardRecording() async {
+    if (!_isRecording) return;
+
+    _durationTimer?.cancel();
+    _durationTimer = null;
+
+    final audioService = ref.read(audioServiceProvider);
+    await audioService.stopRecording();
+
+    setState(() {
+      _isRecording = false;
+      _isPaused = false;
+      _recordingDuration = Duration.zero;
+    });
+
+    debugPrint('[JournalInputBar] Recording discarded');
+  }
+
   Future<void> _stopRecording() async {
     if (!_isRecording) return;
 
@@ -122,6 +173,7 @@ class _JournalInputBarState extends ConsumerState<JournalInputBar> {
 
     setState(() {
       _isRecording = false;
+      _isPaused = false;
       _isProcessing = true;
     });
 
@@ -246,74 +298,205 @@ class _JournalInputBarState extends ConsumerState<JournalInputBar> {
       ),
       child: SafeArea(
         top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Recording indicator
-            if (_isRecording || _isProcessing) ...[
-              _buildRecordingIndicator(isDark),
-              const SizedBox(height: 8),
-            ],
+        child: _isRecording
+            ? _buildRecordingMode(isDark, theme)
+            : _buildInputMode(isDark, theme),
+      ),
+    );
+  }
 
-            // Input row
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                // Voice record button
-                _buildVoiceButton(isDark),
-                const SizedBox(width: 8),
-
-                // Text input field
-                Expanded(
-                  child: Container(
-                    constraints: const BoxConstraints(maxHeight: 120),
-                    decoration: BoxDecoration(
-                      color: isDark ? BrandColors.nightSurfaceElevated : BrandColors.cream,
-                      borderRadius: BorderRadius.circular(24),
-                      border: Border.all(
-                        color: _focusNode.hasFocus
-                            ? BrandColors.forest
-                            : (isDark ? BrandColors.charcoal : BrandColors.stone),
-                        width: _focusNode.hasFocus ? 1.5 : 1,
+  /// Build the recording mode UI with timer and controls
+  Widget _buildRecordingMode(bool isDark, ThemeData theme) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Recording status and timer
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          decoration: BoxDecoration(
+            color: _isPaused
+                ? BrandColors.warning.withValues(alpha: 0.1)
+                : BrandColors.error.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            children: [
+              // Status indicator
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  if (_isPaused)
+                    Icon(Icons.pause, color: BrandColors.warning, size: 20)
+                  else
+                    Container(
+                      width: 12,
+                      height: 12,
+                      decoration: BoxDecoration(
+                        color: BrandColors.error,
+                        shape: BoxShape.circle,
                       ),
                     ),
-                    child: TextField(
-                      controller: _controller,
-                      focusNode: _focusNode,
-                      maxLines: null,
-                      enabled: !_isRecording && !_isProcessing,
-                      textCapitalization: TextCapitalization.sentences,
-                      textInputAction: TextInputAction.newline,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: isDark ? BrandColors.softWhite : BrandColors.ink,
-                      ),
-                      decoration: InputDecoration(
-                        hintText: _isRecording
-                            ? 'Recording...'
-                            : (_isProcessing ? 'Transcribing...' : 'Capture a thought...'),
-                        hintStyle: TextStyle(
-                          color: BrandColors.driftwood,
-                        ),
-                        border: InputBorder.none,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
-                        ),
-                      ),
-                      onChanged: (_) => setState(() {}),
-                      onSubmitted: (_) => _submitText(),
+                  const SizedBox(width: 8),
+                  Text(
+                    _isPaused ? 'Paused' : 'Recording',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: _isPaused ? BrandColors.warning : BrandColors.error,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              // Timer
+              Text(
+                _formatDuration(_recordingDuration),
+                style: TextStyle(
+                  fontSize: 40,
+                  fontWeight: FontWeight.w300,
+                  color: isDark ? BrandColors.softWhite : BrandColors.ink,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        // Control buttons
+        Row(
+          children: [
+            // Discard button
+            Expanded(
+              child: SizedBox(
+                height: 48,
+                child: OutlinedButton.icon(
+                  onPressed: _discardRecording,
+                  icon: Icon(Icons.close, size: 20, color: BrandColors.driftwood),
+                  label: Text(
+                    'Discard',
+                    style: TextStyle(color: BrandColors.driftwood),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: BrandColors.driftwood.withValues(alpha: 0.5)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(24),
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
+              ),
+            ),
+            const SizedBox(width: 8),
 
-                // Send button
-                _buildSendButton(isDark),
-              ],
+            // Pause/Resume button
+            SizedBox(
+              width: 48,
+              height: 48,
+              child: IconButton(
+                onPressed: _isPaused ? _resumeRecording : _pauseRecording,
+                style: IconButton.styleFrom(
+                  backgroundColor: _isPaused
+                      ? BrandColors.forest.withValues(alpha: 0.1)
+                      : BrandColors.warning.withValues(alpha: 0.1),
+                  shape: const CircleBorder(),
+                ),
+                icon: Icon(
+                  _isPaused ? Icons.play_arrow : Icons.pause,
+                  color: _isPaused ? BrandColors.forest : BrandColors.warning,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+
+            // Save button
+            Expanded(
+              child: SizedBox(
+                height: 48,
+                child: ElevatedButton.icon(
+                  onPressed: _stopRecording,
+                  icon: const Icon(Icons.check, size: 20),
+                  label: const Text('Save'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: BrandColors.forest,
+                    foregroundColor: BrandColors.softWhite,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(24),
+                    ),
+                  ),
+                ),
+              ),
             ),
           ],
         ),
-      ),
+      ],
+    );
+  }
+
+  /// Build the normal input mode UI
+  Widget _buildInputMode(bool isDark, ThemeData theme) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Processing indicator
+        if (_isProcessing) ...[
+          _buildRecordingIndicator(isDark),
+          const SizedBox(height: 8),
+        ],
+
+        // Input row
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            // Voice record button
+            _buildVoiceButton(isDark),
+            const SizedBox(width: 8),
+
+            // Text input field
+            Expanded(
+              child: Container(
+                constraints: const BoxConstraints(maxHeight: 120),
+                decoration: BoxDecoration(
+                  color: isDark ? BrandColors.nightSurfaceElevated : BrandColors.cream,
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(
+                    color: _focusNode.hasFocus
+                        ? BrandColors.forest
+                        : (isDark ? BrandColors.charcoal : BrandColors.stone),
+                    width: _focusNode.hasFocus ? 1.5 : 1,
+                  ),
+                ),
+                child: TextField(
+                  controller: _controller,
+                  focusNode: _focusNode,
+                  maxLines: null,
+                  enabled: !_isProcessing,
+                  textCapitalization: TextCapitalization.sentences,
+                  textInputAction: TextInputAction.newline,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: isDark ? BrandColors.softWhite : BrandColors.ink,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: _isProcessing ? 'Transcribing...' : 'Capture a thought...',
+                    hintStyle: TextStyle(
+                      color: BrandColors.driftwood,
+                    ),
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                  ),
+                  onChanged: (_) => setState(() {}),
+                  onSubmitted: (_) => _submitText(),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+
+            // Send button
+            _buildSendButton(isDark),
+          ],
+        ),
+      ],
     );
   }
 
@@ -374,38 +557,120 @@ class _JournalInputBarState extends ConsumerState<JournalInputBar> {
     final isDisabled = _isProcessing;
     final isActive = _isRecording;
 
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      width: 44,
-      height: 44,
-      decoration: BoxDecoration(
-        color: isActive
-            ? BrandColors.error
-            : (isDisabled
-                ? (isDark ? BrandColors.charcoal : BrandColors.stone)
-                : (isDark ? BrandColors.nightSurfaceElevated : BrandColors.forestMist)),
-        shape: BoxShape.circle,
-      ),
-      child: IconButton(
-        onPressed: isDisabled ? null : _toggleRecording,
-        icon: _isProcessing
-            ? SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(
-                    isDark ? BrandColors.driftwood : BrandColors.charcoal,
+    return GestureDetector(
+      onLongPress: isDisabled || isActive ? null : _showRecordingOptions,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: isActive
+              ? BrandColors.error
+              : (isDisabled
+                  ? (isDark ? BrandColors.charcoal : BrandColors.stone)
+                  : (isDark ? BrandColors.nightSurfaceElevated : BrandColors.forestMist)),
+          shape: BoxShape.circle,
+        ),
+        child: IconButton(
+          onPressed: isDisabled ? null : _toggleRecording,
+          icon: _isProcessing
+              ? SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      isDark ? BrandColors.driftwood : BrandColors.charcoal,
+                    ),
                   ),
+                )
+              : Icon(
+                  isActive ? Icons.stop : Icons.mic,
+                  color: isActive
+                      ? BrandColors.softWhite
+                      : (isDisabled ? BrandColors.driftwood : BrandColors.forest),
+                  size: 22,
                 ),
-              )
-            : Icon(
-                isActive ? Icons.stop : Icons.mic,
-                color: isActive
-                    ? BrandColors.softWhite
-                    : (isDisabled ? BrandColors.driftwood : BrandColors.forest),
-                size: 22,
+        ),
+      ),
+    );
+  }
+
+  /// Show recording options bottom sheet (long press on mic)
+  void _showRecordingOptions() {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: isDark ? BrandColors.nightSurfaceElevated : BrandColors.softWhite,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Handle
+            Container(
+              margin: const EdgeInsets.only(top: 8),
+              width: 32,
+              height: 4,
+              decoration: BoxDecoration(
+                color: isDark ? BrandColors.charcoal : BrandColors.stone,
+                borderRadius: BorderRadius.circular(2),
               ),
+            ),
+            const SizedBox(height: 16),
+
+            // Header
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Text(
+                'Recording Options',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: isDark ? BrandColors.softWhite : BrandColors.ink,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+
+            // Immersive recording option
+            ListTile(
+              leading: Icon(Icons.fullscreen, color: BrandColors.forest),
+              title: const Text('Immersive Recording'),
+              subtitle: const Text('Full-screen focused recording experience'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const SimpleRecordingScreen(),
+                  ),
+                );
+              },
+            ),
+
+            // Settings option
+            ListTile(
+              leading: Icon(Icons.settings, color: BrandColors.driftwood),
+              title: const Text('Recording Settings'),
+              subtitle: const Text('Transcription, Omi device, and more'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const SettingsScreen(),
+                  ),
+                );
+              },
+            ),
+
+            const SizedBox(height: 8),
+          ],
+        ),
       ),
     );
   }
