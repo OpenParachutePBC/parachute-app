@@ -667,20 +667,9 @@ class FileSystemService {
       }
     }
 
-    // Create captures folder (using configured name)
-    // This is optional - skip if we lack write permissions (e.g., external vault)
-    final capturesDir = Directory('${_rootFolderPath!}/$_capturesFolderName');
-    try {
-      if (!await capturesDir.exists()) {
-        await capturesDir.create(recursive: true);
-        debugPrint(
-          '[FileSystemService] Created $_capturesFolderName/: ${capturesDir.path}',
-        );
-      }
-    } catch (e) {
-      debugPrint('[FileSystemService] Could not create captures folder (may lack permissions): $e');
-      // This is okay - the folder might already exist or user doesn't need it
-    }
+    // Note: We no longer auto-create the captures folder.
+    // New recordings go to Daily/assets/ (journal system).
+    // getCapturesPath() still works for reading legacy captures.
 
     debugPrint('[FileSystemService] Folder structure ready');
   }
