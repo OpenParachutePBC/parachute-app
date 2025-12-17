@@ -758,6 +758,9 @@ class JournalService {
     String? audioPath,
     bool isPlainMarkdown = false,
   }) {
+    // Strip trailing horizontal rules (---) which are used for visual separation in the file
+    content = _stripTrailingHorizontalRule(content);
+
     // Detect entry type from content
     final linkedFile = _extractWikilink(content);
 
@@ -907,5 +910,18 @@ class JournalService {
     } catch (_) {
       return null;
     }
+  }
+
+  /// Strip trailing horizontal rules (---) from content
+  ///
+  /// These are added for visual separation in the markdown file
+  /// but shouldn't be displayed in the UI.
+  static String _stripTrailingHorizontalRule(String content) {
+    var trimmed = content.trim();
+    // Remove trailing --- (with optional whitespace)
+    while (trimmed.endsWith('---') || trimmed.endsWith('---\n')) {
+      trimmed = trimmed.substring(0, trimmed.lastIndexOf('---')).trim();
+    }
+    return trimmed;
   }
 }
