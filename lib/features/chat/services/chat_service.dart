@@ -30,7 +30,16 @@ class ChatService {
         throw Exception('Failed to get sessions: ${response.statusCode}');
       }
 
-      final List<dynamic> data = jsonDecode(response.body) as List<dynamic>;
+      // API returns {"sessions": [...]} not just [...]
+      final decoded = jsonDecode(response.body);
+      final List<dynamic> data;
+      if (decoded is List) {
+        data = decoded;
+      } else if (decoded is Map<String, dynamic> && decoded['sessions'] is List) {
+        data = decoded['sessions'] as List<dynamic>;
+      } else {
+        data = [];
+      }
       return data
           .map((json) => ChatSession.fromJson(json as Map<String, dynamic>))
           .toList();
