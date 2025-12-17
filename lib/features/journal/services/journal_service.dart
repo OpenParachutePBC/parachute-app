@@ -869,6 +869,12 @@ class JournalService {
       }
     }
 
+    // Add horizontal rule after entry (except preamble)
+    if (entry.id != 'preamble') {
+      buffer.writeln();
+      buffer.writeln('---');
+    }
+
     return buffer.toString().trimRight();
   }
 
