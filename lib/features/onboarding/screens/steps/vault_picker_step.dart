@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
@@ -46,12 +47,62 @@ class _VaultPickerStepState extends ConsumerState<VaultPickerStep> {
     setState(() => _isLoading = true);
 
     try {
+      final fileSystemService = ref.read(fileSystemServiceProvider);
+
+      // On Android, ensure we have storage permission first
+      if (Platform.isAndroid) {
+        final hasPermission = await fileSystemService.hasStoragePermission();
+        if (!hasPermission && mounted) {
+          // Show permission dialog
+          final requestPermission = await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('Storage Permission Required'),
+              content: const Text(
+                'Parachute needs access to all files to work with your vault folder.\n\n'
+                'This permission allows Parachute to read and write files in any location, '
+                'similar to how Obsidian works.\n\n'
+                'You\'ll be taken to settings to grant this permission.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('Grant Permission'),
+                ),
+              ],
+            ),
+          );
+
+          if (requestPermission != true) {
+            setState(() => _isLoading = false);
+            return;
+          }
+
+          final granted = await fileSystemService.requestStoragePermission();
+          if (!granted) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: const Text('Storage permission is required to access vault folders'),
+                  backgroundColor: BrandColors.error,
+                ),
+              );
+            }
+            setState(() => _isLoading = false);
+            return;
+          }
+        }
+      }
+
       final result = await FilePicker.platform.getDirectoryPath(
         dialogTitle: 'Choose Your Vault Folder',
       );
 
       if (result != null && mounted) {
-        final fileSystemService = ref.read(fileSystemServiceProvider);
         await fileSystemService.setCustomRootPath(result);
         await _loadCurrentPath();
       }
