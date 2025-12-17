@@ -61,8 +61,10 @@ class PlatformUtils {
   }
 
   /// Check if we should show Omi device features in UI
+  ///
+  /// Only show on iOS and Android. macOS has BLE support but the Opus codec
+  /// (needed for decoding Omi audio streams) doesn't work on macOS.
   static bool get shouldShowOmiFeatures {
-    // Show Omi features on platforms with BLE support
-    return isBleSupported;
+    return Platform.isIOS || Platform.isAndroid;
   }
 }

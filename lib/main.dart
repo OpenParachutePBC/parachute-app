@@ -1,4 +1,5 @@
 import 'dart:ffi';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart' as flutter_blue_plus;
@@ -45,20 +46,22 @@ void main() async {
     release: 'parachute@1.0.0', // Update this with your version
   );
 
-  // Initialize Opus codec for Omi BLE audio decoding
-  // This must be done before any Opus operations
-  try {
-    debugPrint('[Main] Initializing Opus codec...');
-    // Load the native opus library via opus_flutter
-    final opusLib = await opus_flutter.load();
-    // Initialize opus_dart with the loaded library
-    opus_dart.initOpus(opusLib as DynamicLibrary);
-    debugPrint('[Main] ✅ Opus codec initialized successfully');
-  } catch (e, stackTrace) {
-    debugPrint('[Main] ⚠️  Failed to initialize Opus codec: $e');
-    debugPrint('[Main] Stack trace: $stackTrace');
-    debugPrint('[Main] Omi device audio decoding will not work');
-    // Continue anyway - only affects Omi device integration
+  // Initialize Opus codec for Omi BLE audio decoding (iOS/Android only)
+  // macOS doesn't support opus_flutter, so we skip initialization there
+  if (Platform.isIOS || Platform.isAndroid) {
+    try {
+      debugPrint('[Main] Initializing Opus codec...');
+      // Load the native opus library via opus_flutter
+      final opusLib = await opus_flutter.load();
+      // Initialize opus_dart with the loaded library
+      opus_dart.initOpus(opusLib as DynamicLibrary);
+      debugPrint('[Main] ✅ Opus codec initialized successfully');
+    } catch (e, stackTrace) {
+      debugPrint('[Main] ⚠️  Failed to initialize Opus codec: $e');
+      debugPrint('[Main] Stack trace: $stackTrace');
+      debugPrint('[Main] Omi device audio decoding will not work');
+      // Continue anyway - only affects Omi device integration
+    }
   }
 
   // Disable verbose FlutterBluePlus logs (reduces spam from onCharacteristicChanged)
