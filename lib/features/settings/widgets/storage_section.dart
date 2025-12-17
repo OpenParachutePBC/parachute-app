@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:app/core/theme/design_tokens.dart';
 import 'package:app/core/providers/file_system_provider.dart';
 import 'package:app/features/files/providers/file_browser_provider.dart';
+import 'package:app/features/journal/providers/journal_providers.dart';
 import './settings_section_header.dart';
 
 /// Storage settings section (Parachute folder and subfolder names)
@@ -131,31 +132,36 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
       }
     }
 
-    // Show warning dialog
-    final confirm = await showDialog<bool>(
+    // Show dialog asking whether to migrate files
+    // Returns: 'migrate' to copy files, 'change_only' to just change path, null to cancel
+    final choice = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Change Parachute Folder'),
         content: const Text(
-          'This will copy all your recordings and transcripts to the new location. '
-          'This may take a while depending on how much data you have.\n\n'
-          'Your original files will remain in the old location until you manually delete them.\n\n'
-          'Make sure you have enough space in the new location.',
+          'Do you want to copy your existing files to the new location?\n\n'
+          '• Copy files - Brings all your recordings and transcripts to the new folder\n\n'
+          '• Don\'t copy - Use the new location as-is (good for switching to an existing vault)',
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
+            onPressed: () => Navigator.pop(context, null),
             child: const Text('Cancel'),
           ),
+          OutlinedButton(
+            onPressed: () => Navigator.pop(context, 'change_only'),
+            child: const Text('Don\'t Copy'),
+          ),
           FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Continue'),
+            onPressed: () => Navigator.pop(context, 'migrate'),
+            child: const Text('Copy Files'),
           ),
         ],
       ),
     );
 
-    if (confirm != true) return;
+    if (choice == null) return;
+    final shouldMigrate = choice == 'migrate';
 
     // Use standard file picker for all platforms
     final selectedDirectory = await FilePicker.platform.getDirectoryPath(
@@ -163,8 +169,8 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
     );
 
     if (selectedDirectory != null) {
-      // Show loading indicator
-      if (mounted) {
+      // Show loading indicator only if migrating
+      if (shouldMigrate && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Row(
@@ -179,7 +185,7 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
                   ),
                 ),
                 SizedBox(width: Spacing.lg),
-                const Text('Migrating files to new location...'),
+                const Text('Copying files to new location...'),
               ],
             ),
             duration: const Duration(minutes: 5),
@@ -188,7 +194,10 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
       }
 
       final oldPath = await fileSystemService.getRootPathDisplay();
-      final success = await fileSystemService.setRootPath(selectedDirectory);
+      final success = await fileSystemService.setRootPath(
+        selectedDirectory,
+        migrateFiles: shouldMigrate,
+      );
 
       // Clear the loading snackbar
       if (mounted) {
@@ -201,38 +210,52 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
         // Reset file browser to new vault root
         ref.read(currentBrowsePathProvider.notifier).state = '';
         ref.read(folderRefreshTriggerProvider.notifier).state++;
+        // Invalidate journal service so it picks up new path
+        ref.invalidate(journalServiceFutureProvider);
+        ref.invalidate(todayJournalProvider);
+        ref.invalidate(selectedJournalProvider);
+        ref.invalidate(journalDatesProvider);
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Files copied successfully!',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  SizedBox(height: Spacing.xs),
-                  Text(
-                    'Location: $displayPath',
-                    style: TextStyle(fontSize: TypographyTokens.bodySmall),
-                  ),
-                  SizedBox(height: Spacing.xs),
-                  Text(
-                    'Old files remain at: $oldPath',
-                    style: TextStyle(fontSize: TypographyTokens.bodySmall),
-                  ),
-                ],
+          if (shouldMigrate) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Files copied successfully!',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    SizedBox(height: Spacing.xs),
+                    Text(
+                      'Location: $displayPath',
+                      style: TextStyle(fontSize: TypographyTokens.bodySmall),
+                    ),
+                    SizedBox(height: Spacing.xs),
+                    Text(
+                      'Old files remain at: $oldPath',
+                      style: TextStyle(fontSize: TypographyTokens.bodySmall),
+                    ),
+                  ],
+                ),
+                backgroundColor: BrandColors.success,
+                duration: const Duration(seconds: 10),
+                action: SnackBarAction(
+                  label: 'Got it',
+                  textColor: BrandColors.softWhite,
+                  onPressed: () {},
+                ),
               ),
-              backgroundColor: BrandColors.success,
-              duration: const Duration(seconds: 10),
-              action: SnackBarAction(
-                label: 'Got it',
-                textColor: BrandColors.softWhite,
-                onPressed: () {},
+            );
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Location changed to: $displayPath'),
+                backgroundColor: BrandColors.success,
               ),
-            ),
-          );
+            );
+          }
         }
       } else {
         if (mounted) {

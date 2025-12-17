@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:macos_secure_bookmarks/macos_secure_bookmarks.dart';
 
 /// Unified file system service for Parachute
 ///
@@ -23,6 +24,7 @@ class FileSystemService {
   static const String _rootFolderPathKey = 'parachute_root_folder_path';
   static const String _capturesFolderNameKey = 'parachute_captures_folder_name';
   static const String _journalFolderNameKey = 'parachute_journal_folder_name';
+  static const String _secureBookmarkKey = 'parachute_secure_bookmark';
 
   // Default subfolder names
   static const String _defaultCapturesFolderName = 'captures';
@@ -45,6 +47,10 @@ class FileSystemService {
   String _journalFolderName = _defaultJournalFolderName;
   bool _isInitialized = false;
   Future<void>? _initializationFuture;
+
+  // macOS secure bookmarks for persistent folder access
+  final SecureBookmarks? _secureBookmarks = Platform.isMacOS ? SecureBookmarks() : null;
+  bool _isAccessingSecurityScopedResource = false;
 
   /// Get the root Parachute folder path
   Future<String> getRootPath() async {
@@ -474,10 +480,37 @@ class FileSystemService {
         // Check if we can access the saved path
         debugPrint('[FileSystemService] Loaded saved root: $_rootFolderPath');
 
+        // On macOS, try to restore access via security-scoped bookmark
+        if (Platform.isMacOS && _secureBookmarks != null) {
+          final bookmarkData = prefs.getString(_secureBookmarkKey);
+          if (bookmarkData != null) {
+            try {
+              debugPrint('[FileSystemService] Restoring secure bookmark...');
+              final resolvedEntity = await _secureBookmarks!.resolveBookmark(bookmarkData);
+
+              // Start accessing the security-scoped resource
+              await _secureBookmarks!.startAccessingSecurityScopedResource(resolvedEntity);
+              _isAccessingSecurityScopedResource = true;
+              debugPrint('[FileSystemService] Secure bookmark restored: ${resolvedEntity.path}');
+
+              // Verify the path matches what we expect
+              final resolvedPath = resolvedEntity.path;
+              if (resolvedPath != _rootFolderPath) {
+                debugPrint('[FileSystemService] Bookmark path differs: $resolvedPath vs $_rootFolderPath');
+                _rootFolderPath = resolvedPath;
+                await prefs.setString(_rootFolderPathKey, _rootFolderPath!);
+              }
+            } catch (e) {
+              debugPrint('[FileSystemService] Failed to restore secure bookmark: $e');
+              // Fall through to regular access check
+            }
+          }
+        }
+
         // Verify we still have access to the saved path
         // On iOS, the container UUID changes on reinstall
-        // On macOS, the user might revoke folder access
-        if (Platform.isMacOS || Platform.isIOS) {
+        // On macOS without a bookmark, the user might need to re-select
+        if (!_isAccessingSecurityScopedResource) {
           final savedDir = Directory(_rootFolderPath!);
           bool hasAccess = false;
 
@@ -494,7 +527,7 @@ class FileSystemService {
             debugPrint('[FileSystemService] Lost access to saved path: $e');
           }
 
-          if (!hasAccess) {
+          if (!hasAccess && (Platform.isMacOS || Platform.isIOS)) {
             debugPrint(
               '[FileSystemService] Switching to accessible default location',
             );
@@ -611,23 +644,42 @@ class FileSystemService {
   }
 
   /// Ensure the folder structure exists
+  ///
+  /// Note: On macOS, if the vault is outside the app container and we don't
+  /// have persistent permissions (security-scoped bookmarks), folder creation
+  /// may fail. In this case, we log a warning and continue - the folder
+  /// creation is optional for existing vaults.
   Future<void> _ensureFolderStructure() async {
     debugPrint('[FileSystemService] Ensuring folder structure...');
 
     // Create root
     final root = Directory(_rootFolderPath!);
-    if (!await root.exists()) {
-      await root.create(recursive: true);
-      debugPrint('[FileSystemService] Created root: ${root.path}');
+    try {
+      if (!await root.exists()) {
+        await root.create(recursive: true);
+        debugPrint('[FileSystemService] Created root: ${root.path}');
+      }
+    } catch (e) {
+      debugPrint('[FileSystemService] Could not create root (may lack permissions): $e');
+      // If we can't create root, check if it at least exists for reading
+      if (!await root.exists()) {
+        rethrow; // Can't proceed without root
+      }
     }
 
     // Create captures folder (using configured name)
+    // This is optional - skip if we lack write permissions (e.g., external vault)
     final capturesDir = Directory('${_rootFolderPath!}/$_capturesFolderName');
-    if (!await capturesDir.exists()) {
-      await capturesDir.create(recursive: true);
-      debugPrint(
-        '[FileSystemService] Created $_capturesFolderName/: ${capturesDir.path}',
-      );
+    try {
+      if (!await capturesDir.exists()) {
+        await capturesDir.create(recursive: true);
+        debugPrint(
+          '[FileSystemService] Created $_capturesFolderName/: ${capturesDir.path}',
+        );
+      }
+    } catch (e) {
+      debugPrint('[FileSystemService] Could not create captures folder (may lack permissions): $e');
+      // This is okay - the folder might already exist or user doesn't need it
     }
 
     debugPrint('[FileSystemService] Folder structure ready');
@@ -646,8 +698,12 @@ class FileSystemService {
     return setRootPath(defaultPath);
   }
 
-  /// Set a custom root folder path and migrate existing files
-  Future<bool> setRootPath(String path) async {
+  /// Set a custom root folder path
+  ///
+  /// [path] - The new root folder path
+  /// [migrateFiles] - If true, copies files from old location to new location.
+  ///                  If false, just changes the path without copying.
+  Future<bool> setRootPath(String path, {bool migrateFiles = true}) async {
     try {
       final oldRootPath = _rootFolderPath;
 
@@ -657,8 +713,8 @@ class FileSystemService {
         await newDir.create(recursive: true);
       }
 
-      // If we have an old path and it's different from the new one, migrate files
-      if (oldRootPath != null && oldRootPath != path) {
+      // If we have an old path and it's different from the new one, optionally migrate files
+      if (migrateFiles && oldRootPath != null && oldRootPath != path) {
         final oldDir = Directory(oldRootPath);
         if (await oldDir.exists()) {
           debugPrint(
@@ -671,6 +727,42 @@ class FileSystemService {
           debugPrint(
             '[FileSystemService] Migration complete. Old files remain at $oldRootPath (manual cleanup required)',
           );
+        }
+      } else if (!migrateFiles) {
+        debugPrint(
+          '[FileSystemService] Changing root path to $path without file migration',
+        );
+      }
+
+      // On macOS, create a security-scoped bookmark for persistent access
+      if (Platform.isMacOS && _secureBookmarks != null) {
+        try {
+          // Stop accessing old resource if any
+          if (_isAccessingSecurityScopedResource && _rootFolderPath != null) {
+            try {
+              final oldDir = Directory(_rootFolderPath!);
+              await _secureBookmarks!.stopAccessingSecurityScopedResource(oldDir);
+            } catch (e) {
+              debugPrint('[FileSystemService] Error stopping old resource access: $e');
+            }
+            _isAccessingSecurityScopedResource = false;
+          }
+
+          // Create a new secure bookmark for the directory
+          final newDir = Directory(path);
+          final bookmarkData = await _secureBookmarks!.bookmark(newDir);
+          debugPrint('[FileSystemService] Created secure bookmark for: $path');
+
+          // Save the bookmark for later restoration
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString(_secureBookmarkKey, bookmarkData);
+
+          // Start accessing the new resource
+          await _secureBookmarks!.startAccessingSecurityScopedResource(newDir);
+          _isAccessingSecurityScopedResource = true;
+        } catch (e) {
+          debugPrint('[FileSystemService] Failed to create secure bookmark: $e');
+          // Continue anyway - access might work during this session
         }
       }
 
