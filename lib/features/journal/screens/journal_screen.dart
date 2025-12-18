@@ -528,6 +528,17 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
                   },
           ),
 
+          // Refresh button (desktop only - mobile uses pull-to-refresh)
+          if (Platform.isMacOS || Platform.isWindows || Platform.isLinux)
+            IconButton(
+              icon: Icon(
+                Icons.refresh,
+                color: isDark ? BrandColors.driftwood : BrandColors.charcoal,
+              ),
+              tooltip: 'Refresh',
+              onPressed: _refreshJournal,
+            ),
+
           // Settings button
           IconButton(
             icon: Icon(

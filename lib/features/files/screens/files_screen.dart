@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:app/core/theme/design_tokens.dart';
 import 'package:app/features/files/models/file_item.dart';
 import 'package:app/features/files/providers/file_browser_provider.dart';
+import 'package:app/features/files/screens/markdown_viewer_screen.dart';
 
 /// File browser screen for navigating the vault
 class FilesScreen extends ConsumerStatefulWidget {
@@ -94,9 +95,11 @@ class _FilesScreenState extends ConsumerState<FilesScreen> with WidgetsBindingOb
   }
 
   void _openMarkdownFile(FileItem item) {
-    // TODO: Open markdown viewer (Phase 2)
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Markdown viewer coming soon: ${item.name}')),
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => MarkdownViewerScreen(file: item),
+      ),
     );
   }
 
