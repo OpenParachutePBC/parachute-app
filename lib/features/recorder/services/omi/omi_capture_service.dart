@@ -1,11 +1,11 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:app/features/recorder/models/recording.dart';
+import 'package:app/features/journal/models/journal_entry.dart';
+import 'package:app/features/journal/services/journal_service.dart';
 import 'package:app/features/recorder/services/omi/models.dart';
 import 'package:app/features/recorder/services/omi/omi_bluetooth_service.dart';
 import 'package:app/features/recorder/services/omi/omi_connection.dart';
-import 'package:app/features/recorder/services/storage_service.dart';
 import 'package:app/features/recorder/services/transcription_service_adapter.dart';
 import 'package:app/features/recorder/utils/audio/wav_bytes_util.dart';
 import 'package:app/core/services/file_system_service.dart';
@@ -19,7 +19,7 @@ import 'package:app/core/services/file_system_service.dart';
 /// Automatically detects which mode the device supports.
 class OmiCaptureService {
   final OmiBluetoothService bluetoothService;
-  final StorageService storageService;
+  final Future<JournalService> Function() getJournalService;
   final TranscriptionServiceAdapter transcriptionService;
 
   StreamSubscription? _buttonSubscription;
@@ -48,11 +48,11 @@ class OmiCaptureService {
   // Callbacks for UI updates
   Function(bool isRecording)? onRecordingStateChanged;
   Function(String message)? onStatusMessage;
-  Function(Recording recording)? onRecordingSaved;
+  Function(JournalEntry entry)? onRecordingSaved;
 
   OmiCaptureService({
     required this.bluetoothService,
-    required this.storageService,
+    required this.getJournalService,
     required this.transcriptionService,
   });
 
@@ -345,7 +345,7 @@ class OmiCaptureService {
     _audioSubscription = null;
   }
 
-  /// Save recording from streaming data
+  /// Save recording from streaming data to journal
   Future<void> _saveStreamingRecording() async {
     if (_wavBytesUtil == null || !_wavBytesUtil!.hasFrames) {
       debugPrint('[OmiCaptureService] No streaming data to save');
@@ -359,44 +359,31 @@ class OmiCaptureService {
 
       debugPrint('[OmiCaptureService] Built WAV file: ${wavBytes.length} bytes, duration: $duration');
 
-      // Create recording
-      final now = DateTime.now();
-      final recordingId = now.millisecondsSinceEpoch.toString();
-
-      // Save WAV file
+      // Save WAV file to temp location first
       final fileSystem = FileSystemService();
       final wavFilePath = await fileSystem.getRecordingTempPath();
       final wavFile = File(wavFilePath);
       await wavFile.writeAsBytes(wavBytes);
 
-      debugPrint('[OmiCaptureService] Saved WAV file: $wavFilePath');
-
-      // Create recording metadata
-      final device = bluetoothService.connectedDevice;
-      final recording = Recording(
-        id: recordingId,
-        title: 'Omi Recording',
-        filePath: wavFilePath,
-        timestamp: _recordingStartTime ?? now,
-        duration: duration,
-        tags: [],
-        transcript: '',
-        fileSizeKB: wavBytes.length / 1024,
-        source: RecordingSource.omiDevice,
-        deviceId: device?.id,
-        buttonTapCount: _currentButtonTapCount ?? 1,
-      );
-
-      await storageService.saveRecording(recording);
-
-      debugPrint('[OmiCaptureService] Recording saved: ${recording.id}');
-      onStatusMessage?.call('Recording saved!');
-      onRecordingSaved?.call(recording);
+      debugPrint('[OmiCaptureService] Saved temp WAV file: $wavFilePath');
 
       _cleanupStreaming();
 
-      // Always transcribe Omi recordings
-      _transcribeRecording(recording).catchError((e) {
+      // Save to journal with empty transcript (will be transcribed async)
+      final journalService = await getJournalService();
+      final result = await journalService.addVoiceEntry(
+        transcript: '', // Will be transcribed async
+        audioPath: wavFilePath,
+        durationSeconds: duration.inSeconds,
+        title: 'Omi Recording',
+      );
+
+      debugPrint('[OmiCaptureService] Recording saved to journal: ${result.entry.id}');
+      onStatusMessage?.call('Recording saved!');
+      onRecordingSaved?.call(result.entry);
+
+      // Transcribe and update the entry
+      _transcribeAndUpdateEntry(result.entry, wavFilePath).catchError((e) {
         debugPrint('[OmiCaptureService] Auto-transcribe error (non-fatal): $e');
       });
     } catch (e) {
@@ -541,52 +528,41 @@ class OmiCaptureService {
     }
   }
 
-  /// Process downloaded audio data and save as recording
+  /// Process downloaded audio data and save to journal
   Future<void> _processDownloadedRecording(Uint8List audioData) async {
     debugPrint('[OmiCaptureService] Processing downloaded recording: ${audioData.length} bytes');
     onStatusMessage?.call('Processing recording...');
 
     try {
-      final now = DateTime.now();
-      final recordingId = now.millisecondsSinceEpoch.toString();
-
-      // Save raw Opus data
-      final syncFolder = await storageService.getSyncFolderPath();
-      final dateStr = _formatDate(now);
-      final opusFileName = '$dateStr-$recordingId.opus';
-      final opusPath = '$syncFolder/$opusFileName';
+      // Save raw Opus data to temp location
+      final fileSystem = FileSystemService();
+      final tempPath = await fileSystem.getTempWavPath(prefix: 'omi_download');
+      // Change extension to .opus since this is Opus data
+      final opusPath = tempPath.replaceAll('.wav', '.opus');
 
       final opusFile = File(opusPath);
       await opusFile.writeAsBytes(audioData);
-      debugPrint('[OmiCaptureService] Saved Opus file: $opusPath');
+      debugPrint('[OmiCaptureService] Saved temp Opus file: $opusPath');
 
-      // Estimate duration
+      // Estimate duration (rough estimate: ~3KB per second for Opus)
       final estimatedDurationMs = (audioData.length / 3000 * 1000).round();
-      final duration = Duration(milliseconds: estimatedDurationMs);
+      final durationSeconds = (estimatedDurationMs / 1000).round();
 
-      final device = bluetoothService.connectedDevice;
-      final recording = Recording(
-        id: recordingId,
+      // Save to journal with empty transcript (will be transcribed async)
+      final journalService = await getJournalService();
+      final result = await journalService.addVoiceEntry(
+        transcript: '', // Will be transcribed async
+        audioPath: opusPath,
+        durationSeconds: durationSeconds,
         title: 'Omi Recording',
-        filePath: opusPath,
-        timestamp: now,
-        duration: duration,
-        tags: [],
-        transcript: '',
-        fileSizeKB: audioData.length / 1024,
-        source: RecordingSource.omiDevice,
-        deviceId: device?.id,
-        buttonTapCount: _currentButtonTapCount ?? 1,
       );
 
-      await storageService.saveRecording(recording);
-
-      debugPrint('[OmiCaptureService] Recording saved: ${recording.id}');
+      debugPrint('[OmiCaptureService] Recording saved to journal: ${result.entry.id}');
       onStatusMessage?.call('Recording saved!');
-      onRecordingSaved?.call(recording);
+      onRecordingSaved?.call(result.entry);
 
-      // Always transcribe Omi recordings
-      _transcribeRecording(recording).catchError((e) {
+      // Transcribe and update the entry
+      _transcribeAndUpdateEntry(result.entry, opusPath).catchError((e) {
         debugPrint('[OmiCaptureService] Auto-transcribe error (non-fatal): $e');
       });
     } catch (e) {
@@ -595,19 +571,14 @@ class OmiCaptureService {
     }
   }
 
-  /// Format date for filename
-  String _formatDate(DateTime date) {
-    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-  }
-
-  /// Transcribe recording (always runs for Omi recordings)
-  Future<void> _transcribeRecording(Recording recording) async {
+  /// Transcribe audio and update journal entry
+  Future<void> _transcribeAndUpdateEntry(JournalEntry entry, String audioPath) async {
     try {
       debugPrint('[OmiCaptureService] Starting transcription...');
       onStatusMessage?.call('Transcribing...');
 
       final transcriptResult = await transcriptionService.transcribeAudio(
-        recording.filePath,
+        audioPath,
         language: 'auto',
         onProgress: (progress) {
           onStatusMessage?.call('Transcribing: ${progress.status}');
@@ -617,22 +588,15 @@ class OmiCaptureService {
       debugPrint('[OmiCaptureService] Transcription complete: ${transcriptResult.text.length} chars');
       onStatusMessage?.call('Transcription complete!');
 
-      final updatedRecording = Recording(
-        id: recording.id,
-        title: recording.title,
-        filePath: recording.filePath,
-        timestamp: recording.timestamp,
-        duration: recording.duration,
-        tags: recording.tags,
-        transcript: transcriptResult.text,
-        fileSizeKB: recording.fileSizeKB,
-        source: recording.source,
-        deviceId: recording.deviceId,
-        buttonTapCount: recording.buttonTapCount,
+      // Update the journal entry with the transcript
+      final journalService = await getJournalService();
+      final updatedEntry = entry.copyWith(
+        content: transcriptResult.text,
+        isPendingTranscription: false,
       );
-      await storageService.saveRecording(updatedRecording);
+      await journalService.updateEntry(DateTime.now(), updatedEntry);
 
-      onRecordingSaved?.call(updatedRecording);
+      onRecordingSaved?.call(updatedEntry);
     } catch (e) {
       debugPrint('[OmiCaptureService] Auto-transcription failed: $e');
       onStatusMessage?.call('Transcription failed');

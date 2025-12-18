@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:app/core/providers/feature_flags_provider.dart';
+import 'package:app/features/journal/providers/journal_providers.dart';
 import 'package:app/features/recorder/models/omi_device.dart';
 import 'package:app/features/recorder/services/omi/models.dart';
 import 'package:app/features/recorder/services/omi/omi_bluetooth_service.dart';
@@ -75,26 +76,26 @@ final connectedOmiDeviceProvider = StreamProvider<OmiDevice?>((ref) {
 /// Provider for OmiCaptureService
 ///
 /// This service handles audio recording from the Omi device.
-/// It depends on OmiBluetoothService, StorageService, and TranscriptionServiceAdapter.
+/// It depends on OmiBluetoothService, JournalService, and TranscriptionServiceAdapter.
 ///
-/// This provider automatically sets up a callback to trigger recordings list refresh
+/// This provider automatically sets up a callback to trigger journal refresh
 /// when new recordings are saved from the Omi device.
 final omiCaptureServiceProvider = Provider<OmiCaptureService>((ref) {
   final bluetoothService = ref.watch(omiBluetoothServiceProvider);
-  final storageService = ref.watch(storageServiceProvider);
   final transcriptionService = ref.watch(transcriptionServiceAdapterProvider);
 
   final service = OmiCaptureService(
     bluetoothService: bluetoothService,
-    storageService: storageService,
+    getJournalService: () => ref.read(journalServiceFutureProvider.future),
     transcriptionService: transcriptionService,
   );
 
-  // Set up callback to trigger recordings list refresh when new recordings are saved
+  // Set up callback to trigger journal refresh when new recordings are saved
   // This lives for the lifetime of the app, so it won't get disposed like screen callbacks
-  service.onRecordingSaved = (recording) {
-    // Increment the refresh trigger to notify HomeScreen and other listeners
-    ref.read(recordingsRefreshTriggerProvider.notifier).state++;
+  service.onRecordingSaved = (entry) {
+    // Invalidate journal providers to refresh the UI
+    ref.invalidate(todayJournalProvider);
+    ref.invalidate(selectedJournalProvider);
   };
 
   // Clean up on dispose
