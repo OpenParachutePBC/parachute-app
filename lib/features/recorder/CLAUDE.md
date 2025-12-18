@@ -110,12 +110,10 @@ When modifying storage:
 
 ## UI Screens
 
-- `home_screen.dart` - Recording list (main recorder screen)
-- `recording_screen.dart` - Active recording interface
-- `post_recording_screen.dart` - Edit/transcribe after recording
-- `recording_detail_screen.dart` - View/play individual recording
-- `device_pairing_screen.dart` - Omi device setup
-- `settings_screen.dart` - Recorder settings (Whisper models, etc.)
+**Note:** Most recording UI is now handled through the Journal feature (`lib/features/journal/`).
+The recorder feature now provides services and widgets used by the journal.
+
+- `device_pairing_screen.dart` - Omi device setup (iOS/Android only)
 
 ---
 

@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/design_tokens.dart';
 import '../../recorder/providers/service_providers.dart';
-import '../../recorder/screens/simple_recording_screen.dart';
 import '../../settings/screens/settings_screen.dart';
 
 /// Input bar for adding entries to the journal
@@ -635,22 +634,6 @@ class _JournalInputBarState extends ConsumerState<JournalInputBar> {
               ),
             ),
             const SizedBox(height: 8),
-
-            // Immersive recording option
-            ListTile(
-              leading: Icon(Icons.fullscreen, color: BrandColors.forest),
-              title: const Text('Immersive Recording'),
-              subtitle: const Text('Full-screen focused recording experience'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const SimpleRecordingScreen(),
-                  ),
-                );
-              },
-            ),
 
             // Settings option
             ListTile(
