@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:app/core/theme/design_tokens.dart';
+import 'package:app/features/context/providers/context_providers.dart';
+import 'package:app/features/context/widgets/vault_setup_dialog.dart';
+import 'package:app/features/context/widgets/prompt_chip.dart';
+import 'package:app/features/context/widgets/reflection_banner.dart';
 import '../providers/chat_providers.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/chat_input.dart';
 import '../widgets/session_selector.dart';
-import '../widgets/agent_selector.dart';
 
 /// Main chat screen for AI conversations
 ///
@@ -44,17 +47,38 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   final ScrollController _scrollController = ScrollController();
   String? _pendingInitialContext;
   bool _hasAutoRun = false;
+  bool _hasCheckedVaultSetup = false;
+  bool _showReflectionBanner = false;
+  bool _reflectionBannerDismissed = false;
+  int _lastMessageCount = 0;
 
   @override
   void initState() {
     super.initState();
     _pendingInitialContext = widget.initialContext;
 
-    // Schedule auto-run after first frame
-    if (widget.autoRun && widget.autoRunMessage != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+    // Schedule vault setup check after first frame
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkVaultSetup();
+      // Schedule auto-run after first frame
+      if (widget.autoRun && widget.autoRunMessage != null) {
         _performAutoRun();
-      });
+      }
+    });
+  }
+
+  Future<void> _checkVaultSetup() async {
+    if (_hasCheckedVaultSetup) return;
+    _hasCheckedVaultSetup = true;
+
+    final needsSetup = await ref.read(vaultNeedsSetupProvider.future);
+    if (needsSetup && mounted) {
+      final created = await VaultSetupDialog.show(context);
+      if (created && mounted) {
+        // Optionally start with "Get to know me" prompt
+        // For now, just refresh the providers
+        ref.invalidate(promptsProvider);
+      }
     }
   }
 
@@ -97,6 +121,26 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     _scrollToBottom();
   }
 
+  void _handleReflect() {
+    // Hide the banner
+    setState(() {
+      _showReflectionBanner = false;
+      _reflectionBannerDismissed = true;
+    });
+
+    // Send the reflection prompt
+    const reflectPrompt = '''Based on the conversation we just had, do you have any suggestions for how we might update my AGENTS.md?
+
+Consider:
+- Did I reveal anything about who I am or how I think?
+- Did new topics or interests come up?
+- Should any links be added to point to relevant context?
+
+If you have suggestions, show me the specific edits you'd recommend.''';
+
+    _handleSend(reflectPrompt);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -104,10 +148,23 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final chatState = ref.watch(chatMessagesProvider);
     final currentSessionId = ref.watch(currentSessionIdProvider);
 
-    // Auto-scroll when new messages arrive
+    // Auto-scroll when new messages arrive and show reflection banner
     ref.listen(chatMessagesProvider, (previous, next) {
       if (next.messages.length != (previous?.messages.length ?? 0)) {
         _scrollToBottom();
+      }
+
+      // Show reflection banner when streaming ends and we have enough exchanges
+      final wasStreaming = previous?.isStreaming ?? false;
+      final isNowStreaming = next.isStreaming;
+      if (wasStreaming && !isNowStreaming && !_reflectionBannerDismissed) {
+        // Check if we have at least 2 message pairs (4 messages)
+        if (next.messages.length >= 4 && next.messages.length > _lastMessageCount) {
+          setState(() {
+            _showReflectionBanner = true;
+            _lastMessageCount = next.messages.length;
+          });
+        }
       }
     });
 
@@ -118,9 +175,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         surfaceTintColor: Colors.transparent,
         title: _buildTitle(context, isDark, currentSessionId),
         actions: [
-          // Agent selector
-          const AgentSelector(),
-          const SizedBox(width: Spacing.sm),
           // New chat button
           IconButton(
             onPressed: () => ref.read(newChatProvider)(),
@@ -155,6 +209,18 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           // Error banner
           if (chatState.error != null)
             _buildErrorBanner(context, isDark, chatState.error!),
+
+          // Reflection suggestion banner
+          if (_showReflectionBanner && !chatState.isStreaming)
+            ReflectionBanner(
+              onReflect: () => _handleReflect(),
+              onDismiss: () {
+                setState(() {
+                  _showReflectionBanner = false;
+                  _reflectionBannerDismissed = true;
+                });
+              },
+            ),
 
           // Input field
           ChatInput(
@@ -218,6 +284,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   Widget _buildEmptyState(BuildContext context, bool isDark) {
+    final promptsAsync = ref.watch(promptsProvider);
+
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(Spacing.xl),
@@ -249,7 +317,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             ),
             const SizedBox(height: Spacing.sm),
             Text(
-              'Ask questions about your vault, get help with ideas,\nor explore your recordings.',
+              'Ask questions about your vault, get help with ideas,\nor explore your thoughts.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: TypographyTokens.bodyMedium,
@@ -260,25 +328,43 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               ),
             ),
             const SizedBox(height: Spacing.xxl),
-            // Quick action suggestions
-            Wrap(
-              spacing: Spacing.sm,
-              runSpacing: Spacing.sm,
-              alignment: WrapAlignment.center,
-              children: [
-                _SuggestionChip(
-                  label: 'Summarize my recent notes',
-                  onTap: () => _handleSend('Summarize my recent notes'),
-                ),
-                _SuggestionChip(
-                  label: 'What did I talk about today?',
-                  onTap: () => _handleSend('What did I talk about today?'),
-                ),
-                _SuggestionChip(
-                  label: 'Find ideas about...',
-                  onTap: () {},
-                ),
-              ],
+            // Quick action prompts from prompts.yaml
+            promptsAsync.when(
+              data: (prompts) => Wrap(
+                spacing: Spacing.sm,
+                runSpacing: Spacing.sm,
+                alignment: WrapAlignment.center,
+                children: prompts.take(4).map((prompt) => PromptChip(
+                  prompt: prompt,
+                  onTap: () => _handleSend(prompt.prompt),
+                )).toList(),
+              ),
+              loading: () => Wrap(
+                spacing: Spacing.sm,
+                runSpacing: Spacing.sm,
+                alignment: WrapAlignment.center,
+                children: [
+                  _SuggestionChip(
+                    label: 'Loading prompts...',
+                    onTap: () {},
+                  ),
+                ],
+              ),
+              error: (e, st) => Wrap(
+                spacing: Spacing.sm,
+                runSpacing: Spacing.sm,
+                alignment: WrapAlignment.center,
+                children: [
+                  _SuggestionChip(
+                    label: 'Summarize my recent notes',
+                    onTap: () => _handleSend('Summarize my recent notes'),
+                  ),
+                  _SuggestionChip(
+                    label: 'What did I capture today?',
+                    onTap: () => _handleSend('What did I capture today?'),
+                  ),
+                ],
+              ),
             ),
           ],
         ),

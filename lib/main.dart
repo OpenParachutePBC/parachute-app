@@ -254,20 +254,20 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
       ),
     ];
 
-    // Add Agents tab if AI chat is enabled
+    // Add Chat tab if AI chat is enabled
     if (isAiChatEnabled) {
       screens.add(const AgentHubScreen());
       destinations.add(
         NavigationDestination(
           icon: Icon(
-            Icons.smart_toy_outlined,
+            Icons.chat_outlined,
             color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
           ),
           selectedIcon: Icon(
-            Icons.smart_toy,
+            Icons.chat,
             color: isDark ? BrandColors.nightForest : BrandColors.forest,
           ),
-          label: 'Agents',
+          label: 'Chat',
         ),
       );
     }
