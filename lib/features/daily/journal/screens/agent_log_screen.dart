@@ -11,24 +11,24 @@ import 'package:parachute/core/providers/base_server_provider.dart';
 /// - Highlight agent responses prominently
 /// - Tool calls shown with expandable details
 /// - Clean preview for collapsed content
-class CuratorLogScreen extends ConsumerStatefulWidget {
+class AgentLogScreen extends ConsumerStatefulWidget {
   /// The agent name.
   final String agentName;
 
   /// Display name for the agent (used in title).
   final String? displayName;
 
-  const CuratorLogScreen({
+  const AgentLogScreen({
     super.key,
     required this.agentName,
     this.displayName,
   });
 
   @override
-  ConsumerState<CuratorLogScreen> createState() => _CuratorLogScreenState();
+  ConsumerState<AgentLogScreen> createState() => _AgentLogScreenState();
 }
 
-class _CuratorLogScreenState extends ConsumerState<CuratorLogScreen> {
+class _AgentLogScreenState extends ConsumerState<AgentLogScreen> {
   AgentTranscript? _transcript;
   bool _isLoading = true;
   String? _error;
@@ -163,7 +163,7 @@ class _CuratorLogScreenState extends ConsumerState<CuratorLogScreen> {
         const SizedBox(height: 16),
 
         // Messages
-        ..._transcript!.messages.map((msg) => _CuratorMessageBubble(
+        ..._transcript!.messages.map((msg) => _AgentMessageBubble(
               message: msg,
               colorScheme: colorScheme,
               theme: theme,
@@ -228,22 +228,22 @@ class _SessionHeader extends StatelessWidget {
 }
 
 /// A single message bubble - user messages collapsed, agent expanded
-class _CuratorMessageBubble extends StatefulWidget {
+class _AgentMessageBubble extends StatefulWidget {
   final TranscriptMessage message;
   final ColorScheme colorScheme;
   final ThemeData theme;
 
-  const _CuratorMessageBubble({
+  const _AgentMessageBubble({
     required this.message,
     required this.colorScheme,
     required this.theme,
   });
 
   @override
-  State<_CuratorMessageBubble> createState() => _CuratorMessageBubbleState();
+  State<_AgentMessageBubble> createState() => _AgentMessageBubbleState();
 }
 
-class _CuratorMessageBubbleState extends State<_CuratorMessageBubble> {
+class _AgentMessageBubbleState extends State<_AgentMessageBubble> {
   late bool _isExpanded;
 
   @override
