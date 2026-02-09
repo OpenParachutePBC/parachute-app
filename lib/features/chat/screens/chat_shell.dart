@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:parachute/core/theme/design_tokens.dart';
+import '../models/workspace.dart';
 import '../providers/chat_layout_provider.dart';
+import '../providers/workspace_providers.dart';
 import '../widgets/session_list_panel.dart';
 import '../widgets/chat_content_panel.dart';
 
@@ -10,7 +12,7 @@ import '../widgets/chat_content_panel.dart';
 /// Uses LayoutBuilder to pick the right layout:
 /// - **Mobile** (<600px): Just SessionListPanel; tapping a session pushes ChatScreen.
 /// - **Tablet** (600–1199px): Two-column — session list + chat content side by side.
-/// - **Desktop** (≥1200px): Three-column — sidebar + session list + chat content.
+/// - **Desktop** (≥1200px): Three-column — workspace sidebar + session list + chat content.
 class ChatShell extends ConsumerWidget {
   const ChatShell({super.key});
 
@@ -79,7 +81,7 @@ class _TabletLayout extends StatelessWidget {
   }
 }
 
-/// Desktop: three-column layout — sidebar + session list + chat content.
+/// Desktop: three-column layout — workspace sidebar + session list + chat content.
 class _DesktopLayout extends StatelessWidget {
   const _DesktopLayout();
 
@@ -89,10 +91,10 @@ class _DesktopLayout extends StatelessWidget {
 
     return Row(
       children: [
-        // Sidebar (narrow nav rail)
+        // Workspace sidebar
         SizedBox(
-          width: 64,
-          child: _DesktopSidebar(isDark: isDark),
+          width: 220,
+          child: _WorkspaceSidebar(isDark: isDark),
         ),
         // Session list
         SizedBox(
@@ -117,95 +119,299 @@ class _DesktopLayout extends StatelessWidget {
   }
 }
 
-/// Minimal sidebar for desktop layout — shows app icon and navigation icons.
-class _DesktopSidebar extends StatelessWidget {
+/// Workspace sidebar showing app header, workspace list, and workspace management.
+class _WorkspaceSidebar extends ConsumerWidget {
   final bool isDark;
 
-  const _DesktopSidebar({required this.isDark});
+  const _WorkspaceSidebar({required this.isDark});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final workspacesAsync = ref.watch(workspacesProvider);
+    final activeSlug = ref.watch(activeWorkspaceProvider);
+
     return Container(
       color: isDark ? BrandColors.nightSurfaceElevated : BrandColors.softWhite,
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(height: Spacing.lg),
-          // App icon
-          Icon(
-            Icons.paragliding,
-            size: 28,
-            color: isDark ? BrandColors.nightForest : BrandColors.forest,
+          // App header
+          Padding(
+            padding: EdgeInsets.fromLTRB(Spacing.md, Spacing.lg, Spacing.md, Spacing.md),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.paragliding,
+                  size: 24,
+                  color: isDark ? BrandColors.nightForest : BrandColors.forest,
+                ),
+                SizedBox(width: Spacing.sm),
+                Text(
+                  'Parachute',
+                  style: TextStyle(
+                    fontSize: TypographyTokens.titleMedium,
+                    fontWeight: FontWeight.w700,
+                    color: isDark ? BrandColors.nightText : BrandColors.charcoal,
+                  ),
+                ),
+              ],
+            ),
           ),
-          SizedBox(height: Spacing.xl),
-          // Chat (active)
-          _SidebarIcon(
+
+          // Divider
+          Divider(
+            height: 1,
+            color: isDark
+                ? BrandColors.nightTextSecondary.withValues(alpha: 0.2)
+                : BrandColors.stone.withValues(alpha: 0.2),
+          ),
+
+          // Workspaces section
+          Padding(
+            padding: EdgeInsets.fromLTRB(Spacing.md, Spacing.md, Spacing.md, Spacing.xs),
+            child: Text(
+              'WORKSPACES',
+              style: TextStyle(
+                fontSize: TypographyTokens.labelSmall,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.5,
+                color: isDark ? BrandColors.nightTextSecondary : BrandColors.stone,
+              ),
+            ),
+          ),
+
+          // "All Chats" option
+          _WorkspaceItem(
+            name: 'All Chats',
             icon: Icons.chat_bubble_outline,
-            isActive: true,
+            isActive: activeSlug == null,
             isDark: isDark,
-            tooltip: 'Chat',
+            onTap: () => ref.read(activeWorkspaceProvider.notifier).state = null,
           ),
-          SizedBox(height: Spacing.md),
-          // Vault
-          _SidebarIcon(
-            icon: Icons.folder_outlined,
-            isDark: isDark,
-            tooltip: 'Vault',
+
+          // Workspace list
+          Expanded(
+            child: workspacesAsync.when(
+              data: (workspaces) {
+                if (workspaces.isEmpty) {
+                  return Padding(
+                    padding: EdgeInsets.all(Spacing.md),
+                    child: Text(
+                      'No workspaces yet',
+                      style: TextStyle(
+                        fontSize: TypographyTokens.bodySmall,
+                        color: isDark
+                            ? BrandColors.nightTextSecondary.withValues(alpha: 0.6)
+                            : BrandColors.stone.withValues(alpha: 0.6),
+                      ),
+                    ),
+                  );
+                }
+                return ListView.builder(
+                  padding: EdgeInsets.zero,
+                  itemCount: workspaces.length,
+                  itemBuilder: (context, index) {
+                    final ws = workspaces[index];
+                    return _WorkspaceItem(
+                      name: ws.name,
+                      icon: _workspaceIcon(ws),
+                      isActive: activeSlug == ws.slug,
+                      isDark: isDark,
+                      subtitle: ws.model ?? ws.trustLevel,
+                      onTap: () => ref.read(activeWorkspaceProvider.notifier).state = ws.slug,
+                    );
+                  },
+                );
+              },
+              loading: () => const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              ),
+              error: (_, __) => Padding(
+                padding: EdgeInsets.all(Spacing.md),
+                child: Text(
+                  'Could not load workspaces',
+                  style: TextStyle(
+                    fontSize: TypographyTokens.bodySmall,
+                    color: BrandColors.error,
+                  ),
+                ),
+              ),
+            ),
           ),
-          SizedBox(height: Spacing.md),
-          // Brain
-          _SidebarIcon(
-            icon: Icons.psychology_outlined,
-            isDark: isDark,
-            tooltip: 'Brain',
+
+          // Divider
+          Divider(
+            height: 1,
+            color: isDark
+                ? BrandColors.nightTextSecondary.withValues(alpha: 0.2)
+                : BrandColors.stone.withValues(alpha: 0.2),
           ),
-          const Spacer(),
-          // Settings
-          _SidebarIcon(
-            icon: Icons.settings_outlined,
-            isDark: isDark,
-            tooltip: 'Settings',
+
+          // New workspace button
+          InkWell(
+            onTap: () => _showCreateWorkspaceDialog(context, ref),
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: Spacing.md, vertical: Spacing.sm),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.add,
+                    size: 18,
+                    color: isDark ? BrandColors.nightForest : BrandColors.forest,
+                  ),
+                  SizedBox(width: Spacing.sm),
+                  Text(
+                    'New Workspace',
+                    style: TextStyle(
+                      fontSize: TypographyTokens.bodySmall,
+                      fontWeight: FontWeight.w500,
+                      color: isDark ? BrandColors.nightForest : BrandColors.forest,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
-          SizedBox(height: Spacing.lg),
+          SizedBox(height: Spacing.sm),
         ],
       ),
     );
   }
+
+  IconData _workspaceIcon(Workspace ws) {
+    switch (ws.trustLevel) {
+      case 'sandboxed':
+        return Icons.shield_outlined;
+      case 'vault':
+        return Icons.lock_outline;
+      default:
+        return Icons.workspaces_outline;
+    }
+  }
+
+  void _showCreateWorkspaceDialog(BuildContext context, WidgetRef ref) {
+    final nameController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('New Workspace'),
+          content: TextField(
+            controller: nameController,
+            autofocus: true,
+            decoration: const InputDecoration(
+              labelText: 'Name',
+              hintText: 'e.g., Coding, Research, Writing',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                final name = nameController.text.trim();
+                if (name.isEmpty) return;
+                Navigator.pop(dialogContext);
+                try {
+                  final service = ref.read(workspaceServiceProvider);
+                  final ws = await service.createWorkspace(name: name);
+                  ref.invalidate(workspacesProvider);
+                  ref.read(activeWorkspaceProvider.notifier).state = ws.slug;
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Failed to create workspace: $e')),
+                    );
+                  }
+                }
+              },
+              child: const Text('Create'),
+            ),
+          ],
+        );
+      },
+    );
+  }
 }
 
-class _SidebarIcon extends StatelessWidget {
+/// Single workspace item in the sidebar.
+class _WorkspaceItem extends StatelessWidget {
+  final String name;
   final IconData icon;
   final bool isActive;
   final bool isDark;
-  final String tooltip;
+  final String? subtitle;
+  final VoidCallback onTap;
 
-  const _SidebarIcon({
+  const _WorkspaceItem({
+    required this.name,
     required this.icon,
-    this.isActive = false,
+    required this.isActive,
     required this.isDark,
-    required this.tooltip,
+    this.subtitle,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
+    return InkWell(
+      onTap: onTap,
       child: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: isActive
-              ? (isDark
-                  ? BrandColors.nightForest.withValues(alpha: 0.15)
-                  : BrandColors.forest.withValues(alpha: 0.08))
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Icon(
-          icon,
-          size: 22,
-          color: isActive
-              ? (isDark ? BrandColors.nightForest : BrandColors.forest)
-              : (isDark ? BrandColors.nightTextSecondary : BrandColors.stone),
+        padding: EdgeInsets.symmetric(horizontal: Spacing.md, vertical: Spacing.sm),
+        color: isActive
+            ? (isDark
+                ? BrandColors.nightForest.withValues(alpha: 0.15)
+                : BrandColors.forest.withValues(alpha: 0.08))
+            : Colors.transparent,
+        child: Row(
+          children: [
+            Icon(
+              icon,
+              size: 18,
+              color: isActive
+                  ? (isDark ? BrandColors.nightForest : BrandColors.forest)
+                  : (isDark ? BrandColors.nightTextSecondary : BrandColors.stone),
+            ),
+            SizedBox(width: Spacing.sm),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name,
+                    style: TextStyle(
+                      fontSize: TypographyTokens.bodySmall,
+                      fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+                      color: isActive
+                          ? (isDark ? BrandColors.nightText : BrandColors.charcoal)
+                          : (isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood),
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (subtitle != null)
+                    Text(
+                      subtitle!,
+                      style: TextStyle(
+                        fontSize: TypographyTokens.labelSmall,
+                        color: isDark
+                            ? BrandColors.nightTextSecondary.withValues(alpha: 0.7)
+                            : BrandColors.stone.withValues(alpha: 0.7),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );

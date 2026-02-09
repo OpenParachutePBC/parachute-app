@@ -15,6 +15,7 @@ import 'package:parachute/core/services/logging_service.dart';
 import 'package:parachute/core/providers/core_service_providers.dart';
 import 'package:parachute/core/providers/app_state_provider.dart' show modelPreferenceProvider;
 import 'chat_session_providers.dart';
+import 'workspace_providers.dart' show activeWorkspaceProvider;
 
 // ============================================================
 // Performance Tracing (inline stub)
@@ -1145,6 +1146,9 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
       final modelPref = _ref.read(modelPreferenceProvider).valueOrNull;
       final modelApiValue = modelPref?.apiValue;
 
+      // Read active workspace
+      final activeWorkspace = _ref.read(activeWorkspaceProvider);
+
       await for (final event in _service.streamChat(
         sessionId: existingSessionId,  // null for new sessions, real ID for existing
         message: message,
@@ -1159,6 +1163,7 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
         agentPath: agentPath,
         trustLevel: trustLevel,
         model: modelApiValue,
+        workspaceId: activeWorkspace,
       )) {
         // Check if session has changed (user switched chats during stream)
         // Don't break the stream - let it continue in background so server keeps processing

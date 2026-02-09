@@ -5,6 +5,7 @@ import '../models/chat_session.dart';
 import '../providers/chat_providers.dart';
 import '../providers/chat_layout_provider.dart';
 import '../providers/session_search_provider.dart';
+import '../providers/workspace_providers.dart';
 import '../widgets/session_list_item.dart';
 import '../screens/chat_screen.dart';
 
@@ -147,11 +148,15 @@ class _SessionListPanelState extends ConsumerState<SessionListPanel> {
   ) {
     final searchQuery = ref.watch(sessionSearchQueryProvider);
 
+    final activeWorkspace = ref.watch(activeWorkspaceProvider);
+
     final AsyncValue<List<ChatSession>> sessionsAsync;
     if (_showArchived) {
       sessionsAsync = ref.watch(archivedSessionsProvider);
     } else if (searchQuery.isNotEmpty) {
       sessionsAsync = ref.watch(searchedSessionsProvider);
+    } else if (activeWorkspace != null) {
+      sessionsAsync = ref.watch(workspaceSessionsProvider);
     } else {
       sessionsAsync = ref.watch(chatSessionsProvider);
     }
