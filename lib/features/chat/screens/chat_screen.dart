@@ -1654,7 +1654,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         // ref after the widget is disposed
         final archiveFunc = ref.read(archiveSessionProvider);
         if (mounted) {
-          Navigator.of(context).pop(); // Go back to hub
+          _navigateBackFromSession();
         }
         // Small delay to let the navigation complete before invalidating providers
         await Future.delayed(const Duration(milliseconds: 100));
@@ -1665,11 +1665,26 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         if (confirmed && mounted) {
           // Capture the provider function before navigating
           final deleteFunc = ref.read(deleteSessionProvider);
-          Navigator.of(context).pop(); // Go back to hub
+          _navigateBackFromSession();
           await Future.delayed(const Duration(milliseconds: 100));
           await deleteFunc(sessionId);
         }
         break;
+    }
+  }
+
+  /// Navigate back from the current session.
+  ///
+  /// In mobile mode (ChatScreen was pushed), pop the Navigator.
+  /// In embedded mode (tablet/desktop), clear the session selection so
+  /// ChatContentPanel shows the empty state — popping would remove the
+  /// root ChatShell route and crash.
+  void _navigateBackFromSession() {
+    if (widget.embeddedMode) {
+      ref.read(currentSessionIdProvider.notifier).state = null;
+      ref.read(newChatModeProvider.notifier).state = false;
+    } else {
+      Navigator.of(context).pop();
     }
   }
 
