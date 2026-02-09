@@ -50,6 +50,9 @@ class ChatScreen extends ConsumerStatefulWidget {
   /// Trust level override (full, vault, sandboxed). Null = module default.
   final String? trustLevel;
 
+  /// When true, renders without Scaffold/AppBar for embedding in panel layouts.
+  final bool embeddedMode;
+
   const ChatScreen({
     super.key,
     this.initialMessage,
@@ -59,6 +62,7 @@ class ChatScreen extends ConsumerStatefulWidget {
     this.agentType,
     this.agentPath,
     this.trustLevel,
+    this.embeddedMode = false,
   });
 
   @override
@@ -355,7 +359,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           stackTrace: stack,
         );
       },
-      child: Scaffold(
+      child: widget.embeddedMode
+          ? _buildBody(context, isDark, chatState)
+          : Scaffold(
         backgroundColor: isDark ? BrandColors.nightSurface : BrandColors.cream,
         floatingActionButton: _showScrollToBottomFab
             ? Padding(
@@ -455,7 +461,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             const SizedBox(width: Spacing.xs),
           ],
       ),
-      body: Column(
+      body: _buildBody(context, isDark, chatState),
+    ),
+    );
+  }
+
+  Widget _buildBody(BuildContext context, bool isDark, ChatMessagesState chatState) {
+    return ColoredBox(
+      color: isDark ? BrandColors.nightSurface : BrandColors.cream,
+      child: Column(
         children: [
           // Connection status banner (shows when server unreachable)
           ConnectionStatusBanner(
@@ -551,7 +565,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           ),
         ],
       ),
-    ),
     );
   }
 
