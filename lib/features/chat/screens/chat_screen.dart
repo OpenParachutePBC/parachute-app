@@ -486,7 +486,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         children: [
           // Session title (tappable to switch sessions)
           Expanded(
-            child: _buildTitle(context, isDark, currentSessionId),
+            child: _buildTitle(context, isDark, currentSessionId, chatState),
           ),
 
           // Agent badge
@@ -572,33 +572,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               ),
             ),
 
-          // Context settings
-          IconButton(
-            onPressed: () => _showContextSettingsSheet(context),
-            icon: Icon(Icons.tune, size: 18),
-            tooltip: 'Context settings',
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-            color: isDark ? BrandColors.nightTextSecondary : BrandColors.charcoal,
-          ),
-
-          // Session info
-          if (chatState.sessionId != null || chatState.promptMetadata != null)
-            IconButton(
-              onPressed: () => _showSessionInfoSheet(context),
-              icon: Icon(Icons.info_outline, size: 18),
-              tooltip: 'Session info',
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-              color: isDark ? BrandColors.nightTextSecondary : BrandColors.charcoal,
-            ),
-
-          // Session config (trust level, workspace)
+          // Unified session settings (trust, workspace, context, info)
           if (chatState.sessionId != null)
             IconButton(
-              onPressed: () => _showSessionConfigSheet(context),
+              onPressed: () => _showUnifiedSettings(context),
               icon: Icon(Icons.settings_outlined, size: 18),
-              tooltip: 'Session config',
+              tooltip: 'Session settings',
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
               color: isDark ? BrandColors.nightTextSecondary : BrandColors.charcoal,
