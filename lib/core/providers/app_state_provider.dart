@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
-import '../services/base_server_service.dart';
+import '../services/computer_server_service.dart';
 
 /// App flavor set at compile time via --dart-define=FLAVOR=daily|client|computer
 /// Defaults to 'client' if not specified
@@ -369,7 +369,7 @@ class VaultPathNotifier extends AsyncNotifier<String?> {
   /// Fetch vault path from the running server
   Future<String?> _fetchServerVaultPath() async {
     try {
-      final service = BaseServerService();
+      final service = ComputerServerService();
       final serverVaultPath = await service.getServerVaultPath();
       if (serverVaultPath != null && serverVaultPath.isNotEmpty) {
         // Cache the server vault path for offline reference

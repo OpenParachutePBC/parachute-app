@@ -1,8 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:parachute/core/services/base_server_service.dart';
-import 'package:parachute/core/providers/base_server_provider.dart';
+import 'package:parachute/core/services/computer_server_service.dart';
+import 'package:parachute/core/providers/computer_server_provider.dart';
 
 /// Screen showing a daily agent's conversation transcript.
 ///
@@ -58,7 +58,7 @@ class _AgentLogScreenState extends ConsumerState<AgentLogScreen> {
     });
 
     try {
-      final service = ref.read(baseServerServiceProvider);
+      final service = ref.read(computerServerServiceProvider);
       final transcript = await service.getAgentTranscript(widget.agentName, limit: 100);
 
       debugPrint('[AgentLogScreen] Got transcript: hasTranscript=${transcript?.hasTranscript}, messages=${transcript?.messages.length}');

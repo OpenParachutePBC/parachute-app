@@ -7,7 +7,7 @@ import 'package:parachute/core/providers/app_state_provider.dart';
 import 'package:parachute/core/providers/lima_vm_provider.dart';
 import 'package:parachute/core/providers/bare_metal_provider.dart';
 import 'package:parachute/core/services/lima_vm_service.dart';
-import 'package:parachute/core/services/base_server_service.dart';
+import 'package:parachute/core/services/computer_server_service.dart';
 import 'package:parachute/core/services/file_system_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -580,7 +580,7 @@ class _ComputerSetupWizardState extends ConsumerState<ComputerSetupWizard> {
     // In Parachute Computer mode, fetch vault path from server and configure FileSystemService
     // This ensures app and server use the same vault - no sync needed
     try {
-      final serverService = BaseServerService();
+      final serverService = ComputerServerService();
       final serverVaultPath = await serverService.getServerVaultPath();
       if (serverVaultPath != null) {
         debugPrint('[ComputerSetupWizard] Server vault path: $serverVaultPath');

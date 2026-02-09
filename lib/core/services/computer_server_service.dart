@@ -10,10 +10,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// - Daily agent functionality (reflections, content ideas)
 /// - Module management
 /// - Session persistence
-class BaseServerService {
-  static final BaseServerService _instance = BaseServerService._internal();
-  factory BaseServerService() => _instance;
-  BaseServerService._internal();
+class ComputerServerService {
+  static final ComputerServerService _instance = ComputerServerService._internal();
+  factory ComputerServerService() => _instance;
+  ComputerServerService._internal();
 
   // Use same key as app_state_provider.dart ServerUrlNotifier for consistency
   static const String _serverUrlKey = 'parachute_server_url';
@@ -56,7 +56,7 @@ class BaseServerService {
     _apiKey = prefs.getString(_apiKeyKey);
     _isInitialized = true;
     // Security: Only log presence of API key, not the key itself
-    debugPrint('[BaseServerService] Initialized with URL: $_serverUrl, hasApiKey: ${_apiKey != null && _apiKey!.isNotEmpty}');
+    debugPrint('[ComputerServerService] Initialized with URL: $_serverUrl, hasApiKey: ${_apiKey != null && _apiKey!.isNotEmpty}');
   }
 
   /// Set a custom server URL
@@ -64,7 +64,7 @@ class BaseServerService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_serverUrlKey, url);
     _serverUrl = url;
-    debugPrint('[BaseServerService] Server URL updated to: $url');
+    debugPrint('[ComputerServerService] Server URL updated to: $url');
   }
 
   /// Reset to default server URL
@@ -72,7 +72,7 @@ class BaseServerService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_serverUrlKey);
     _serverUrl = _defaultServerUrl;
-    debugPrint('[BaseServerService] Server URL reset to default: $_serverUrl');
+    debugPrint('[ComputerServerService] Server URL reset to default: $_serverUrl');
   }
 
   // ============================================================
@@ -87,7 +87,7 @@ class BaseServerService {
           .timeout(const Duration(seconds: 5));
       return response.statusCode == 200;
     } catch (e) {
-      debugPrint('[BaseServerService] Server not reachable: $e');
+      debugPrint('[ComputerServerService] Server not reachable: $e');
       return false;
     }
   }
@@ -104,7 +104,7 @@ class BaseServerService {
       }
       return null;
     } catch (e) {
-      debugPrint('[BaseServerService] Error getting health status: $e');
+      debugPrint('[ComputerServerService] Error getting health status: $e');
       return null;
     }
   }
@@ -136,23 +136,23 @@ class BaseServerService {
   Future<AgentTranscript?> getAgentTranscript(String agentName, {int limit = 50}) async {
     try {
       final url = '${await getServerUrl()}/api/modules/daily/agents/$agentName/transcript?limit=$limit';
-      debugPrint('[BaseServerService] Fetching agent transcript from: $url');
+      debugPrint('[ComputerServerService] Fetching agent transcript from: $url');
 
       final response = await http
           .get(Uri.parse(url), headers: await _getHeaders())
           .timeout(const Duration(seconds: 15));
 
-      debugPrint('[BaseServerService] Agent transcript response: ${response.statusCode}');
+      debugPrint('[ComputerServerService] Agent transcript response: ${response.statusCode}');
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body) as Map<String, dynamic>;
-        debugPrint('[BaseServerService] Agent transcript data: hasTranscript=${data['hasTranscript']}, messages=${(data['messages'] as List?)?.length ?? 0}');
+        debugPrint('[ComputerServerService] Agent transcript data: hasTranscript=${data['hasTranscript']}, messages=${(data['messages'] as List?)?.length ?? 0}');
         return AgentTranscript.fromJson(data);
       }
-      debugPrint('[BaseServerService] Agent transcript error: ${response.statusCode} - ${response.body}');
+      debugPrint('[ComputerServerService] Agent transcript error: ${response.statusCode} - ${response.body}');
       return null;
     } catch (e) {
-      debugPrint('[BaseServerService] Error getting agent transcript: $e');
+      debugPrint('[ComputerServerService] Error getting agent transcript: $e');
       return null;
     }
   }
@@ -175,10 +175,10 @@ class BaseServerService {
             .map((a) => DailyAgentInfo.fromJson(a as Map<String, dynamic>))
             .toList();
       }
-      debugPrint('[BaseServerService] Get agents error: ${response.statusCode}');
+      debugPrint('[ComputerServerService] Get agents error: ${response.statusCode}');
       return null;
     } catch (e) {
-      debugPrint('[BaseServerService] Error getting daily agents: $e');
+      debugPrint('[ComputerServerService] Error getting daily agents: $e');
       return null;
     }
   }
@@ -195,10 +195,10 @@ class BaseServerService {
         final data = json.decode(response.body) as Map<String, dynamic>;
         return DailyAgentInfo.fromJson(data);
       }
-      debugPrint('[BaseServerService] Get agent error: ${response.statusCode}');
+      debugPrint('[ComputerServerService] Get agent error: ${response.statusCode}');
       return null;
     } catch (e) {
-      debugPrint('[BaseServerService] Error getting agent $agentName: $e');
+      debugPrint('[ComputerServerService] Error getting agent $agentName: $e');
       return null;
     }
   }
@@ -266,7 +266,7 @@ class BaseServerService {
       }
       return null;
     } catch (e) {
-      debugPrint('[BaseServerService] Error getting agent status: $e');
+      debugPrint('[ComputerServerService] Error getting agent status: $e');
       return null;
     }
   }

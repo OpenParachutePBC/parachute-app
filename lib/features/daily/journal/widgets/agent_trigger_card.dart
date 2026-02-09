@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:parachute/core/theme/design_tokens.dart';
-import 'package:parachute/core/providers/base_server_provider.dart';
-import 'package:parachute/core/services/base_server_service.dart';
+import 'package:parachute/core/providers/computer_server_provider.dart';
+import 'package:parachute/core/services/computer_server_service.dart';
 import '../providers/journal_providers.dart';
 
 /// Provider for agent trigger state (per agent)
@@ -360,7 +360,7 @@ class _AgentTriggerCardState extends ConsumerState<AgentTriggerCard> {
     setState(() => _isTriggering = true);
 
     try {
-      final server = BaseServerService();
+      final server = ComputerServerService();
       final dateStr = _formatDate(widget.date);
       final result = await server.triggerDailyAgent(widget.agent.name, date: dateStr);
 
