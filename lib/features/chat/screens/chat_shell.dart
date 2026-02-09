@@ -7,6 +7,7 @@ import '../providers/chat_layout_provider.dart';
 import '../providers/workspace_providers.dart';
 import '../widgets/session_list_panel.dart';
 import '../widgets/chat_content_panel.dart';
+import '../widgets/workspace_dialog.dart';
 
 /// Adaptive shell for the chat feature.
 ///
@@ -220,6 +221,20 @@ class _WorkspaceSidebar extends ConsumerWidget {
                       isDark: isDark,
                       subtitle: ws.model ?? ws.trustLevel,
                       onTap: () => ref.read(activeWorkspaceProvider.notifier).state = ws.slug,
+                      onEdit: () async {
+                        final saved = await EditWorkspaceDialog.show(context, ws);
+                        if (saved == true) ref.invalidate(workspacesProvider);
+                      },
+                      onDelete: () async {
+                        final confirmed = await confirmDeleteWorkspace(context, ws);
+                        if (!confirmed) return;
+                        final service = ref.read(workspaceServiceProvider);
+                        await service.deleteWorkspace(ws.slug);
+                        ref.invalidate(workspacesProvider);
+                        if (activeSlug == ws.slug) {
+                          ref.read(activeWorkspaceProvider.notifier).state = null;
+                        }
+                      },
                     );
                   },
                 );
@@ -292,48 +307,11 @@ class _WorkspaceSidebar extends ConsumerWidget {
   }
 
   void _showCreateWorkspaceDialog(BuildContext context, WidgetRef ref) {
-    final nameController = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('New Workspace'),
-          content: TextField(
-            controller: nameController,
-            autofocus: true,
-            decoration: const InputDecoration(
-              labelText: 'Name',
-              hintText: 'e.g., Coding, Research, Writing',
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () async {
-                final name = nameController.text.trim();
-                if (name.isEmpty) return;
-                Navigator.pop(dialogContext);
-                try {
-                  final service = ref.read(workspaceServiceProvider);
-                  final ws = await service.createWorkspace(name: name);
-                  ref.invalidate(workspacesProvider);
-                  ref.read(activeWorkspaceProvider.notifier).state = ws.slug;
-                } catch (e) {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Failed to create workspace: $e')),
-                    );
-                  }
-                }
-              },
-              child: const Text('Create'),
-            ),
-          ],
-        );
+    CreateWorkspaceDialog.show(
+      context,
+      onCreated: (ws) {
+        ref.invalidate(workspacesProvider);
+        ref.read(activeWorkspaceProvider.notifier).state = ws.slug;
       },
     );
   }
@@ -347,6 +325,8 @@ class _WorkspaceItem extends StatelessWidget {
   final bool isDark;
   final String? subtitle;
   final VoidCallback onTap;
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
 
   const _WorkspaceItem({
     required this.name,
@@ -355,10 +335,14 @@ class _WorkspaceItem extends StatelessWidget {
     required this.isDark,
     this.subtitle,
     required this.onTap,
+    this.onEdit,
+    this.onDelete,
   });
 
   @override
   Widget build(BuildContext context) {
+    final hasActions = onEdit != null || onDelete != null;
+
     return InkWell(
       onTap: onTap,
       child: Container(
@@ -406,6 +390,33 @@ class _WorkspaceItem extends StatelessWidget {
                 ],
               ),
             ),
+            if (hasActions)
+              SizedBox(
+                width: 24,
+                height: 24,
+                child: PopupMenuButton<String>(
+                  padding: EdgeInsets.zero,
+                  iconSize: 16,
+                  icon: Icon(
+                    Icons.more_horiz,
+                    size: 16,
+                    color: isDark ? BrandColors.nightTextSecondary : BrandColors.stone,
+                  ),
+                  onSelected: (value) {
+                    if (value == 'edit') onEdit?.call();
+                    if (value == 'delete') onDelete?.call();
+                  },
+                  itemBuilder: (context) => [
+                    if (onEdit != null)
+                      const PopupMenuItem(value: 'edit', child: Text('Edit')),
+                    if (onDelete != null)
+                      PopupMenuItem(
+                        value: 'delete',
+                        child: Text('Delete', style: TextStyle(color: BrandColors.error)),
+                      ),
+                  ],
+                ),
+              ),
           ],
         ),
       ),

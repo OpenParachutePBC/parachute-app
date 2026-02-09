@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:parachute/core/theme/design_tokens.dart';
 import 'package:parachute/features/chat/models/workspace.dart';
 import 'package:parachute/features/chat/providers/workspace_providers.dart';
+import 'package:parachute/features/chat/widgets/workspace_dialog.dart';
 import 'package:parachute/features/settings/models/trust_level.dart';
 
 /// Workspace management section in Settings.
@@ -118,11 +119,9 @@ class WorkspaceManagementSection extends ConsumerWidget {
   }
 
   void _showCreateDialog(BuildContext context, WidgetRef ref) {
-    showDialog(
-      context: context,
-      builder: (dialogContext) => _CreateWorkspaceDialog(
-        onCreated: () => ref.invalidate(workspacesProvider),
-      ),
+    CreateWorkspaceDialog.show(
+      context,
+      onCreated: (_) => ref.invalidate(workspacesProvider),
     );
   }
 }
@@ -240,49 +239,27 @@ class _WorkspaceTile extends ConsumerWidget {
   }
 
   void _showEditDialog(BuildContext context, WidgetRef ref) {
-    showDialog(
-      context: context,
-      builder: (dialogContext) => _EditWorkspaceDialog(
-        workspace: workspace,
-        onSaved: () => ref.invalidate(workspacesProvider),
-      ),
+    EditWorkspaceDialog.show(
+      context,
+      workspace,
+      onSaved: () => ref.invalidate(workspacesProvider),
     );
   }
 
-  void _confirmDelete(BuildContext context, WidgetRef ref) {
-    showDialog(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text('Delete "${workspace.name}"?'),
-        content: const Text(
-          'Sessions in this workspace will be unlinked but not deleted.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              Navigator.pop(dialogContext);
-              try {
-                final service = ref.read(workspaceServiceProvider);
-                await service.deleteWorkspace(workspace.slug);
-                ref.invalidate(workspacesProvider);
-              } catch (e) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Failed to delete: $e')),
-                  );
-                }
-              }
-            },
-            style: FilledButton.styleFrom(backgroundColor: BrandColors.error),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
+  void _confirmDelete(BuildContext context, WidgetRef ref) async {
+    final confirmed = await confirmDeleteWorkspace(context, workspace);
+    if (!confirmed) return;
+    try {
+      final service = ref.read(workspaceServiceProvider);
+      await service.deleteWorkspace(workspace.slug);
+      ref.invalidate(workspacesProvider);
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to delete: $e')),
+        );
+      }
+    }
   }
 }
 
@@ -314,256 +291,3 @@ class _Badge extends StatelessWidget {
   }
 }
 
-/// Dialog for creating a new workspace.
-class _CreateWorkspaceDialog extends ConsumerStatefulWidget {
-  final VoidCallback onCreated;
-
-  const _CreateWorkspaceDialog({required this.onCreated});
-
-  @override
-  ConsumerState<_CreateWorkspaceDialog> createState() => _CreateWorkspaceDialogState();
-}
-
-class _CreateWorkspaceDialogState extends ConsumerState<_CreateWorkspaceDialog> {
-  final _nameController = TextEditingController();
-  final _descController = TextEditingController();
-  final _dirController = TextEditingController();
-  String _trustLevel = 'trusted';
-  String? _model;
-  bool _isSubmitting = false;
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    _descController.dispose();
-    _dirController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('New Workspace'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: _nameController,
-              autofocus: true,
-              decoration: const InputDecoration(labelText: 'Name'),
-            ),
-            SizedBox(height: Spacing.md),
-            TextField(
-              controller: _descController,
-              decoration: const InputDecoration(labelText: 'Description (optional)'),
-            ),
-            SizedBox(height: Spacing.md),
-            TextField(
-              controller: _dirController,
-              decoration: const InputDecoration(
-                labelText: 'Working directory (optional)',
-                hintText: 'e.g., Projects/my-app',
-              ),
-            ),
-            SizedBox(height: Spacing.md),
-            DropdownButtonFormField<String>(
-              value: _trustLevel,
-              decoration: const InputDecoration(labelText: 'Trust level'),
-              items: TrustLevel.values.map((tl) => DropdownMenuItem(
-                value: tl.name,
-                child: Text(tl.displayName),
-              )).toList(),
-              onChanged: (val) => setState(() => _trustLevel = val ?? 'trusted'),
-            ),
-            SizedBox(height: Spacing.md),
-            DropdownButtonFormField<String?>(
-              value: _model,
-              decoration: const InputDecoration(labelText: 'Default model'),
-              items: const [
-                DropdownMenuItem(value: null, child: Text('Server default')),
-                DropdownMenuItem(value: 'sonnet', child: Text('Sonnet')),
-                DropdownMenuItem(value: 'opus', child: Text('Opus')),
-                DropdownMenuItem(value: 'haiku', child: Text('Haiku')),
-              ],
-              onChanged: (val) => setState(() => _model = val),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: _isSubmitting ? null : () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: _isSubmitting ? null : _submit,
-          child: _isSubmitting
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('Create'),
-        ),
-      ],
-    );
-  }
-
-  Future<void> _submit() async {
-    final name = _nameController.text.trim();
-    if (name.isEmpty) return;
-
-    setState(() => _isSubmitting = true);
-    try {
-      final service = ref.read(workspaceServiceProvider);
-      await service.createWorkspace(
-        name: name,
-        description: _descController.text.trim(),
-        trustLevel: _trustLevel,
-        workingDirectory: _dirController.text.trim().isEmpty ? null : _dirController.text.trim(),
-        model: _model,
-      );
-      widget.onCreated();
-      if (mounted) Navigator.pop(context);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to create workspace: $e')),
-        );
-        setState(() => _isSubmitting = false);
-      }
-    }
-  }
-}
-
-/// Dialog for editing an existing workspace.
-class _EditWorkspaceDialog extends ConsumerStatefulWidget {
-  final Workspace workspace;
-  final VoidCallback onSaved;
-
-  const _EditWorkspaceDialog({required this.workspace, required this.onSaved});
-
-  @override
-  ConsumerState<_EditWorkspaceDialog> createState() => _EditWorkspaceDialogState();
-}
-
-class _EditWorkspaceDialogState extends ConsumerState<_EditWorkspaceDialog> {
-  late final TextEditingController _nameController;
-  late final TextEditingController _descController;
-  late final TextEditingController _dirController;
-  late String _trustLevel;
-  late String? _model;
-  bool _isSubmitting = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _nameController = TextEditingController(text: widget.workspace.name);
-    _descController = TextEditingController(text: widget.workspace.description);
-    _dirController = TextEditingController(text: widget.workspace.workingDirectory ?? '');
-    _trustLevel = widget.workspace.trustLevel;
-    _model = widget.workspace.model;
-  }
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    _descController.dispose();
-    _dirController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text('Edit "${widget.workspace.name}"'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: _nameController,
-              decoration: const InputDecoration(labelText: 'Name'),
-            ),
-            SizedBox(height: Spacing.md),
-            TextField(
-              controller: _descController,
-              decoration: const InputDecoration(labelText: 'Description'),
-            ),
-            SizedBox(height: Spacing.md),
-            TextField(
-              controller: _dirController,
-              decoration: const InputDecoration(
-                labelText: 'Working directory',
-                hintText: 'e.g., Projects/my-app',
-              ),
-            ),
-            SizedBox(height: Spacing.md),
-            DropdownButtonFormField<String>(
-              value: _trustLevel,
-              decoration: const InputDecoration(labelText: 'Trust level'),
-              items: TrustLevel.values.map((tl) => DropdownMenuItem(
-                value: tl.name,
-                child: Text(tl.displayName),
-              )).toList(),
-              onChanged: (val) => setState(() => _trustLevel = val ?? 'trusted'),
-            ),
-            SizedBox(height: Spacing.md),
-            DropdownButtonFormField<String?>(
-              value: _model,
-              decoration: const InputDecoration(labelText: 'Default model'),
-              items: const [
-                DropdownMenuItem(value: null, child: Text('Server default')),
-                DropdownMenuItem(value: 'sonnet', child: Text('Sonnet')),
-                DropdownMenuItem(value: 'opus', child: Text('Opus')),
-                DropdownMenuItem(value: 'haiku', child: Text('Haiku')),
-              ],
-              onChanged: (val) => setState(() => _model = val),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: _isSubmitting ? null : () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: _isSubmitting ? null : _submit,
-          child: _isSubmitting
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('Save'),
-        ),
-      ],
-    );
-  }
-
-  Future<void> _submit() async {
-    setState(() => _isSubmitting = true);
-    try {
-      final service = ref.read(workspaceServiceProvider);
-      final updates = <String, dynamic>{
-        'name': _nameController.text.trim(),
-        'description': _descController.text.trim(),
-        'trust_level': _trustLevel,
-        'working_directory': _dirController.text.trim().isEmpty ? null : _dirController.text.trim(),
-        'model': _model,
-      };
-      await service.updateWorkspace(widget.workspace.slug, updates);
-      widget.onSaved();
-      if (mounted) Navigator.pop(context);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to save: $e')),
-        );
-        setState(() => _isSubmitting = false);
-      }
-    }
-  }
-}
