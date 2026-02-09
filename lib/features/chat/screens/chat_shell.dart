@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:parachute/core/theme/design_tokens.dart';
 import '../models/workspace.dart';
+import '../../settings/models/trust_level.dart';
 import '../providers/chat_layout_provider.dart';
 import '../providers/workspace_providers.dart';
 import '../widgets/session_list_panel.dart';
@@ -286,14 +287,8 @@ class _WorkspaceSidebar extends ConsumerWidget {
   }
 
   IconData _workspaceIcon(Workspace ws) {
-    switch (ws.trustLevel) {
-      case 'sandboxed':
-        return Icons.shield_outlined;
-      case 'vault':
-        return Icons.lock_outline;
-      default:
-        return Icons.workspaces_outline;
-    }
+    final tl = TrustLevel.fromString(ws.trustLevel);
+    return tl == TrustLevel.untrusted ? Icons.shield_outlined : Icons.workspaces_outline;
   }
 
   void _showCreateWorkspaceDialog(BuildContext context, WidgetRef ref) {

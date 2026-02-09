@@ -52,7 +52,7 @@ class WorkspaceService {
   Future<Workspace> createWorkspace({
     required String name,
     String description = '',
-    String trustLevel = 'full',
+    String trustLevel = 'trusted',
     String? workingDirectory,
     String? model,
     WorkspaceCapabilities? capabilities,

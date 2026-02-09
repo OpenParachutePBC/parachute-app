@@ -15,7 +15,7 @@ class Workspace {
     required this.name,
     required this.slug,
     this.description = '',
-    this.trustLevel = 'full',
+    this.trustLevel = 'trusted',
     this.workingDirectory,
     this.model,
     this.capabilities = const WorkspaceCapabilities(),
@@ -26,7 +26,7 @@ class Workspace {
       name: json['name'] as String,
       slug: json['slug'] as String,
       description: json['description'] as String? ?? '',
-      trustLevel: json['trust_level'] as String? ?? 'full',
+      trustLevel: json['trust_level'] as String? ?? 'trusted',
       workingDirectory: json['working_directory'] as String?,
       model: json['model'] as String?,
       capabilities: json['capabilities'] != null

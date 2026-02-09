@@ -123,7 +123,7 @@ class _NewChatSheetState extends ConsumerState<NewChatSheet> {
         // Set trust to workspace floor if current selection is less restrictive
         final floor = TrustLevel.fromString(workspace.trustLevel);
         if (_selectedTrustLevel == null || _selectedTrustLevel!.index < floor.index) {
-          _selectedTrustLevel = floor == TrustLevel.full ? null : floor;
+          _selectedTrustLevel = floor == TrustLevel.trusted ? null : floor;
         }
       }
     });

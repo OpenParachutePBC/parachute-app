@@ -230,25 +230,13 @@ class _WorkspaceTile extends ConsumerWidget {
   }
 
   IconData _trustIcon(String trust) {
-    switch (trust) {
-      case 'sandboxed':
-        return Icons.shield_outlined;
-      case 'vault':
-        return Icons.lock_outline;
-      default:
-        return Icons.security;
-    }
+    final tl = TrustLevel.fromString(trust);
+    return tl.icon;
   }
 
   Color _trustColor(String trust) {
-    switch (trust) {
-      case 'sandboxed':
-        return BrandColors.error;
-      case 'vault':
-        return BrandColors.warning;
-      default:
-        return BrandColors.forest;
-    }
+    final tl = TrustLevel.fromString(trust);
+    return tl.iconColor(isDark);
   }
 
   void _showEditDialog(BuildContext context, WidgetRef ref) {
@@ -340,7 +328,7 @@ class _CreateWorkspaceDialogState extends ConsumerState<_CreateWorkspaceDialog> 
   final _nameController = TextEditingController();
   final _descController = TextEditingController();
   final _dirController = TextEditingController();
-  String _trustLevel = 'full';
+  String _trustLevel = 'trusted';
   String? _model;
   bool _isSubmitting = false;
 
@@ -386,7 +374,7 @@ class _CreateWorkspaceDialogState extends ConsumerState<_CreateWorkspaceDialog> 
                 value: tl.name,
                 child: Text(tl.displayName),
               )).toList(),
-              onChanged: (val) => setState(() => _trustLevel = val ?? 'full'),
+              onChanged: (val) => setState(() => _trustLevel = val ?? 'trusted'),
             ),
             SizedBox(height: Spacing.md),
             DropdownButtonFormField<String?>(
@@ -519,7 +507,7 @@ class _EditWorkspaceDialogState extends ConsumerState<_EditWorkspaceDialog> {
                 value: tl.name,
                 child: Text(tl.displayName),
               )).toList(),
-              onChanged: (val) => setState(() => _trustLevel = val ?? 'full'),
+              onChanged: (val) => setState(() => _trustLevel = val ?? 'trusted'),
             ),
             SizedBox(height: Spacing.md),
             DropdownButtonFormField<String?>(
