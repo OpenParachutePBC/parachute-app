@@ -468,11 +468,195 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
   }
 
+  /// Builds a compact toolbar for embedded (tablet/desktop) mode where there's no AppBar.
+  Widget _buildEmbeddedToolbar(BuildContext context, bool isDark, ChatMessagesState chatState) {
+    final currentSessionId = ref.watch(currentSessionIdProvider);
+    return Container(
+      height: 48,
+      padding: const EdgeInsets.symmetric(horizontal: Spacing.sm),
+      decoration: BoxDecoration(
+        color: isDark ? BrandColors.nightSurface : BrandColors.softWhite,
+        border: Border(
+          bottom: BorderSide(
+            color: isDark ? BrandColors.nightSurfaceElevated : BrandColors.stone.withValues(alpha: 0.3),
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          // Session title (tappable to switch sessions)
+          Expanded(
+            child: _buildTitle(context, isDark, currentSessionId),
+          ),
+
+          // Agent badge
+          if (chatState.promptMetadata?.agentName != null &&
+              chatState.promptMetadata!.agentName != 'Vault Agent')
+            Container(
+              margin: const EdgeInsets.only(right: Spacing.xs),
+              padding: const EdgeInsets.symmetric(
+                horizontal: Spacing.sm,
+                vertical: Spacing.xxs,
+              ),
+              decoration: BoxDecoration(
+                color: BrandColors.turquoise.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.smart_toy, size: 12, color: BrandColors.turquoise),
+                  const SizedBox(width: 4),
+                  Text(
+                    _getAgentBadge(chatState.promptMetadata!.agentName!),
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: BrandColors.turquoise,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+          // Model badge
+          if (chatState.model != null)
+            Container(
+              margin: const EdgeInsets.only(right: Spacing.xs),
+              padding: const EdgeInsets.symmetric(
+                horizontal: Spacing.sm,
+                vertical: Spacing.xxs,
+              ),
+              decoration: BoxDecoration(
+                color: _getModelColor(chatState.model!).withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                _getModelBadge(chatState.model!),
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: _getModelColor(chatState.model!),
+                ),
+              ),
+            ),
+
+          // Working directory indicator
+          if (chatState.workingDirectory != null)
+            Tooltip(
+              message: chatState.workingDirectory!,
+              child: InkWell(
+                onTap: chatState.messages.isEmpty ? _showDirectoryPicker : null,
+                borderRadius: BorderRadius.circular(4),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.folder_outlined,
+                        size: 16,
+                        color: isDark ? BrandColors.nightForest : BrandColors.forest,
+                      ),
+                      const SizedBox(width: 2),
+                      Text(
+                        chatState.workingDirectory!.split('/').last,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: isDark ? BrandColors.nightForest : BrandColors.forest,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+          // Context settings
+          IconButton(
+            onPressed: () => _showContextSettingsSheet(context),
+            icon: Icon(Icons.tune, size: 18),
+            tooltip: 'Context settings',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+            color: isDark ? BrandColors.nightTextSecondary : BrandColors.charcoal,
+          ),
+
+          // Session info
+          if (chatState.sessionId != null || chatState.promptMetadata != null)
+            IconButton(
+              onPressed: () => _showSessionInfoSheet(context),
+              icon: Icon(Icons.info_outline, size: 18),
+              tooltip: 'Session info',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+              color: isDark ? BrandColors.nightTextSecondary : BrandColors.charcoal,
+            ),
+
+          // Session config (trust level, workspace)
+          if (chatState.sessionId != null)
+            IconButton(
+              onPressed: () => _showSessionConfigSheet(context),
+              icon: Icon(Icons.settings_outlined, size: 18),
+              tooltip: 'Session config',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+              color: isDark ? BrandColors.nightTextSecondary : BrandColors.charcoal,
+            ),
+
+          // More actions menu (archive, delete)
+          if (chatState.sessionId != null)
+            PopupMenuButton<String>(
+              icon: Icon(
+                Icons.more_vert,
+                size: 18,
+                color: isDark ? BrandColors.nightTextSecondary : BrandColors.charcoal,
+              ),
+              tooltip: 'More actions',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+              onSelected: (value) => _handleMenuAction(value, chatState.sessionId!),
+              itemBuilder: (context) => [
+                PopupMenuItem(
+                  value: 'archive',
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.archive_outlined,
+                        size: 20,
+                        color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
+                      ),
+                      const SizedBox(width: Spacing.sm),
+                      const Text('Archive'),
+                    ],
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'delete',
+                  child: Row(
+                    children: [
+                      Icon(Icons.delete_outline, size: 20, color: BrandColors.error),
+                      const SizedBox(width: Spacing.sm),
+                      Text('Delete', style: TextStyle(color: BrandColors.error)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildBody(BuildContext context, bool isDark, ChatMessagesState chatState) {
     return ColoredBox(
       color: isDark ? BrandColors.nightSurface : BrandColors.cream,
       child: Column(
         children: [
+          // Embedded toolbar for tablet/desktop mode (replaces AppBar)
+          if (widget.embeddedMode)
+            _buildEmbeddedToolbar(context, isDark, chatState),
+
           // Connection status banner (shows when server unreachable)
           ConnectionStatusBanner(
             onSettings: () {
