@@ -380,7 +380,7 @@ class _CreateWorkspaceDialogState extends ConsumerState<_CreateWorkspaceDialog> 
             ),
             SizedBox(height: Spacing.md),
             DropdownButtonFormField<String>(
-              initialValue: _trustLevel,
+              value: _trustLevel,
               decoration: const InputDecoration(labelText: 'Trust level'),
               items: TrustLevel.values.map((tl) => DropdownMenuItem(
                 value: tl.name,
@@ -390,7 +390,7 @@ class _CreateWorkspaceDialogState extends ConsumerState<_CreateWorkspaceDialog> 
             ),
             SizedBox(height: Spacing.md),
             DropdownButtonFormField<String?>(
-              initialValue: _model,
+              value: _model,
               decoration: const InputDecoration(labelText: 'Default model'),
               items: const [
                 DropdownMenuItem(value: null, child: Text('Server default')),
@@ -513,7 +513,7 @@ class _EditWorkspaceDialogState extends ConsumerState<_EditWorkspaceDialog> {
             ),
             SizedBox(height: Spacing.md),
             DropdownButtonFormField<String>(
-              initialValue: _trustLevel,
+              value: _trustLevel,
               decoration: const InputDecoration(labelText: 'Trust level'),
               items: TrustLevel.values.map((tl) => DropdownMenuItem(
                 value: tl.name,
@@ -523,7 +523,7 @@ class _EditWorkspaceDialogState extends ConsumerState<_EditWorkspaceDialog> {
             ),
             SizedBox(height: Spacing.md),
             DropdownButtonFormField<String?>(
-              initialValue: _model,
+              value: _model,
               decoration: const InputDecoration(labelText: 'Default model'),
               items: const [
                 DropdownMenuItem(value: null, child: Text('Server default')),

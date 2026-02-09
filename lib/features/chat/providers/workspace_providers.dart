@@ -23,12 +23,7 @@ final workspaceServiceProvider = Provider<WorkspaceService>((ref) {
 /// Fetches all workspaces from the server.
 final workspacesProvider = FutureProvider.autoDispose<List<Workspace>>((ref) async {
   final service = ref.watch(workspaceServiceProvider);
-  try {
-    return await service.listWorkspaces();
-  } catch (e) {
-    debugPrint('[WorkspaceProviders] Error loading workspaces: $e');
-    return [];
-  }
+  return await service.listWorkspaces();
 });
 
 /// Currently selected workspace slug (null = show all sessions).

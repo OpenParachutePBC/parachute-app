@@ -27,7 +27,8 @@ class WorkspaceService {
       throw Exception('Failed to list workspaces: ${response.statusCode}');
     }
 
-    final List<dynamic> data = jsonDecode(response.body);
+    final Map<String, dynamic> envelope = jsonDecode(response.body);
+    final List<dynamic> data = envelope['workspaces'] as List<dynamic>;
     return data.map((json) => Workspace.fromJson(json as Map<String, dynamic>)).toList();
   }
 
@@ -43,7 +44,8 @@ class WorkspaceService {
       throw Exception('Failed to get workspace: ${response.statusCode}');
     }
 
-    return Workspace.fromJson(jsonDecode(response.body));
+    final Map<String, dynamic> envelope = jsonDecode(response.body);
+    return Workspace.fromJson(envelope['workspace'] as Map<String, dynamic>);
   }
 
   /// Create a new workspace.
@@ -74,7 +76,8 @@ class WorkspaceService {
       throw Exception('Failed to create workspace: ${response.statusCode} ${response.body}');
     }
 
-    return Workspace.fromJson(jsonDecode(response.body));
+    final Map<String, dynamic> envelope = jsonDecode(response.body);
+    return Workspace.fromJson(envelope['workspace'] as Map<String, dynamic>);
   }
 
   /// Update a workspace.
@@ -89,7 +92,8 @@ class WorkspaceService {
       throw Exception('Failed to update workspace: ${response.statusCode}');
     }
 
-    return Workspace.fromJson(jsonDecode(response.body));
+    final Map<String, dynamic> envelope = jsonDecode(response.body);
+    return Workspace.fromJson(envelope['workspace'] as Map<String, dynamic>);
   }
 
   /// Delete a workspace.
