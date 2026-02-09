@@ -11,7 +11,7 @@ Unified Flutter app - voice journaling, AI chat, knowledge vault, and brain sear
 ## Architecture
 
 ```
-User → Parachute App → Base Server → Claude Agent SDK → AI
+User → Parachute App → Parachute Computer → Claude Agent SDK → AI
               ↓
        ~/Parachute/Daily (local, offline-capable)
        ~/Parachute/Chat (server-managed)

@@ -94,9 +94,6 @@ dependencies:
   flutter_gemma: ^0.11.8
   ollama_dart: ^0.3.0
 
-  # BM25 keyword search for local RAG
-  bm25: ^1.0.0
-
   # Image Capture & Vision (Daily)
   image_picker: ^1.1.2
   image_cropper: ^8.0.2
