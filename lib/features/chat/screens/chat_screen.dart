@@ -901,6 +901,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             const SizedBox(height: Spacing.md),
             // Trust level selector for new chats
             _buildTrustLevelSelector(isDark),
+            const SizedBox(height: Spacing.md),
+            // Working directory indicator
+            _buildWorkingDirectoryIndicator(isDark),
           ],
         ),
       ),
@@ -926,8 +929,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               ),
             ),
             const SizedBox(height: Spacing.xs),
-            Row(
-              mainAxisSize: MainAxisSize.min,
+            Wrap(
+              spacing: 0,
+              runSpacing: Spacing.xs,
+              alignment: WrapAlignment.center,
               children: [
                 _buildWorkspaceChip(null, 'None', activeSlug == null, isDark),
                 ...workspaces.map((w) =>
@@ -1030,8 +1035,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           ),
         ),
         const SizedBox(height: Spacing.xs),
-        Row(
-          mainAxisSize: MainAxisSize.min,
+        Wrap(
+          spacing: 0,
+          runSpacing: Spacing.xs,
           children: TrustLevel.values.map((tl) {
             final isSelected = currentLevel == tl;
             final isDisabled = trustFloor != null && tl.index < trustFloor.index;
@@ -1153,6 +1159,41 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildWorkingDirectoryIndicator(bool isDark) {
+    final chatState = ref.watch(chatMessagesProvider);
+    final wd = chatState.workingDirectory;
+    final color = isDark ? BrandColors.nightForest : BrandColors.forest;
+
+    return GestureDetector(
+      onTap: _showDirectoryPicker,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.folder_outlined,
+            size: 14,
+            color: wd != null ? color : (isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            wd != null ? wd.split('/').last : 'Vault root',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+              color: wd != null ? color : (isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood),
+            ),
+          ),
+          const SizedBox(width: 4),
+          Icon(
+            Icons.edit_outlined,
+            size: 11,
+            color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
+          ),
+        ],
       ),
     );
   }
