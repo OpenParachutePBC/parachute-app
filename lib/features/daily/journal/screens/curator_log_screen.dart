@@ -12,15 +12,15 @@ import 'package:parachute/core/providers/base_server_provider.dart';
 /// - Tool calls shown with expandable details
 /// - Clean preview for collapsed content
 class CuratorLogScreen extends ConsumerStatefulWidget {
-  /// The agent name. If null, shows the curator log (for backwards compatibility).
-  final String? agentName;
+  /// The agent name.
+  final String agentName;
 
   /// Display name for the agent (used in title).
   final String? displayName;
 
   const CuratorLogScreen({
     super.key,
-    this.agentName,
+    required this.agentName,
     this.displayName,
   });
 
@@ -29,15 +29,13 @@ class CuratorLogScreen extends ConsumerStatefulWidget {
 }
 
 class _CuratorLogScreenState extends ConsumerState<CuratorLogScreen> {
-  CuratorTranscript? _transcript;
+  AgentTranscript? _transcript;
   bool _isLoading = true;
   String? _error;
 
   String get _title => widget.displayName != null
       ? '${widget.displayName} Log'
-      : widget.agentName != null
-          ? '${_formatAgentName(widget.agentName!)} Log'
-          : 'Curator Log';
+      : '${_formatAgentName(widget.agentName)} Log';
 
   String _formatAgentName(String name) {
     return name
@@ -53,7 +51,7 @@ class _CuratorLogScreenState extends ConsumerState<CuratorLogScreen> {
   }
 
   Future<void> _loadTranscript() async {
-    debugPrint('[CuratorLogScreen] Loading transcript for agent: ${widget.agentName}');
+    debugPrint('[AgentLogScreen] Loading transcript for agent: ${widget.agentName}');
     setState(() {
       _isLoading = true;
       _error = null;
@@ -61,23 +59,16 @@ class _CuratorLogScreenState extends ConsumerState<CuratorLogScreen> {
 
     try {
       final service = ref.read(baseServerServiceProvider);
-      final CuratorTranscript? transcript;
+      final transcript = await service.getAgentTranscript(widget.agentName, limit: 100);
 
-      if (widget.agentName != null) {
-        transcript = await service.getAgentTranscript(widget.agentName!, limit: 100);
-      } else {
-        // Legacy path for when no agent name specified
-        transcript = await service.getCuratorTranscript(limit: 100);
-      }
-
-      debugPrint('[CuratorLogScreen] Got transcript: hasTranscript=${transcript?.hasTranscript}, messages=${transcript?.messages.length}');
+      debugPrint('[AgentLogScreen] Got transcript: hasTranscript=${transcript?.hasTranscript}, messages=${transcript?.messages.length}');
 
       setState(() {
         _transcript = transcript;
         _isLoading = false;
       });
     } catch (e) {
-      debugPrint('[CuratorLogScreen] Error: $e');
+      debugPrint('[AgentLogScreen] Error: $e');
       setState(() {
         _error = e.toString();
         _isLoading = false;
@@ -184,7 +175,7 @@ class _CuratorLogScreenState extends ConsumerState<CuratorLogScreen> {
 
 /// Header showing session info
 class _SessionHeader extends StatelessWidget {
-  final CuratorTranscript transcript;
+  final AgentTranscript transcript;
   final String? agentDisplayName;
   final ColorScheme colorScheme;
   final ThemeData theme;
@@ -236,7 +227,7 @@ class _SessionHeader extends StatelessWidget {
   }
 }
 
-/// A single message bubble - user messages collapsed, curator expanded
+/// A single message bubble - user messages collapsed, agent expanded
 class _CuratorMessageBubble extends StatefulWidget {
   final TranscriptMessage message;
   final ColorScheme colorScheme;
@@ -258,7 +249,7 @@ class _CuratorMessageBubbleState extends State<_CuratorMessageBubble> {
   @override
   void initState() {
     super.initState();
-    // Curator messages start expanded, tool results start collapsed
+    // Agent messages start expanded, tool results start collapsed
     _isExpanded = widget.message.isAssistant;
   }
 
@@ -314,7 +305,7 @@ class _CuratorMessageBubbleState extends State<_CuratorMessageBubble> {
                   ),
                   const SizedBox(width: 4),
                   Text(
-                    isAssistant ? 'Curator' : 'Tool Result',
+                    isAssistant ? 'Agent' : 'Tool Result',
                     style: theme.textTheme.labelSmall?.copyWith(
                       fontWeight: FontWeight.w500,
                       color: isAssistant ? colorScheme.primary : colorScheme.outline,

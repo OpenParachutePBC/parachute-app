@@ -19,7 +19,6 @@ import '../widgets/session_info_sheet.dart';
 import '../widgets/session_config_sheet.dart';
 import '../widgets/context_settings_sheet.dart';
 
-import 'package:parachute/core/providers/base_server_provider.dart' show showCuratorFeatures;
 import '../widgets/user_question_card.dart';
 import '../../settings/models/trust_level.dart';
 import '../../settings/screens/settings_screen.dart';
