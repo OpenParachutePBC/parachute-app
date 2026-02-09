@@ -92,29 +92,6 @@ extension ChatImportService on ChatService {
     }
   }
 
-  /// Get recent curator activity
-  ///
-  /// Returns recent context file updates and title changes
-  /// to show users what the curator has been learning.
-  Future<CuratorActivityInfo> getRecentCuratorActivity({int limit = 10}) async {
-    try {
-      final response = await client.get(
-        Uri.parse('$baseUrl/api/curator/activity/recent?limit=$limit'),
-        headers: defaultHeaders,
-      ).timeout(ChatService.requestTimeout);
-
-      if (response.statusCode != 200) {
-        throw Exception('Failed to get curator activity: ${response.statusCode}');
-      }
-
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
-      return CuratorActivityInfo.fromJson(data);
-    } catch (e) {
-      debugPrint('[ChatService] Error getting curator activity: $e');
-      rethrow;
-    }
-  }
-
   /// Get the full SDK transcript for a session
   ///
   /// Returns rich event history including tool calls, thinking blocks, etc.
@@ -310,70 +287,3 @@ class ContextFileMetadata {
   }
 }
 
-/// Information about recent curator activity
-class CuratorActivityInfo {
-  final List<CuratorUpdate> recentUpdates;
-  final List<String> contextFilesModified;
-  final DateTime? lastActivityAt;
-
-  const CuratorActivityInfo({
-    required this.recentUpdates,
-    required this.contextFilesModified,
-    this.lastActivityAt,
-  });
-
-  factory CuratorActivityInfo.fromJson(Map<String, dynamic> json) {
-    return CuratorActivityInfo(
-      recentUpdates: (json['recent_updates'] as List<dynamic>?)
-              ?.map((e) => CuratorUpdate.fromJson(e as Map<String, dynamic>))
-              .toList() ??
-          [],
-      contextFilesModified: (json['context_files_modified'] as List<dynamic>?)
-              ?.map((e) => e as String)
-              .toList() ??
-          [],
-      lastActivityAt: json['last_activity_at'] != null
-          ? DateTime.tryParse(json['last_activity_at'] as String)
-          : null,
-    );
-  }
-
-  bool get hasRecentActivity => recentUpdates.isNotEmpty;
-}
-
-/// A single curator update record
-class CuratorUpdate {
-  final int taskId;
-  final String sessionId;
-  final DateTime completedAt;
-  final List<String> actions;
-  final String? reasoning;
-  final String? newTitle;
-
-  const CuratorUpdate({
-    required this.taskId,
-    required this.sessionId,
-    required this.completedAt,
-    required this.actions,
-    this.reasoning,
-    this.newTitle,
-  });
-
-  factory CuratorUpdate.fromJson(Map<String, dynamic> json) {
-    return CuratorUpdate(
-      taskId: json['task_id'] as int? ?? 0,
-      sessionId: json['session_id'] as String? ?? '',
-      completedAt: DateTime.tryParse(json['completed_at'] as String? ?? '') ??
-          DateTime.now(),
-      actions: (json['actions'] as List<dynamic>?)
-              ?.map((e) => e as String)
-              .toList() ??
-          [],
-      reasoning: json['reasoning'] as String?,
-      newTitle: json['new_title'] as String?,
-    );
-  }
-
-  bool get updatedTitle => newTitle != null;
-  bool get updatedContext => actions.any((a) => !a.startsWith('Updated title'));
-}

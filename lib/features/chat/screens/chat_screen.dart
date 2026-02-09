@@ -18,7 +18,7 @@ import '../widgets/directory_picker.dart';
 import '../widgets/session_info_sheet.dart';
 import '../widgets/session_config_sheet.dart';
 import '../widgets/context_settings_sheet.dart';
-import '../widgets/curator_session_viewer_sheet.dart';
+
 import 'package:parachute/core/providers/base_server_provider.dart' show showCuratorFeatures;
 import '../widgets/user_question_card.dart';
 import '../../settings/models/trust_level.dart';
@@ -500,17 +500,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 ),
                 tooltip: 'Session info',
               ),
-            // Curator activity button (shows background curator status)
-            if (showCuratorFeatures && chatState.sessionId != null)
-              IconButton(
-                onPressed: () => _showCuratorSheet(context),
-                icon: Icon(
-                  Icons.auto_fix_high,
-                  size: 20,
-                  color: isDark ? BrandColors.nightTextSecondary : BrandColors.charcoal,
-                ),
-                tooltip: 'Curator activity',
-              ),
+
             // Session config (trust level, per-chat settings)
             if (chatState.sessionId != null)
               IconButton(
@@ -1335,14 +1325,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         ref.read(chatMessagesProvider.notifier).markClaudeMdForReload();
       },
     );
-  }
-
-  /// Show curator session viewer sheet
-  void _showCuratorSheet(BuildContext context) {
-    final chatState = ref.read(chatMessagesProvider);
-    if (chatState.sessionId != null) {
-      CuratorSessionViewerSheet.show(context, chatState.sessionId!);
-    }
   }
 
   /// Show session config sheet for trust level and per-chat settings
