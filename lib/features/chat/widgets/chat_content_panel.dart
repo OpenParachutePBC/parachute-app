@@ -1,20 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:parachute/core/theme/design_tokens.dart';
+import '../providers/chat_session_actions.dart';
 import '../providers/chat_session_providers.dart';
 import '../screens/chat_screen.dart';
 
 /// Chat content panel for use in adaptive layouts.
 ///
-/// Shows ChatScreen when a session is selected, or an empty state placeholder.
+/// Shows ChatScreen when a session is selected or new chat mode is active,
+/// or an empty state placeholder when idle.
 class ChatContentPanel extends ConsumerWidget {
   const ChatContentPanel({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final currentSessionId = ref.watch(currentSessionIdProvider);
+    final isNewChat = ref.watch(newChatModeProvider);
 
-    if (currentSessionId == null) {
+    if (currentSessionId == null && !isNewChat) {
       return _buildEmptyState(context);
     }
 

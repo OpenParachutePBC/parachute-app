@@ -14,6 +14,7 @@ import '../services/background_stream_manager.dart';
 import 'package:parachute/core/services/logging_service.dart';
 import 'package:parachute/core/providers/core_service_providers.dart';
 import 'package:parachute/core/providers/app_state_provider.dart' show modelPreferenceProvider;
+import 'chat_session_actions.dart' show newChatModeProvider;
 import 'chat_session_providers.dart';
 import 'workspace_providers.dart' show activeWorkspaceProvider;
 
@@ -1195,6 +1196,8 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
                 // Update session ID if server assigned a different one (always true for new sessions)
                 debugPrint('[ChatMessagesNotifier] Session event has server ID: $actualSessionId (was: $displaySessionId)');
                 _ref.read(currentSessionIdProvider.notifier).state = actualSessionId;
+                // Exit new chat mode now that we have a real session
+                _ref.read(newChatModeProvider.notifier).state = false;
                 // ALSO update state.sessionId so future sendMessage calls use the correct ID
                 state = state.copyWith(sessionId: actualSessionId);
                 // Update the active stream ID to match the real session ID
